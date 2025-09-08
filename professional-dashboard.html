@@ -1157,7 +1157,24 @@
         }
 
         function updateStats() {
-            updateDashboard();
+            // Only update stats, don't call updateDashboard to avoid infinite loop
+            const employees = appState.data.employees || [];
+            const products = appState.data.products || [];
+            const tasks = appState.data.tasks || [];
+            const activities = appState.data.activities || [];
+            
+            // Update stat cards directly
+            const totalEmployeesEl = document.getElementById('totalEmployees');
+            if (totalEmployeesEl) totalEmployeesEl.textContent = employees.length;
+            
+            const missingProductsEl = document.getElementById('missingProducts');
+            if (missingProductsEl) missingProductsEl.textContent = products.length;
+            
+            const activeTasksEl = document.getElementById('activeTasks');
+            if (activeTasksEl) activeTasksEl.textContent = tasks.filter(t => t.status === 'pending').length;
+            
+            const botMessagesEl = document.getElementById('botMessages');
+            if (botMessagesEl) botMessagesEl.textContent = activities.length;
         }
 
         // Load Tasks
