@@ -1051,6 +1051,7 @@ app.post('/webhook', async (req, res) => {
             }
             else if (text === "🔙 Ana Menü") {
                 const employees = readJsonFile(DATA_FILES.employees);
+                const adminSettings = readJsonFile(DATA_FILES.adminSettings);
                 const numericChatId = Number(chatId);
                 
                 // Reset user state
@@ -1062,11 +1063,21 @@ app.post('/webhook', async (req, res) => {
                 });
                 writeJsonFile(DATA_FILES.employees, employees);
                 
+                // Check if user is admin
+                const isAdmin = adminSettings.adminUsers.includes(numericChatId);
+                
+                const keyboard = [
+                    [{ text: "📦 Eksik Ürün Bildir" }, { text: "📋 Görevlerim" }],
+                    [{ text: "📊 İstatistikler" }, { text: "ℹ️ Yardım" }]
+                ];
+                
+                // Add admin panel button only for admins
+                if (isAdmin) {
+                    keyboard.splice(1, 0, [{ text: "👑 Admin Panel" }]);
+                }
+                
                 sendTelegramMessage(chatId, "🏠 Ana menüye dönüldü.", {
-                    keyboard: [
-                        [{ text: "📦 Eksik Ürün Bildir" }, { text: "📋 Görevlerim" }],
-                        [{ text: "📊 İstatistikler" }, { text: "ℹ️ Yardım" }]
-                    ],
+                    keyboard,
                     resize_keyboard: true
                 });
             }
