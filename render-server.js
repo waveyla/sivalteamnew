@@ -1250,19 +1250,19 @@ app.post('/webhook', async (req, res) => {
                     `📦 Eksik Ürün Bildirimi: ${products.length}\n` +
                     `📈 Toplam Aktivite: ${activities.length}\n\n` +
                     `🔧 <b>Kullanıcı Yönetimi:</b>\n` +
-                    `/adduser &lt;chatId&gt; &lt;ad&gt; &lt;departman&gt; - Manuel çalışan ekleme\n` +
-                    `/removeuser &lt;chatId&gt; - Çalışan silme\n` +
-                    `/listusers - Tüm çalışanları listeleme\n` +
-                    `/pending - Onay bekleyen kullanıcılar\n\n` +
+                    `/calisanekle &lt;chatId&gt; &lt;ad&gt; &lt;departman&gt; - Manuel çalışan ekleme\n` +
+                    `/calisansil &lt;chatId&gt; - Çalışan silme\n` +
+                    `/calisanlar - Tüm çalışanları listeleme\n` +
+                    `/bekleyenler - Onay bekleyen kullanıcılar\n\n` +
                     `📦 <b>Ürün Yönetimi:</b>\n` +
-                    `/products - Eksik ürün listesi (sadece admin)\n` +
-                    `/clearproducts - Tüm eksik ürün listesini temizleme\n\n` +
+                    `/eksiklist - Eksik ürün listesi (sadece admin)\n` +
+                    `/listetemizle - Tüm eksik ürün listesini temizleme\n\n` +
                     `📢 <b>İletişim:</b>\n` +
-                    `/broadcast &lt;mesaj&gt; - Tüm çalışanlara duyuru\n` +
-                    `/addtask &lt;chatId&gt; &lt;başlık&gt; | &lt;açıklama&gt; - Görev atama\n\n` +
+                    `/duyuru &lt;mesaj&gt; - Tüm çalışanlara duyuru\n` +
+                    `/gorevata &lt;chatId&gt; &lt;başlık&gt; | &lt;açıklama&gt; - Görev atama\n\n` +
                     `📊 <b>Raporlama:</b>\n` +
-                    `/stats - Detaylı sistem istatistikleri\n` +
-                    `/activity - Son aktivite raporu`;
+                    `/istatistik - Detaylı sistem istatistikleri\n` +
+                    `/aktivite - Son aktivite raporu`;
                 
                 sendTelegramMessage(chatId, adminText, {
                     keyboard: [
@@ -1284,7 +1284,7 @@ app.post('/webhook', async (req, res) => {
                 
                 sendTelegramMessage(chatId, helpText);
             }
-            else if (text.startsWith('/adduser')) {
+            else if (text.startsWith('/calisanekle') || text.startsWith('/adduser')) {
                 const adminSettings = readJsonFile(DATA_FILES.adminSettings);
                 const numericChatId = Number(chatId);
                 
@@ -1295,7 +1295,7 @@ app.post('/webhook', async (req, res) => {
                 
                 const parts = text.split(' ');
                 if (parts.length < 4) {
-                    sendTelegramMessage(chatId, "❌ Kullanım: /adduser &lt;chatId&gt; &lt;ad&gt; &lt;departman&gt;");
+                    sendTelegramMessage(chatId, "❌ Kullanım: /calisanekle &lt;chatId&gt; &lt;ad&gt; &lt;departman&gt;");
                     return;
                 }
                 
@@ -1334,7 +1334,7 @@ app.post('/webhook', async (req, res) => {
                 
                 logActivity(`Yeni kullanıcı eklendi: ${name}`, chatId, from.first_name);
             }
-            else if (text === '/listusers') {
+            else if (text === '/calisanlar' || text === '/listusers') {
                 const adminSettings = readJsonFile(DATA_FILES.adminSettings);
                 const numericChatId = Number(chatId);
                 
@@ -1359,7 +1359,7 @@ app.post('/webhook', async (req, res) => {
                 
                 sendTelegramMessage(chatId, `👥 <b>Kayıtlı Kullanıcılar (${employees.length})</b>\n\n${userList}`);
             }
-            else if (text.startsWith('/removeuser')) {
+            else if (text.startsWith('/calisansil') || text.startsWith('/removeuser')) {
                 const adminSettings = readJsonFile(DATA_FILES.adminSettings);
                 const numericChatId = Number(chatId);
                 
@@ -1370,7 +1370,7 @@ app.post('/webhook', async (req, res) => {
                 
                 const parts = text.split(' ');
                 if (parts.length !== 2) {
-                    sendTelegramMessage(chatId, "❌ Kullanım: /removeuser &lt;chatId&gt;");
+                    sendTelegramMessage(chatId, "❌ Kullanım: /calisansil &lt;chatId&gt;");
                     return;
                 }
                 
@@ -1405,7 +1405,7 @@ app.post('/webhook', async (req, res) => {
                 
                 logActivity(`Kullanıcı silindi: ${removedEmployee.name}`, chatId, from.first_name);
             }
-            else if (text === '/clearproducts') {
+            else if (text === '/listetemizle' || text === '/clearproducts') {
                 const adminSettings = readJsonFile(DATA_FILES.adminSettings);
                 const numericChatId = Number(chatId);
                 
@@ -1422,7 +1422,7 @@ app.post('/webhook', async (req, res) => {
                 sendTelegramMessage(chatId, `✅ Eksik ürün listesi temizlendi. ${productCount} ürün silindi.`);
                 logActivity(`Eksik ürün listesi temizlendi (${productCount} ürün)`, chatId, from.first_name);
             }
-            else if (text.startsWith('/broadcast ')) {
+            else if (text.startsWith('/duyuru ') || text.startsWith('/broadcast ')) {
                 const adminSettings = readJsonFile(DATA_FILES.adminSettings);
                 const numericChatId = Number(chatId);
                 
@@ -1431,11 +1431,11 @@ app.post('/webhook', async (req, res) => {
                     return;
                 }
                 
-                const message = protectTurkishChars(text.replace('/broadcast ', ''));
+                const message = protectTurkishChars(text.replace(text.startsWith('/duyuru ') ? '/duyuru ' : '/broadcast ', ''));
                 const employees = readJsonFile(DATA_FILES.employees);
                 
                 if (!message.trim()) {
-                    sendTelegramMessage(chatId, "❌ Kullanım: /broadcast &lt;mesaj&gt;");
+                    sendTelegramMessage(chatId, "❌ Kullanım: /duyuru &lt;mesaj&gt;");
                     return;
                 }
                 
@@ -1455,7 +1455,7 @@ app.post('/webhook', async (req, res) => {
                 sendTelegramMessage(chatId, `✅ Duyuru ${sentCount}/${employees.length} kullanıcıya gönderildi.`);
                 logActivity(`Genel duyuru gönderildi: ${sentCount} kullanıcı`, chatId, from.first_name);
             }
-            else if (text.startsWith('/addtask ')) {
+            else if (text.startsWith('/gorevata ') || text.startsWith('/addtask ')) {
                 const adminSettings = readJsonFile(DATA_FILES.adminSettings);
                 const numericChatId = Number(chatId);
                 
@@ -1465,11 +1465,11 @@ app.post('/webhook', async (req, res) => {
                 }
                 
                 // /addtask &lt;chatId&gt; &lt;başlık&gt; | &lt;açıklama&gt;
-                const taskText = text.replace('/addtask ', '');
+                const taskText = text.replace(text.startsWith('/gorevata ') ? '/gorevata ' : '/addtask ', '');
                 const parts = taskText.split(' ');
                 
                 if (parts.length < 2 || !taskText.includes('|')) {
-                    sendTelegramMessage(chatId, "❌ Kullanım: /addtask &lt;chatId&gt; &lt;başlık&gt; | &lt;açıklama&gt;");
+                    sendTelegramMessage(chatId, "❌ Kullanım: /gorevata &lt;chatId&gt; &lt;başlık&gt; | &lt;açıklama&gt;");
                     return;
                 }
                 
@@ -1538,7 +1538,7 @@ app.post('/webhook', async (req, res) => {
                 
                 sendTelegramMessage(chatId, `👥 <b>Kayıtlı Çalışanlar (${employees.length})</b>\n\n${userList}`);
             }
-            else if (text === "📦 Eksik Ürünler" || text === "/products") {
+            else if (text === "📦 Eksik Ürünler" || text === "/eksiklist" || text === "/products") {
                 const adminSettings = readJsonFile(DATA_FILES.adminSettings);
                 const numericChatId = Number(chatId);
                 
@@ -1606,7 +1606,7 @@ app.post('/webhook', async (req, res) => {
                     inline_keyboard: inlineKeyboard
                 });
             }
-            else if (text === "⏳ Bekleyen Onaylar" || text === "/pending") {
+            else if (text === "⏳ Bekleyen Onaylar" || text === "/bekleyenler" || text === "/pending") {
                 const adminSettings = readJsonFile(DATA_FILES.adminSettings);
                 const numericChatId = Number(chatId);
                 
@@ -1658,6 +1658,93 @@ app.post('/webhook', async (req, res) => {
                     `📊 Liste baştan başlıyor.`);
                 
                 logActivity(`Eksik ürün listesi temizlendi (${productCount} ürün)`, chatId, from.first_name);
+            }
+            else if (text === "/istatistik" || text === "/stats") {
+                const adminSettings = readJsonFile(DATA_FILES.adminSettings);
+                const numericChatId = Number(chatId);
+                
+                if (!adminSettings.adminUsers.includes(numericChatId)) {
+                    sendTelegramMessage(chatId, "❌ Bu komut sadece adminler tarafından kullanılabilir.");
+                    return;
+                }
+                
+                const employees = readJsonFile(DATA_FILES.employees);
+                const products = readJsonFile(DATA_FILES.missingProducts);
+                const activities = readJsonFile(DATA_FILES.activityLog);
+                const tasks = readJsonFile(DATA_FILES.tasks);
+                const pendingUsers = readJsonFile(DATA_FILES.pendingUsers);
+                
+                const pendingTasks = tasks.filter(t => t.status === 'pending');
+                const completedTasks = tasks.filter(t => t.status === 'completed');
+                
+                const statsText = `📊 <b>SivalTeam Sistem İstatistikleri</b>\n\n` +
+                    `👥 <b>Kullanıcılar:</b>\n` +
+                    `   • Kayıtlı Çalışan: ${employees.length}\n` +
+                    `   • Onay Bekleyen: ${pendingUsers.length}\n` +
+                    `   • Toplam Admin: ${adminSettings.adminUsers.length}\n\n` +
+                    `📦 <b>Ürünler:</b>\n` +
+                    `   • Eksik Ürün Bildirimi: ${products.length}\n\n` +
+                    `📋 <b>Görevler:</b>\n` +
+                    `   • Bekleyen Görev: ${pendingTasks.length}\n` +
+                    `   • Tamamlanan Görev: ${completedTasks.length}\n` +
+                    `   • Toplam Görev: ${tasks.length}\n\n` +
+                    `📈 <b>Aktivite:</b>\n` +
+                    `   • Toplam Log: ${activities.length}\n` +
+                    `   • Son Aktivite: ${activities.length > 0 ? new Date(activities[activities.length - 1].timestamp).toLocaleString('tr-TR') : 'Yok'}`;
+                
+                sendTelegramMessage(chatId, statsText);
+                logActivity('Sistem istatistikleri görüntülendi', chatId, from.first_name);
+            }
+            else if (text === "/aktivite" || text === "/activity") {
+                const adminSettings = readJsonFile(DATA_FILES.adminSettings);
+                const numericChatId = Number(chatId);
+                
+                if (!adminSettings.adminUsers.includes(numericChatId)) {
+                    sendTelegramMessage(chatId, "❌ Bu komut sadece adminler tarafından kullanılabilir.");
+                    return;
+                }
+                
+                const activities = readJsonFile(DATA_FILES.activityLog);
+                
+                if (activities.length === 0) {
+                    sendTelegramMessage(chatId, "📈 <b>Aktivite Raporu</b>\n\n✅ Henüz aktivite kaydı bulunmuyor.");
+                    return;
+                }
+                
+                const recentActivities = activities.slice(-10).reverse();
+                let activityText = `📈 <b>Son 10 Aktivite</b>\n\n`;
+                
+                recentActivities.forEach((activity, index) => {
+                    activityText += `${index + 1}. <b>${protectTurkishChars(activity.message)}</b>\n`;
+                    activityText += `   👤 ${protectTurkishChars(activity.userName || 'Sistem')}\n`;
+                    activityText += `   📅 ${new Date(activity.timestamp).toLocaleString('tr-TR')}\n\n`;
+                });
+                
+                sendTelegramMessage(chatId, activityText);
+                logActivity('Aktivite raporu görüntülendi', chatId, from.first_name);
+            }
+            else if (text === "/debug" || text === "/durum") {
+                // Debug komutu - admin durumu kontrolü
+                const adminSettings = readJsonFile(DATA_FILES.adminSettings);
+                const employees = readJsonFile(DATA_FILES.employees);
+                const numericChatId = Number(chatId);
+                
+                const employee = employees.find(e => Number(e.chatId) === numericChatId);
+                const isAdmin = adminSettings.adminUsers.includes(numericChatId);
+                
+                const debugText = `🔍 <b>Debug Bilgileri</b>\n\n` +
+                    `👤 <b>Kullanıcı:</b> ${from.first_name || 'Bilinmeyen'}\n` +
+                    `💬 <b>Chat ID:</b> <code>${chatId}</code>\n` +
+                    `🔢 <b>Numeric ID:</b> <code>${numericChatId}</code>\n` +
+                    `📝 <b>Kayıtlı Çalışan:</b> ${employee ? '✅ Evet' : '❌ Hayır'}\n` +
+                    `👑 <b>Admin Durumu:</b> ${isAdmin ? '✅ Admin' : '❌ Normal Çalışan'}\n\n` +
+                    `📊 <b>Admin Settings:</b>\n` +
+                    `   • Admin Sayısı: ${adminSettings.adminUsers.length}\n` +
+                    `   • Admin Liste: [${adminSettings.adminUsers.join(', ')}]\n` +
+                    `   • Sizin ID Admin Listesinde: ${adminSettings.adminUsers.includes(numericChatId) ? '✅' : '❌'}\n\n` +
+                    `⚡ <b>Çözüm:</b> Admin değilseniz '/start' komutu ile yeniden giriş yapın.`;
+                
+                sendTelegramMessage(chatId, debugText);
             }
             else {
                 // Handle category selection or product name input
