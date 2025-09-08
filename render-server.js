@@ -150,10 +150,22 @@ async function sendTelegramMessage(chatId, text, replyMarkup = null) {
             payload.reply_markup = replyMarkup;
         }
         
-        const response = await axios.post(`https://api.telegram.org/bot${BOT_TOKEN}/sendMessage`, payload);
+        const response = await axios.post(`https://api.telegram.org/bot${BOT_TOKEN}/sendMessage`, payload, {
+            timeout: 5000, // 5 second timeout for faster responses
+            headers: {
+                'Content-Type': 'application/json'
+            }
+        });
         return response.data;
     } catch (error) {
-        console.error('Telegram API Error:', error.response?.data || error.message);
+        // Better error handling to prevent slowdowns
+        if (error.code === 'ECONNABORTED') {
+            console.error('Telegram timeout - message may have been delivered');
+        } else if (error.response?.status === 400) {
+            console.error('Telegram 400 Error:', error.response.data.description);
+        } else {
+            console.error('Telegram API Error:', error.response?.data || error.message);
+        }
         return null;
     }
 }
@@ -585,6 +597,338 @@ app.post('/webhook', async (req, res) => {
                 logActivity(`Tüm eksik ürün listesi temizlendi (${productCount} ürün)`, chatId, from.first_name);
             }
             
+            // Handle task completion
+            if (data.startsWith('complete_task_')) {
+                const taskId = data.replace('complete_task_', '');
+                const tasks = readJsonFile(DATA_FILES.tasks);
+                const numericChatId = Number(chatId);
+                
+                const taskIndex = tasks.findIndex(t => t.id == taskId && Number(t.assignedTo) === numericChatId);
+                
+                if (taskIndex === -1) {
+                    sendTelegramMessage(chatId, "❌ Görev bulunamadı veya size ait değil.");
+                    return;
+                }
+                
+                const completedTask = tasks[taskIndex];
+                
+                // Mark task as completed
+                tasks[taskIndex].status = 'completed';
+                tasks[taskIndex].completedAt = new Date().toISOString();
+                tasks[taskIndex].completedBy = numericChatId;
+                
+                writeJsonFile(DATA_FILES.tasks, tasks);
+                
+                // Send completion confirmation to employee
+                sendTelegramMessage(chatId, 
+                    `✅ <b>Görev Tamamlandı!</b>\n\n` +
+                    `🎯 <b>${protectTurkishChars(completedTask.title)}</b>\n` +
+                    `📝 ${protectTurkishChars(completedTask.description)}\n\n` +
+                    `🎉 Tebrikler! Görev başarıyla tamamlandı.`,
+                    {
+                        keyboard: [
+                            [{ text: "📦 Eksik Ürün Bildir" }, { text: "📋 Görevlerim" }],
+                            [{ text: "📊 İstatistikler" }, { text: "ℹ️ Yardım" }]
+                        ],
+                        resize_keyboard: true
+                    }
+                );
+                
+                // Notify admin about task completion
+                const adminSettings = readJsonFile(DATA_FILES.adminSettings);
+                const employees = readJsonFile(DATA_FILES.employees);
+                const employee = employees.find(e => Number(e.chatId) === numericChatId);
+                const employeeName = employee ? employee.name : 'Bilinmeyen Çalışan';
+                
+                adminSettings.adminUsers.forEach(adminChatId => {
+                    sendTelegramMessage(adminChatId, 
+                        `✅ <b>Görev Tamamlandı!</b>\n\n` +
+                        `👤 <b>Çalışan:</b> ${protectTurkishChars(employeeName)}\n` +
+                        `🎯 <b>Görev:</b> ${protectTurkishChars(completedTask.title)}\n` +
+                        `📝 <b>Açıklama:</b> ${protectTurkishChars(completedTask.description)}\n` +
+                        `📅 <b>Tamamlanma:</b> ${new Date().toLocaleString('tr-TR')}\n\n` +
+                        `🎉 Görev başarıyla tamamlandı!`
+                    );
+                });
+                
+                logActivity(`Görev tamamlandı: ${completedTask.title}`, chatId, employeeName);
+            }
+            
+            // Handle refresh my tasks
+            if (data === 'refresh_my_tasks') {
+                const employees = readJsonFile(DATA_FILES.employees);
+                const tasks = readJsonFile(DATA_FILES.tasks);
+                const numericChatId = Number(chatId);
+                const employee = employees.find(e => Number(e.chatId) === numericChatId);
+                
+                if (!employee) {
+                    sendTelegramMessage(chatId, "❌ Bu özelliği kullanmak için önce kayıt olmalısınız.");
+                    return;
+                }
+                
+                const userTasks = tasks.filter(task => Number(task.assignedTo) === numericChatId);
+                const pendingTasks = userTasks.filter(task => task.status === 'pending');
+                const completedTasks = userTasks.filter(task => task.status === 'completed');
+                
+                if (userTasks.length === 0) {
+                    sendTelegramMessage(chatId, 
+                        `📋 <b>Görevleriniz</b>\n\n` +
+                        `📝 Şu anda size atanmış görev bulunmuyor.\n\n` +
+                        `✅ Yeni görevler atandığında size bildirim gelecektir.`,
+                        {
+                            keyboard: [
+                                [{ text: "📦 Eksik Ürün Bildir" }, { text: "📊 İstatistikler" }],
+                                [{ text: "ℹ️ Yardım" }]
+                            ],
+                            resize_keyboard: true
+                        }
+                    );
+                    return;
+                }
+                
+                // Create task list with detailed info
+                let taskText = `📋 <b>${employee.name} - Görevleriniz</b>\n\n`;
+                taskText += `📊 <b>Özet:</b>\n`;
+                taskText += `⏳ Bekleyen: ${pendingTasks.length}\n`;
+                taskText += `✅ Tamamlanan: ${completedTasks.length}\n`;
+                taskText += `📈 Toplam: ${userTasks.length}\n\n`;
+                
+                if (pendingTasks.length > 0) {
+                    taskText += `⏳ <b>Bekleyen Görevler:</b>\n\n`;
+                    
+                    pendingTasks.forEach((task, index) => {
+                        taskText += `${index + 1}. 🎯 <b>${protectTurkishChars(task.title)}</b>\n`;
+                        taskText += `   📝 ${protectTurkishChars(task.description)}\n`;
+                        taskText += `   👤 Atayan: ${protectTurkishChars(task.assignedByName)}\n`;
+                        taskText += `   📅 ${new Date(task.createdAt).toLocaleString('tr-TR')}\n`;
+                        taskText += `   ${task.type === 'bulk' ? '📢 Toplu Görev' : '👤 Kişisel Görev'}\n\n`;
+                    });
+                }
+                
+                if (completedTasks.length > 0) {
+                    taskText += `✅ <b>Son Tamamlanan Görevler:</b>\n\n`;
+                    
+                    completedTasks.slice(-3).forEach((task, index) => { // Show last 3 completed
+                        taskText += `${index + 1}. ✅ <b>${protectTurkishChars(task.title)}</b>\n`;
+                        taskText += `   📅 ${new Date(task.completedAt || task.createdAt).toLocaleDateString('tr-TR')}\n\n`;
+                    });
+                    
+                    if (completedTasks.length > 3) {
+                        taskText += `... ve ${completedTasks.length - 3} görev daha\n\n`;
+                    }
+                }
+                
+                // Create inline keyboard with complete buttons for pending tasks
+                const inlineKeyboard = [];
+                
+                pendingTasks.slice(0, 10).forEach(task => { // Limit to 10 tasks
+                    inlineKeyboard.push([{
+                        text: `✅ "${protectTurkishChars(task.title)}" Tamamlandı`,
+                        callback_data: `complete_task_${task.id}`
+                    }]);
+                });
+                
+                if (pendingTasks.length === 0) {
+                    inlineKeyboard.push([{
+                        text: "🔄 Görevleri Yenile",
+                        callback_data: "refresh_my_tasks"
+                    }]);
+                }
+                
+                sendTelegramMessage(chatId, taskText, {
+                    inline_keyboard: inlineKeyboard
+                });
+            }
+            else if (text.startsWith('/task ')) {
+                const adminSettings = readJsonFile(DATA_FILES.adminSettings);
+                const numericChatId = Number(chatId);
+                
+                if (!adminSettings.adminUsers.includes(numericChatId)) {
+                    sendTelegramMessage(chatId, "❌ Görev atama sadece adminler tarafından yapılabilir.");
+                    return;
+                }
+                
+                // Parse: /task @username veya chatId Görev başlığı | Açıklama
+                const taskText = text.replace('/task ', '').trim();
+                const parts = taskText.split(' ');
+                
+                if (parts.length < 2 || !taskText.includes('|')) {
+                    sendTelegramMessage(chatId, 
+                        "❌ <b>Kullanım:</b>\n" +
+                        "/task @username Görev başlığı | Açıklama\n" +
+                        "veya\n" +
+                        "/task &lt;chatId&gt; Görev başlığı | Açıklama"
+                    );
+                    return;
+                }
+                
+                let targetIdentifier = parts[0];
+                let taskContent = parts.slice(1).join(' ');
+                let [title, description] = taskContent.split('|').map(s => protectTurkishChars(s.trim()));
+                
+                if (!title || !description) {
+                    sendTelegramMessage(chatId, "❌ Görev başlığı ve açıklaması gereklidir.");
+                    return;
+                }
+                
+                const employees = readJsonFile(DATA_FILES.employees);
+                let targetEmployee = null;
+                
+                // Find employee by username or chatId
+                if (targetIdentifier.startsWith('@')) {
+                    const username = targetIdentifier.replace('@', '');
+                    targetEmployee = employees.find(e => e.username === username);
+                } else if (!isNaN(Number(targetIdentifier))) {
+                    const targetChatId = Number(targetIdentifier);
+                    targetEmployee = employees.find(e => Number(e.chatId) === targetChatId);
+                }
+                
+                if (!targetEmployee) {
+                    sendTelegramMessage(chatId, "❌ Çalışan bulunamadı. @username veya chat ID kontrolünü yapın.");
+                    return;
+                }
+                
+                const tasks = readJsonFile(DATA_FILES.tasks);
+                const newTask = {
+                    id: Date.now(),
+                    title: title,
+                    description: description,
+                    assignedTo: Number(targetEmployee.chatId),
+                    assignedToName: protectTurkishChars(targetEmployee.name),
+                    assignedBy: numericChatId,
+                    assignedByName: from.first_name || 'Admin',
+                    createdAt: new Date().toISOString(),
+                    status: 'pending',
+                    type: 'individual'
+                };
+                
+                tasks.push(newTask);
+                writeJsonFile(DATA_FILES.tasks, tasks);
+                
+                // Notify admin
+                sendTelegramMessage(chatId, 
+                    `✅ <b>Görev Atandı</b>\n\n` +
+                    `📋 <b>${title}</b>\n` +
+                    `📄 ${description}\n\n` +
+                    `👤 Atanan: ${targetEmployee.name}\n` +
+                    `💬 Chat ID: ${targetEmployee.chatId}\n` +
+                    `📅 Tarih: ${new Date().toLocaleDateString('tr-TR')}`
+                );
+                
+                // Notify employee
+                sendTelegramMessage(targetEmployee.chatId,
+                    `📋 <b>Yeni Görev Atandı!</b>\n\n` +
+                    `🎯 <b>${title}</b>\n` +
+                    `📝 ${description}\n\n` +
+                    `👤 Atayan: ${from.first_name || 'Admin'}\n` +
+                    `📅 Tarih: ${new Date().toLocaleDateString('tr-TR')}\n\n` +
+                    `📋 Görevlerinizi görmek için: "📋 Görevlerim" butonunu kullanın.`,
+                    {
+                        keyboard: [
+                            [{ text: "📋 Görevlerim" }, { text: "📦 Eksik Ürün Bildir" }],
+                            [{ text: "📊 İstatistikler" }, { text: "ℹ️ Yardım" }]
+                        ],
+                        resize_keyboard: true
+                    }
+                );
+                
+                logActivity(`Tekil görev atandı: "${title}" → ${targetEmployee.name}`, chatId, from.first_name);
+            }
+            else if (text.startsWith('/taskall ')) {
+                const adminSettings = readJsonFile(DATA_FILES.adminSettings);
+                const numericChatId = Number(chatId);
+                
+                if (!adminSettings.adminUsers.includes(numericChatId)) {
+                    sendTelegramMessage(chatId, "❌ Toplu görev atama sadece adminler tarafından yapılabilir.");
+                    return;
+                }
+                
+                // Parse: /taskall Görev başlığı | Açıklama
+                const taskText = text.replace('/taskall ', '').trim();
+                
+                if (!taskText.includes('|')) {
+                    sendTelegramMessage(chatId, 
+                        "❌ <b>Kullanım:</b>\n" +
+                        "/taskall Görev başlığı | Açıklama\n\n" +
+                        "Bu komut tüm çalışanlara aynı görevi atar."
+                    );
+                    return;
+                }
+                
+                let [title, description] = taskText.split('|').map(s => protectTurkishChars(s.trim()));
+                
+                if (!title || !description) {
+                    sendTelegramMessage(chatId, "❌ Görev başlığı ve açıklaması gereklidir.");
+                    return;
+                }
+                
+                const employees = readJsonFile(DATA_FILES.employees);
+                const regularEmployees = employees.filter(emp => emp.role !== 'admin');
+                
+                if (regularEmployees.length === 0) {
+                    sendTelegramMessage(chatId, "❌ Görev atanacak çalışan bulunamadı.");
+                    return;
+                }
+                
+                const tasks = readJsonFile(DATA_FILES.tasks);
+                const baseTaskId = Date.now();
+                
+                let assignedCount = 0;
+                
+                // Create individual task for each employee
+                regularEmployees.forEach((employee, index) => {
+                    const newTask = {
+                        id: baseTaskId + index,
+                        title: title,
+                        description: description,
+                        assignedTo: Number(employee.chatId),
+                        assignedToName: protectTurkishChars(employee.name),
+                        assignedBy: numericChatId,
+                        assignedByName: from.first_name || 'Admin',
+                        createdAt: new Date().toISOString(),
+                        status: 'pending',
+                        type: 'bulk',
+                        bulkId: baseTaskId // Group bulk tasks
+                    };
+                    
+                    tasks.push(newTask);
+                    
+                    // Notify employee
+                    sendTelegramMessage(employee.chatId,
+                        `📢 <b>Toplu Görev Atandı!</b>\n\n` +
+                        `🎯 <b>${title}</b>\n` +
+                        `📝 ${description}\n\n` +
+                        `👤 Atayan: ${from.first_name || 'Admin'}\n` +
+                        `📅 Tarih: ${new Date().toLocaleDateString('tr-TR')}\n\n` +
+                        `📋 Bu görev tüm çalışanlara atanmıştır.\n` +
+                        `🔍 Görevlerinizi görmek için: "📋 Görevlerim"`,
+                        {
+                            keyboard: [
+                                [{ text: "📋 Görevlerim" }, { text: "📦 Eksik Ürün Bildir" }],
+                                [{ text: "📊 İstatistikler" }, { text: "ℹ️ Yardım" }]
+                            ],
+                            resize_keyboard: true
+                        }
+                    );
+                    
+                    assignedCount++;
+                });
+                
+                writeJsonFile(DATA_FILES.tasks, tasks);
+                
+                // Notify admin
+                sendTelegramMessage(chatId,
+                    `✅ <b>Toplu Görev Atandı</b>\n\n` +
+                    `📋 <b>${title}</b>\n` +
+                    `📄 ${description}\n\n` +
+                    `👥 Atanan Çalışan Sayısı: ${assignedCount}\n` +
+                    `📅 Tarih: ${new Date().toLocaleDateString('tr-TR')}\n\n` +
+                    `📊 Tüm çalışanlara başarıyla gönderildi.`
+                );
+                
+                logActivity(`Toplu görev atandı: "${title}" → ${assignedCount} çalışan`, chatId, from.first_name);
+            }
+            
             // Handle refresh products
             if (data === 'refresh_products') {
                 // Simulate refresh by resending the products list
@@ -611,6 +955,80 @@ app.post('/webhook', async (req, res) => {
                     // Regenerate product list (same code as above)
                     // This could be refactored into a separate function
                     sendTelegramMessage(chatId, `✅ Liste yenilendi. Toplam ${products.length} ürün bildirimi.`);
+                }, 1000);
+            }
+            
+            // Handle task completion by employee
+            if (data.startsWith('complete_task_')) {
+                const taskId = data.replace('complete_task_', '');
+                const tasks = readJsonFile(DATA_FILES.tasks);
+                const taskIndex = tasks.findIndex(t => t.id == taskId);
+                
+                if (taskIndex === -1) {
+                    sendTelegramMessage(chatId, "❌ Görev bulunamadı veya zaten tamamlanmış.");
+                    return;
+                }
+                
+                const task = tasks[taskIndex];
+                const numericChatId = Number(chatId);
+                
+                // Check if user owns this task
+                if (Number(task.assignedTo) !== numericChatId) {
+                    sendTelegramMessage(chatId, "❌ Bu görev size ait değil.");
+                    return;
+                }
+                
+                // Mark task as completed
+                tasks[taskIndex].status = 'completed';
+                tasks[taskIndex].completedAt = new Date().toISOString();
+                tasks[taskIndex].completedBy = numericChatId;
+                
+                writeJsonFile(DATA_FILES.tasks, tasks);
+                
+                const employees = readJsonFile(DATA_FILES.employees);
+                const employee = employees.find(e => Number(e.chatId) === numericChatId);
+                const employeeName = employee ? employee.name : 'Bilinmeyen Çalışan';
+                
+                // Notify employee
+                sendTelegramMessage(chatId,
+                    `✅ <b>Görev Tamamlandı!</b>\n\n` +
+                    `🎯 <b>${protectTurkishChars(task.title)}</b>\n` +
+                    `📝 ${protectTurkishChars(task.description)}\n\n` +
+                    `📅 Tamamlama Tarihi: ${new Date().toLocaleString('tr-TR')}\n` +
+                    `⏱️ Süre: ${Math.ceil((new Date() - new Date(task.createdAt)) / (1000 * 60 * 60 * 24))} gün\n\n` +
+                    `🎉 Tebrikler! Göreviniz başarıyla tamamlandı ve listeden kaldırıldı.`
+                );
+                
+                // Notify admin who assigned the task
+                const adminSettings = readJsonFile(DATA_FILES.adminSettings);
+                if (adminSettings.adminUsers.includes(Number(task.assignedBy))) {
+                    sendTelegramMessage(task.assignedBy,
+                        `✅ <b>Görev Tamamlandı</b>\n\n` +
+                        `🎯 <b>${protectTurkishChars(task.title)}</b>\n` +
+                        `👤 Tamamlayan: ${protectTurkishChars(employeeName)}\n` +
+                        `📅 Tamamlama: ${new Date().toLocaleString('tr-TR')}\n\n` +
+                        `🎉 ${task.type === 'bulk' ? 'Toplu görev' : 'Kişisel görev'} başarıyla tamamlandı.`
+                    );
+                }
+                
+                logActivity(`Görev tamamlandı: "${task.title}" - ${employeeName}`, numericChatId, employeeName);
+            }
+            
+            // Handle refresh my tasks
+            if (data === 'refresh_my_tasks') {
+                sendTelegramMessage(chatId, "🔄 Görevleriniz yenileniyor...");
+                
+                setTimeout(() => {
+                    const tasks = readJsonFile(DATA_FILES.tasks);
+                    const numericChatId = Number(chatId);
+                    const userTasks = tasks.filter(task => Number(task.assignedTo) === numericChatId);
+                    const pendingTasks = userTasks.filter(task => task.status === 'pending');
+                    
+                    if (pendingTasks.length === 0) {
+                        sendTelegramMessage(chatId, "✅ Görevler yenilendi. Bekleyen göreviniz bulunmuyor.");
+                    } else {
+                        sendTelegramMessage(chatId, `✅ Görevler yenilendi. ${pendingTasks.length} bekleyen göreviniz var.`);
+                    }
                 }, 1000);
             }
             
@@ -677,25 +1095,77 @@ app.post('/webhook', async (req, res) => {
                 }
                 
                 const userTasks = tasks.filter(task => Number(task.assignedTo) === numericChatId);
+                const pendingTasks = userTasks.filter(task => task.status === 'pending');
+                const completedTasks = userTasks.filter(task => task.status === 'completed');
                 
                 if (userTasks.length === 0) {
                     sendTelegramMessage(chatId, 
                         `📋 <b>Görevleriniz</b>\n\n` +
                         `📝 Şu anda size atanmış görev bulunmuyor.\n\n` +
-                        `✅ Yeni görevler atandığında size bildirim gelecektir.`
+                        `✅ Yeni görevler atandığında size bildirim gelecektir.`,
+                        {
+                            keyboard: [
+                                [{ text: "📦 Eksik Ürün Bildir" }, { text: "📊 İstatistikler" }],
+                                [{ text: "ℹ️ Yardım" }]
+                            ],
+                            resize_keyboard: true
+                        }
                     );
-                } else {
-                    const taskList = userTasks.map(task => 
-                        `${task.status === 'completed' ? '✅' : task.status === 'in_progress' ? '🔄' : '📋'} ` +
-                        `<b>${protectTurkishChars(task.title)}</b>\n` +
-                        `📝 ${protectTurkishChars(task.description)}\n` +
-                        `📅 ${new Date(task.createdAt).toLocaleDateString('tr-TR')}\n`
-                    ).join('\n');
-                    
-                    sendTelegramMessage(chatId, 
-                        `📋 <b>Görevleriniz (${userTasks.length})</b>\n\n${taskList}`
-                    );
+                    return;
                 }
+                
+                // Create task list with detailed info
+                let taskText = `📋 <b>${employee.name} - Görevleriniz</b>\n\n`;
+                taskText += `📊 <b>Özet:</b>\n`;
+                taskText += `⏳ Bekleyen: ${pendingTasks.length}\n`;
+                taskText += `✅ Tamamlanan: ${completedTasks.length}\n`;
+                taskText += `📈 Toplam: ${userTasks.length}\n\n`;
+                
+                if (pendingTasks.length > 0) {
+                    taskText += `⏳ <b>Bekleyen Görevler:</b>\n\n`;
+                    
+                    pendingTasks.forEach((task, index) => {
+                        taskText += `${index + 1}. 🎯 <b>${protectTurkishChars(task.title)}</b>\n`;
+                        taskText += `   📝 ${protectTurkishChars(task.description)}\n`;
+                        taskText += `   👤 Atayan: ${protectTurkishChars(task.assignedByName)}\n`;
+                        taskText += `   📅 ${new Date(task.createdAt).toLocaleString('tr-TR')}\n`;
+                        taskText += `   ${task.type === 'bulk' ? '📢 Toplu Görev' : '👤 Kişisel Görev'}\n\n`;
+                    });
+                }
+                
+                if (completedTasks.length > 0) {
+                    taskText += `✅ <b>Tamamlanan Görevler:</b>\n\n`;
+                    
+                    completedTasks.slice(-3).forEach((task, index) => { // Show last 3 completed
+                        taskText += `${index + 1}. ✅ <b>${protectTurkishChars(task.title)}</b>\n`;
+                        taskText += `   📅 ${new Date(task.completedAt || task.createdAt).toLocaleDateString('tr-TR')}\n\n`;
+                    });
+                    
+                    if (completedTasks.length > 3) {
+                        taskText += `... ve ${completedTasks.length - 3} görev daha\n\n`;
+                    }
+                }
+                
+                // Create inline keyboard with complete buttons for pending tasks
+                const inlineKeyboard = [];
+                
+                pendingTasks.slice(0, 10).forEach(task => { // Limit to 10 tasks
+                    inlineKeyboard.push([{
+                        text: `✅ "${protectTurkishChars(task.title)}" Tamamlandı`,
+                        callback_data: `complete_task_${task.id}`
+                    }]);
+                });
+                
+                if (pendingTasks.length === 0) {
+                    inlineKeyboard.push([{
+                        text: "🔄 Görevleri Yenile",
+                        callback_data: "refresh_my_tasks"
+                    }]);
+                }
+                
+                sendTelegramMessage(chatId, taskText, {
+                    inline_keyboard: inlineKeyboard.length > 0 ? inlineKeyboard : undefined
+                });
             }
             else if (text === "👑 Admin Panel") {
                 const adminSettings = readJsonFile(DATA_FILES.adminSettings);
@@ -719,8 +1189,8 @@ app.post('/webhook', async (req, res) => {
                     `📦 Eksik Ürün Bildirimi: ${products.length}\n` +
                     `📈 Toplam Aktivite: ${activities.length}\n\n` +
                     `🔧 <b>Kullanıcı Yönetimi:</b>\n` +
-                    `/adduser <chatId> <ad> <departman> - Manuel çalışan ekleme\n` +
-                    `/removeuser <chatId> - Çalışan silme\n` +
+                    `/adduser &lt;chatId&gt; &lt;ad&gt; &lt;departman&gt; - Manuel çalışan ekleme\n` +
+                    `/removeuser &lt;chatId&gt; - Çalışan silme\n` +
                     `/listusers - Tüm çalışanları listeleme\n` +
                     `/pending - Onay bekleyen kullanıcılar\n\n` +
                     `📦 <b>Ürün Yönetimi:</b>\n` +
@@ -728,7 +1198,7 @@ app.post('/webhook', async (req, res) => {
                     `/clearproducts - Tüm eksik ürün listesini temizleme\n\n` +
                     `📢 <b>İletişim:</b>\n` +
                     `/broadcast <mesaj> - Tüm çalışanlara duyuru\n` +
-                    `/addtask <chatId> <başlık> | <açıklama> - Görev atama\n\n` +
+                    `/addtask &lt;chatId&gt; &lt;başlık&gt; | &lt;açıklama&gt; - Görev atama\n\n` +
                     `📊 <b>Raporlama:</b>\n` +
                     `/stats - Detaylı sistem istatistikleri\n` +
                     `/activity - Son aktivite raporu`;
@@ -764,7 +1234,7 @@ app.post('/webhook', async (req, res) => {
                 
                 const parts = text.split(' ');
                 if (parts.length < 4) {
-                    sendTelegramMessage(chatId, "❌ Kullanım: /adduser <chatId> <ad> <departman>");
+                    sendTelegramMessage(chatId, "❌ Kullanım: /adduser &lt;chatId&gt; &lt;ad&gt; &lt;departman&gt;");
                     return;
                 }
                 
@@ -839,7 +1309,7 @@ app.post('/webhook', async (req, res) => {
                 
                 const parts = text.split(' ');
                 if (parts.length !== 2) {
-                    sendTelegramMessage(chatId, "❌ Kullanım: /removeuser <chatId>");
+                    sendTelegramMessage(chatId, "❌ Kullanım: /removeuser &lt;chatId&gt;");
                     return;
                 }
                 
@@ -933,12 +1403,12 @@ app.post('/webhook', async (req, res) => {
                     return;
                 }
                 
-                // /addtask <chatId> <başlık> | <açıklama>
+                // /addtask &lt;chatId&gt; &lt;başlık&gt; | &lt;açıklama&gt;
                 const taskText = text.replace('/addtask ', '');
                 const parts = taskText.split(' ');
                 
                 if (parts.length < 2 || !taskText.includes('|')) {
-                    sendTelegramMessage(chatId, "❌ Kullanım: /addtask <chatId> <başlık> | <açıklama>");
+                    sendTelegramMessage(chatId, "❌ Kullanım: /addtask &lt;chatId&gt; &lt;başlık&gt; | &lt;açıklama&gt;");
                     return;
                 }
                 
