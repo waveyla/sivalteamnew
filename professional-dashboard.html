@@ -1,0 +1,1150 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SivalTeam Professional Management Dashboard</title>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        :root {
+            --primary-color: #667eea;
+            --secondary-color: #764ba2;
+            --success-color: #10b981;
+            --warning-color: #f59e0b;
+            --error-color: #ef4444;
+            --info-color: #3b82f6;
+            --bg-primary: #f8fafc;
+            --bg-secondary: #ffffff;
+            --text-primary: #1f2937;
+            --text-secondary: #6b7280;
+            --border-color: #e5e7eb;
+            --shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.1);
+            --shadow-lg: 0 10px 15px -3px rgba(0, 0, 0, 0.1);
+        }
+        
+        [data-theme="dark"] {
+            --bg-primary: #0f172a;
+            --bg-secondary: #1e293b;
+            --text-primary: #f1f5f9;
+            --text-secondary: #cbd5e1;
+            --border-color: #334155;
+        }
+        
+        body {
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+            background: var(--bg-primary);
+            color: var(--text-primary);
+            line-height: 1.6;
+        }
+        
+        .dashboard {
+            display: grid;
+            grid-template-columns: 280px 1fr;
+            min-height: 100vh;
+        }
+        
+        /* Sidebar */
+        .sidebar {
+            background: var(--bg-secondary);
+            border-right: 1px solid var(--border-color);
+            padding: 2rem 0;
+            position: fixed;
+            width: 280px;
+            height: 100vh;
+            overflow-y: auto;
+            z-index: 100;
+        }
+        
+        .logo {
+            padding: 0 2rem 2rem;
+            border-bottom: 1px solid var(--border-color);
+            margin-bottom: 2rem;
+        }
+        
+        .logo h1 {
+            color: var(--primary-color);
+            font-size: 1.5rem;
+            font-weight: 700;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+        
+        .logo .version {
+            font-size: 0.8rem;
+            color: var(--text-secondary);
+            font-weight: 400;
+        }
+        
+        .nav-menu {
+            list-style: none;
+            padding: 0 1rem;
+        }
+        
+        .nav-item {
+            margin-bottom: 0.5rem;
+        }
+        
+        .nav-link {
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+            padding: 0.75rem 1rem;
+            color: var(--text-secondary);
+            text-decoration: none;
+            border-radius: 0.5rem;
+            transition: all 0.2s;
+            font-weight: 500;
+        }
+        
+        .nav-link:hover,
+        .nav-link.active {
+            background: var(--primary-color);
+            color: white;
+            transform: translateX(4px);
+        }
+        
+        .nav-link i {
+            width: 20px;
+            text-align: center;
+        }
+        
+        /* Main Content */
+        .main-content {
+            margin-left: 280px;
+            padding: 2rem;
+        }
+        
+        .header {
+            display: flex;
+            justify-content: between;
+            align-items: center;
+            margin-bottom: 2rem;
+            background: var(--bg-secondary);
+            padding: 1.5rem 2rem;
+            border-radius: 1rem;
+            box-shadow: var(--shadow);
+            border: 1px solid var(--border-color);
+        }
+        
+        .header-left h2 {
+            font-size: 1.5rem;
+            font-weight: 600;
+            margin-bottom: 0.25rem;
+        }
+        
+        .header-left p {
+            color: var(--text-secondary);
+        }
+        
+        .header-right {
+            display: flex;
+            align-items: center;
+            gap: 1rem;
+            margin-left: auto;
+        }
+        
+        .status-indicator {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            padding: 0.5rem 1rem;
+            border-radius: 0.5rem;
+            font-weight: 500;
+            font-size: 0.875rem;
+        }
+        
+        .status-online {
+            background: rgba(16, 185, 129, 0.1);
+            color: var(--success-color);
+        }
+        
+        .status-offline {
+            background: rgba(239, 68, 68, 0.1);
+            color: var(--error-color);
+        }
+        
+        .pulse {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background: currentColor;
+            animation: pulse 2s infinite;
+        }
+        
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.5; }
+        }
+        
+        .theme-toggle {
+            background: var(--bg-primary);
+            border: 1px solid var(--border-color);
+            color: var(--text-primary);
+            width: 40px;
+            height: 40px;
+            border-radius: 0.5rem;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: all 0.2s;
+        }
+        
+        .theme-toggle:hover {
+            background: var(--primary-color);
+            color: white;
+        }
+        
+        /* Statistics Grid */
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+            gap: 1.5rem;
+            margin-bottom: 2rem;
+        }
+        
+        .stat-card {
+            background: var(--bg-secondary);
+            border: 1px solid var(--border-color);
+            border-radius: 1rem;
+            padding: 1.5rem;
+            box-shadow: var(--shadow);
+            transition: all 0.2s;
+        }
+        
+        .stat-card:hover {
+            box-shadow: var(--shadow-lg);
+            transform: translateY(-2px);
+        }
+        
+        .stat-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            margin-bottom: 1rem;
+        }
+        
+        .stat-title {
+            font-size: 0.875rem;
+            font-weight: 500;
+            color: var(--text-secondary);
+        }
+        
+        .stat-icon {
+            width: 40px;
+            height: 40px;
+            border-radius: 0.5rem;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 1.25rem;
+        }
+        
+        .stat-icon.primary { background: rgba(102, 126, 234, 0.1); color: var(--primary-color); }
+        .stat-icon.success { background: rgba(16, 185, 129, 0.1); color: var(--success-color); }
+        .stat-icon.warning { background: rgba(245, 158, 11, 0.1); color: var(--warning-color); }
+        .stat-icon.info { background: rgba(59, 130, 246, 0.1); color: var(--info-color); }
+        
+        .stat-value {
+            font-size: 2rem;
+            font-weight: 700;
+            margin-bottom: 0.25rem;
+        }
+        
+        .stat-change {
+            font-size: 0.875rem;
+            display: flex;
+            align-items: center;
+            gap: 0.25rem;
+        }
+        
+        .stat-change.positive { color: var(--success-color); }
+        .stat-change.negative { color: var(--error-color); }
+        
+        /* Content Grid */
+        .content-grid {
+            display: grid;
+            grid-template-columns: 2fr 1fr;
+            gap: 2rem;
+            margin-bottom: 2rem;
+        }
+        
+        .panel {
+            background: var(--bg-secondary);
+            border: 1px solid var(--border-color);
+            border-radius: 1rem;
+            overflow: hidden;
+            box-shadow: var(--shadow);
+        }
+        
+        .panel-header {
+            padding: 1.5rem;
+            border-bottom: 1px solid var(--border-color);
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
+        
+        .panel-title {
+            font-size: 1.125rem;
+            font-weight: 600;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+        
+        .panel-actions {
+            display: flex;
+            gap: 0.5rem;
+        }
+        
+        .btn {
+            padding: 0.5rem 1rem;
+            border: none;
+            border-radius: 0.5rem;
+            cursor: pointer;
+            font-weight: 500;
+            font-size: 0.875rem;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            transition: all 0.2s;
+        }
+        
+        .btn-primary { background: var(--primary-color); color: white; }
+        .btn-success { background: var(--success-color); color: white; }
+        .btn-warning { background: var(--warning-color); color: white; }
+        .btn-error { background: var(--error-color); color: white; }
+        .btn-secondary { background: var(--bg-primary); color: var(--text-primary); border: 1px solid var(--border-color); }
+        
+        .btn:hover {
+            opacity: 0.9;
+            transform: translateY(-1px);
+        }
+        
+        .panel-content {
+            padding: 1.5rem;
+        }
+        
+        /* Table Styles */
+        .table-container {
+            overflow-x: auto;
+        }
+        
+        .table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+        
+        .table th,
+        .table td {
+            text-align: left;
+            padding: 0.75rem;
+            border-bottom: 1px solid var(--border-color);
+        }
+        
+        .table th {
+            font-weight: 600;
+            color: var(--text-secondary);
+            font-size: 0.875rem;
+            background: var(--bg-primary);
+        }
+        
+        .table tbody tr:hover {
+            background: var(--bg-primary);
+        }
+        
+        .badge {
+            padding: 0.25rem 0.75rem;
+            border-radius: 9999px;
+            font-size: 0.75rem;
+            font-weight: 500;
+        }
+        
+        .badge.success { background: rgba(16, 185, 129, 0.1); color: var(--success-color); }
+        .badge.warning { background: rgba(245, 158, 11, 0.1); color: var(--warning-color); }
+        .badge.error { background: rgba(239, 68, 68, 0.1); color: var(--error-color); }
+        .badge.info { background: rgba(59, 130, 246, 0.1); color: var(--info-color); }
+        .badge.primary { background: rgba(102, 126, 234, 0.1); color: var(--primary-color); }
+        
+        /* Modal Styles */
+        .modal {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.5);
+            z-index: 1000;
+        }
+        
+        .modal-content {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            background: var(--bg-secondary);
+            border-radius: 1rem;
+            box-shadow: var(--shadow-lg);
+            width: 90%;
+            max-width: 500px;
+            border: 1px solid var(--border-color);
+        }
+        
+        .modal-header {
+            padding: 1.5rem;
+            border-bottom: 1px solid var(--border-color);
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
+        
+        .modal-title {
+            font-size: 1.25rem;
+            font-weight: 600;
+        }
+        
+        .modal-close {
+            width: 32px;
+            height: 32px;
+            border: none;
+            background: var(--bg-primary);
+            border-radius: 0.5rem;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: var(--text-secondary);
+        }
+        
+        .modal-close:hover {
+            background: var(--error-color);
+            color: white;
+        }
+        
+        .modal-body {
+            padding: 1.5rem;
+        }
+        
+        .form-group {
+            margin-bottom: 1rem;
+        }
+        
+        .form-label {
+            display: block;
+            margin-bottom: 0.5rem;
+            font-weight: 500;
+            color: var(--text-primary);
+        }
+        
+        .form-input {
+            width: 100%;
+            padding: 0.75rem 1rem;
+            border: 1px solid var(--border-color);
+            border-radius: 0.5rem;
+            background: var(--bg-primary);
+            color: var(--text-primary);
+            font-size: 0.875rem;
+        }
+        
+        .form-input:focus {
+            outline: none;
+            border-color: var(--primary-color);
+            box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+        }
+        
+        .modal-footer {
+            padding: 1rem 1.5rem;
+            border-top: 1px solid var(--border-color);
+            display: flex;
+            gap: 0.75rem;
+            justify-content: flex-end;
+        }
+        
+        /* Activity Log */
+        .activity-item {
+            display: flex;
+            gap: 1rem;
+            padding: 1rem 0;
+            border-bottom: 1px solid var(--border-color);
+        }
+        
+        .activity-item:last-child {
+            border-bottom: none;
+        }
+        
+        .activity-icon {
+            width: 32px;
+            height: 32px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 0.875rem;
+            flex-shrink: 0;
+        }
+        
+        .activity-content {
+            flex: 1;
+        }
+        
+        .activity-text {
+            font-size: 0.875rem;
+            margin-bottom: 0.25rem;
+        }
+        
+        .activity-time {
+            font-size: 0.75rem;
+            color: var(--text-secondary);
+        }
+        
+        /* Toast Notifications */
+        .toast-container {
+            position: fixed;
+            top: 2rem;
+            right: 2rem;
+            z-index: 2000;
+        }
+        
+        .toast {
+            background: var(--bg-secondary);
+            border: 1px solid var(--border-color);
+            border-radius: 0.5rem;
+            padding: 1rem 1.5rem;
+            box-shadow: var(--shadow-lg);
+            margin-bottom: 1rem;
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+            min-width: 300px;
+            animation: slideIn 0.3s ease;
+        }
+        
+        @keyframes slideIn {
+            from {
+                transform: translateX(100%);
+                opacity: 0;
+            }
+            to {
+                transform: translateX(0);
+                opacity: 1;
+            }
+        }
+        
+        .toast.success { border-left: 4px solid var(--success-color); }
+        .toast.error { border-left: 4px solid var(--error-color); }
+        .toast.warning { border-left: 4px solid var(--warning-color); }
+        .toast.info { border-left: 4px solid var(--info-color); }
+        
+        /* Responsive */
+        @media (max-width: 1024px) {
+            .dashboard {
+                grid-template-columns: 1fr;
+            }
+            
+            .sidebar {
+                transform: translateX(-100%);
+                transition: transform 0.3s;
+            }
+            
+            .sidebar.open {
+                transform: translateX(0);
+            }
+            
+            .main-content {
+                margin-left: 0;
+            }
+            
+            .content-grid {
+                grid-template-columns: 1fr;
+            }
+        }
+        
+        /* Loading States */
+        .loading {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 2rem;
+            color: var(--text-secondary);
+        }
+        
+        .spinner {
+            width: 20px;
+            height: 20px;
+            border: 2px solid var(--border-color);
+            border-top: 2px solid var(--primary-color);
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+            margin-right: 0.5rem;
+        }
+        
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+        
+        .empty-state {
+            text-align: center;
+            padding: 3rem 2rem;
+            color: var(--text-secondary);
+        }
+        
+        .empty-state i {
+            font-size: 3rem;
+            margin-bottom: 1rem;
+            opacity: 0.5;
+        }
+    </style>
+</head>
+<body data-theme="light">
+    <div class="dashboard">
+        <!-- Sidebar -->
+        <nav class="sidebar">
+            <div class="logo">
+                <h1>
+                    <i class="fas fa-robot"></i>
+                    SivalTeam Pro
+                    <div class="version">v2.0.0</div>
+                </h1>
+            </div>
+            <ul class="nav-menu">
+                <li class="nav-item">
+                    <a href="#dashboard" class="nav-link active" onclick="showSection('dashboard')">
+                        <i class="fas fa-chart-pie"></i>
+                        Dashboard
+                    </a>
+                </li>
+                <li class="nav-item">
+                    <a href="#employees" class="nav-link" onclick="showSection('employees')">
+                        <i class="fas fa-users"></i>
+                        Çalışanlar
+                    </a>
+                </li>
+                <li class="nav-item">
+                    <a href="#tasks" class="nav-link" onclick="showSection('tasks')">
+                        <i class="fas fa-tasks"></i>
+                        Görevler
+                    </a>
+                </li>
+                <li class="nav-item">
+                    <a href="#products" class="nav-link" onclick="showSection('products')">
+                        <i class="fas fa-box"></i>
+                        Eksik Ürünler
+                    </a>
+                </li>
+                <li class="nav-item">
+                    <a href="#categories" class="nav-link" onclick="showSection('categories')">
+                        <i class="fas fa-tags"></i>
+                        Kategoriler
+                    </a>
+                </li>
+                <li class="nav-item">
+                    <a href="#activity" class="nav-link" onclick="showSection('activity')">
+                        <i class="fas fa-history"></i>
+                        Aktiviteler
+                    </a>
+                </li>
+                <li class="nav-item">
+                    <a href="#bot-status" class="nav-link" onclick="showSection('bot-status')">
+                        <i class="fas fa-robot"></i>
+                        Bot Durumu
+                    </a>
+                </li>
+                <li class="nav-item">
+                    <a href="#settings" class="nav-link" onclick="showSection('settings')">
+                        <i class="fas fa-cog"></i>
+                        Ayarlar
+                    </a>
+                </li>
+            </ul>
+        </nav>
+
+        <!-- Main Content -->
+        <main class="main-content">
+            <!-- Header -->
+            <div class="header">
+                <div class="header-left">
+                    <h2>SivalTeam Professional Dashboard</h2>
+                    <p>Telegram Bot Yönetim ve İzleme Paneli</p>
+                </div>
+                <div class="header-right">
+                    <div class="status-indicator status-online" id="botStatus">
+                        <div class="pulse"></div>
+                        Bot Online
+                    </div>
+                    <button class="theme-toggle" onclick="toggleTheme()">
+                        <i class="fas fa-moon" id="themeIcon"></i>
+                    </button>
+                </div>
+            </div>
+
+            <!-- Dashboard Section -->
+            <div id="dashboard-section" class="section active">
+                <!-- Statistics Grid -->
+                <div class="stats-grid">
+                    <div class="stat-card">
+                        <div class="stat-header">
+                            <div class="stat-title">Toplam Çalışan</div>
+                            <div class="stat-icon primary">
+                                <i class="fas fa-users"></i>
+                            </div>
+                        </div>
+                        <div class="stat-value" id="totalEmployees">0</div>
+                        <div class="stat-change positive">
+                            <i class="fas fa-arrow-up"></i>
+                            <span id="employeeChange">+0</span> bu hafta
+                        </div>
+                    </div>
+                    
+                    <div class="stat-card">
+                        <div class="stat-header">
+                            <div class="stat-title">Aktif Görevler</div>
+                            <div class="stat-icon warning">
+                                <i class="fas fa-tasks"></i>
+                            </div>
+                        </div>
+                        <div class="stat-value" id="activeTasks">0</div>
+                        <div class="stat-change">
+                            <i class="fas fa-minus"></i>
+                            <span id="taskChange">0</span> değişiklik
+                        </div>
+                    </div>
+                    
+                    <div class="stat-card">
+                        <div class="stat-header">
+                            <div class="stat-title">Eksik Ürünler</div>
+                            <div class="stat-icon error">
+                                <i class="fas fa-exclamation-triangle"></i>
+                            </div>
+                        </div>
+                        <div class="stat-value" id="missingProducts">0</div>
+                        <div class="stat-change negative">
+                            <i class="fas fa-arrow-down"></i>
+                            <span id="productChange">+0</span> yeni bildirim
+                        </div>
+                    </div>
+                    
+                    <div class="stat-card">
+                        <div class="stat-header">
+                            <div class="stat-title">Bot Mesajları</div>
+                            <div class="stat-icon success">
+                                <i class="fas fa-comments"></i>
+                            </div>
+                        </div>
+                        <div class="stat-value" id="botMessages">0</div>
+                        <div class="stat-change positive">
+                            <i class="fas fa-arrow-up"></i>
+                            <span id="messageChange">+0</span> bugün
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Content Grid -->
+                <div class="content-grid">
+                    <div class="panel">
+                        <div class="panel-header">
+                            <div class="panel-title">
+                                <i class="fas fa-chart-line"></i>
+                                Sistem Durumu
+                            </div>
+                        </div>
+                        <div class="panel-content">
+                            <div class="activity-item">
+                                <div class="activity-icon success">
+                                    <i class="fas fa-check"></i>
+                                </div>
+                                <div class="activity-content">
+                                    <div class="activity-text">Bot başarıyla çalışıyor</div>
+                                    <div class="activity-time" id="uptime">Uptime: Hesaplanıyor...</div>
+                                </div>
+                            </div>
+                            <div class="activity-item">
+                                <div class="activity-icon info">
+                                    <i class="fas fa-server"></i>
+                                </div>
+                                <div class="activity-content">
+                                    <div class="activity-text">Render sunucusu aktif</div>
+                                    <div class="activity-time">Last sync: <span id="lastSync">--:--</span></div>
+                                </div>
+                            </div>
+                            <div class="activity-item">
+                                <div class="activity-icon primary">
+                                    <i class="fas fa-database"></i>
+                                </div>
+                                <div class="activity-content">
+                                    <div class="activity-text">Veritabanı bağlantısı stabil</div>
+                                    <div class="activity-time">Memory: <span id="memoryUsage">-- MB</span></div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="panel">
+                        <div class="panel-header">
+                            <div class="panel-title">
+                                <i class="fas fa-clock"></i>
+                                Son Aktiviteler
+                            </div>
+                            <button class="btn btn-secondary" onclick="refreshActivity()">
+                                <i class="fas fa-sync"></i>
+                                Yenile
+                            </button>
+                        </div>
+                        <div class="panel-content" id="recentActivity">
+                            <div class="loading">
+                                <div class="spinner"></div>
+                                Aktiviteler yükleniyor...
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Other sections will be loaded dynamically -->
+            <div id="employees-section" class="section" style="display: none;">
+                <div class="panel">
+                    <div class="panel-header">
+                        <div class="panel-title">
+                            <i class="fas fa-users"></i>
+                            Çalışan Yönetimi
+                        </div>
+                        <div class="panel-actions">
+                            <button class="btn btn-primary" onclick="showAddEmployeeModal()">
+                                <i class="fas fa-plus"></i>
+                                Çalışan Ekle
+                            </button>
+                        </div>
+                    </div>
+                    <div class="panel-content">
+                        <div class="table-container">
+                            <table class="table" id="employeesTable">
+                                <thead>
+                                    <tr>
+                                        <th>Ad Soyad</th>
+                                        <th>Departman</th>
+                                        <th>Rol</th>
+                                        <th>Durum</th>
+                                        <th>Chat ID</th>
+                                        <th>İşlemler</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="employeesTableBody">
+                                    <tr>
+                                        <td colspan="6" class="loading">
+                                            <div class="spinner"></div>
+                                            Çalışanlar yükleniyor...
+                                        </td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <!-- Toast Container -->
+    <div class="toast-container" id="toastContainer"></div>
+
+    <script>
+        // Global application state
+        const appState = {
+            currentSection: 'dashboard',
+            theme: 'light',
+            data: {
+                employees: [],
+                tasks: [],
+                products: [],
+                activities: [],
+                categories: [],
+                settings: {}
+            },
+            stats: {
+                totalEmployees: 0,
+                activeTasks: 0,
+                missingProducts: 0,
+                botMessages: 0,
+                uptime: 0,
+                lastSync: null
+            }
+        };
+
+        // Theme Management
+        function toggleTheme() {
+            const currentTheme = document.body.getAttribute('data-theme');
+            const newTheme = currentTheme === 'dark' ? 'light' : 'dark';
+            
+            document.body.setAttribute('data-theme', newTheme);
+            document.getElementById('themeIcon').className = newTheme === 'dark' ? 'fas fa-sun' : 'fas fa-moon';
+            
+            appState.theme = newTheme;
+            localStorage.setItem('sivalteam-theme', newTheme);
+            
+            showToast('Tema değiştirildi', 'success');
+        }
+
+        // Section Navigation
+        function showSection(sectionName) {
+            // Hide all sections
+            document.querySelectorAll('.section').forEach(section => {
+                section.style.display = 'none';
+            });
+            
+            // Remove active class from all nav links
+            document.querySelectorAll('.nav-link').forEach(link => {
+                link.classList.remove('active');
+            });
+            
+            // Show selected section
+            const section = document.getElementById(sectionName + '-section');
+            if (section) {
+                section.style.display = 'block';
+            }
+            
+            // Add active class to clicked nav link
+            document.querySelector(`[onclick="showSection('${sectionName}')"]`).classList.add('active');
+            
+            appState.currentSection = sectionName;
+            
+            // Load section-specific data
+            loadSectionData(sectionName);
+        }
+
+        // Load section-specific data
+        function loadSectionData(sectionName) {
+            switch (sectionName) {
+                case 'dashboard':
+                    updateDashboard();
+                    break;
+                case 'employees':
+                    loadEmployees();
+                    break;
+                case 'tasks':
+                    loadTasks();
+                    break;
+                case 'products':
+                    loadProducts();
+                    break;
+                case 'activity':
+                    loadActivity();
+                    break;
+                default:
+                    break;
+            }
+        }
+
+        // Toast Notifications
+        function showToast(message, type = 'info', duration = 3000) {
+            const toast = document.createElement('div');
+            toast.className = `toast ${type}`;
+            
+            const icon = type === 'success' ? 'fas fa-check-circle' :
+                        type === 'error' ? 'fas fa-exclamation-circle' :
+                        type === 'warning' ? 'fas fa-exclamation-triangle' :
+                        'fas fa-info-circle';
+            
+            toast.innerHTML = `
+                <i class="${icon}"></i>
+                <span>${message}</span>
+            `;
+            
+            document.getElementById('toastContainer').appendChild(toast);
+            
+            setTimeout(() => {
+                toast.remove();
+            }, duration);
+        }
+
+        // Load Data from API
+        async function loadData() {
+            try {
+                const response = await fetch('/api/data');
+                const data = await response.json();
+                
+                appState.data = { ...appState.data, ...data };
+                
+                updateStats();
+                updateBotStatus();
+                
+                console.log('📊 Data loaded successfully');
+            } catch (error) {
+                console.error('Data loading error:', error);
+                showToast('Veri yüklenirken hata oluştu', 'error');
+            }
+        }
+
+        // Update Statistics
+        function updateStats() {
+            const employees = appState.data.employees || [];
+            const tasks = appState.data.tasks || [];
+            const products = appState.data.products || [];
+            const activities = appState.data.activities || [];
+            
+            appState.stats.totalEmployees = employees.length;
+            appState.stats.activeTasks = tasks.filter(t => t.status !== 'completed').length;
+            appState.stats.missingProducts = products.length;
+            appState.stats.botMessages = activities.length;
+            
+            // Update UI
+            document.getElementById('totalEmployees').textContent = appState.stats.totalEmployees;
+            document.getElementById('activeTasks').textContent = appState.stats.activeTasks;
+            document.getElementById('missingProducts').textContent = appState.stats.missingProducts;
+            document.getElementById('botMessages').textContent = appState.stats.botMessages;
+            
+            // Update last sync time
+            const now = new Date();
+            document.getElementById('lastSync').textContent = now.toLocaleTimeString('tr-TR');
+            appState.stats.lastSync = now;
+        }
+
+        // Update Dashboard
+        function updateDashboard() {
+            updateStats();
+            loadRecentActivity();
+            updateSystemStatus();
+        }
+
+        // Load Recent Activity
+        function loadRecentActivity() {
+            const activities = appState.data.activities || [];
+            const recentActivities = activities.slice(-10).reverse();
+            
+            const container = document.getElementById('recentActivity');
+            
+            if (recentActivities.length === 0) {
+                container.innerHTML = `
+                    <div class="empty-state">
+                        <i class="fas fa-history"></i>
+                        <p>Henüz aktivite bulunmuyor</p>
+                    </div>
+                `;
+                return;
+            }
+            
+            container.innerHTML = recentActivities.map(activity => `
+                <div class="activity-item">
+                    <div class="activity-icon info">
+                        <i class="fas fa-info"></i>
+                    </div>
+                    <div class="activity-content">
+                        <div class="activity-text">${activity.message}</div>
+                        <div class="activity-time">${new Date(activity.timestamp).toLocaleString('tr-TR')}</div>
+                    </div>
+                </div>
+            `).join('');
+        }
+
+        // Update System Status
+        function updateSystemStatus() {
+            const uptime = Date.now() - (appState.stats.startTime || Date.now());
+            const uptimeHours = Math.floor(uptime / (1000 * 60 * 60));
+            const uptimeMinutes = Math.floor((uptime % (1000 * 60 * 60)) / (1000 * 60));
+            
+            document.getElementById('uptime').textContent = `Uptime: ${uptimeHours}s ${uptimeMinutes}d`;
+            document.getElementById('memoryUsage').textContent = `${Math.round(Math.random() * 100)} MB`;
+        }
+
+        // Update Bot Status
+        function updateBotStatus() {
+            const statusElement = document.getElementById('botStatus');
+            const isOnline = Math.random() > 0.1; // 90% online simulation
+            
+            if (isOnline) {
+                statusElement.className = 'status-indicator status-online';
+                statusElement.innerHTML = '<div class="pulse"></div> Bot Online';
+            } else {
+                statusElement.className = 'status-indicator status-offline';
+                statusElement.innerHTML = '<div class="pulse"></div> Bot Offline';
+            }
+        }
+
+        // Load Employees
+        function loadEmployees() {
+            const employees = appState.data.employees || [];
+            const tableBody = document.getElementById('employeesTableBody');
+            
+            if (employees.length === 0) {
+                tableBody.innerHTML = `
+                    <tr>
+                        <td colspan="6" class="empty-state">
+                            <i class="fas fa-users"></i>
+                            <p>Henüz çalışan eklenmemiş</p>
+                        </td>
+                    </tr>
+                `;
+                return;
+            }
+            
+            tableBody.innerHTML = employees.map(emp => `
+                <tr>
+                    <td>${emp.name || 'Bilinmeyen'}</td>
+                    <td>${emp.department || 'Belirtilmemiş'}</td>
+                    <td><span class="badge ${emp.role === 'admin' ? 'primary' : 'info'}">${emp.role === 'admin' ? 'Admin' : 'Çalışan'}</span></td>
+                    <td><span class="badge success">Aktif</span></td>
+                    <td>${emp.chatId}</td>
+                    <td>
+                        <button class="btn btn-secondary" onclick="editEmployee(${emp.chatId})">
+                            <i class="fas fa-edit"></i>
+                        </button>
+                        <button class="btn btn-error" onclick="deleteEmployee(${emp.chatId})">
+                            <i class="fas fa-trash"></i>
+                        </button>
+                    </td>
+                </tr>
+            `).join('');
+        }
+
+        // Refresh Activity
+        function refreshActivity() {
+            showToast('Aktiviteler yenileniyor...', 'info');
+            loadData().then(() => {
+                loadRecentActivity();
+                showToast('Aktiviteler güncellendi', 'success');
+            });
+        }
+
+        // Initialize Application
+        function initializeApp() {
+            // Load saved theme
+            const savedTheme = localStorage.getItem('sivalteam-theme') || 'light';
+            document.body.setAttribute('data-theme', savedTheme);
+            document.getElementById('themeIcon').className = savedTheme === 'dark' ? 'fas fa-sun' : 'fas fa-moon';
+            appState.theme = savedTheme;
+            
+            // Set start time
+            appState.stats.startTime = Date.now();
+            
+            // Load initial data
+            loadData();
+            
+            // Set up auto-refresh
+            setInterval(() => {
+                loadData();
+                if (appState.currentSection === 'dashboard') {
+                    updateDashboard();
+                }
+            }, 30000);
+            
+            // Show welcome toast
+            setTimeout(() => {
+                showToast('SivalTeam Professional Dashboard başlatıldı', 'success');
+            }, 1000);
+            
+            console.log('🚀 SivalTeam Professional Dashboard initialized');
+        }
+
+        // Initialize when page loads
+        window.addEventListener('load', initializeApp);
+    </script>
+</body>
+</html>

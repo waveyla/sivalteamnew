@@ -97,7 +97,7 @@ app.use(express.static(__dirname));
 
 // Serve main page
 app.get('/', (req, res) => {
-    const htmlPath = path.join(__dirname, 'ultra-clean-bot.html');
+    const htmlPath = path.join(__dirname, 'professional-dashboard.html');
     if (fs.existsSync(htmlPath)) {
         let html = fs.readFileSync(htmlPath, 'utf8');
         
@@ -135,7 +135,7 @@ app.get('/', (req, res) => {
         html = html.replace('</body>', dataScript + '</body>');
         res.send(html);
     } else {
-        res.send('<h1>❌ ultra-clean-bot.html not found</h1>');
+        res.send('<h1>❌ professional-dashboard.html not found</h1>');
     }
 });
 
