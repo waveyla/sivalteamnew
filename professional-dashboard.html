@@ -807,6 +807,36 @@
                         </div>
                     </div>
                 </div>
+
+                <!-- Admin Controls Panel -->
+                <div class="panel">
+                    <div class="panel-header">
+                        <div class="panel-title">
+                            <i class="fas fa-cog"></i>
+                            Admin Kontrolleri
+                        </div>
+                    </div>
+                    <div class="panel-content">
+                        <div class="admin-controls" style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem;">
+                            <button class="btn btn-primary" onclick="viewMissingProducts()" style="width: 100%;">
+                                <i class="fas fa-box"></i>
+                                Eksik Ürünler
+                            </button>
+                            <button class="btn btn-info" onclick="viewPendingUsers()" style="width: 100%;">
+                                <i class="fas fa-user-clock"></i>
+                                Onay Bekleyenler
+                            </button>
+                            <button class="btn btn-warning" onclick="viewAllTasks()" style="width: 100%;">
+                                <i class="fas fa-tasks"></i>
+                                Tüm Görevler
+                            </button>
+                            <button class="btn btn-secondary" onclick="broadcastMessage()" style="width: 100%;">
+                                <i class="fas fa-bullhorn"></i>
+                                Genel Duyuru
+                            </button>
+                        </div>
+                    </div>
+                </div>
             </div>
 
             <!-- Other sections will be loaded dynamically -->
@@ -1315,6 +1345,249 @@
             }).catch(() => {
                 showToast('Silme başarısız', 'error');
             });
+        }
+
+        // Admin Functions
+        function viewMissingProducts() {
+            const products = appState.data.products || [];
+            
+            if (products.length === 0) {
+                showToast('Eksik ürün bildirimi bulunmuyor', 'info');
+                return;
+            }
+            
+            let modalContent = `
+                <div class="modal-header">
+                    <h3><i class="fas fa-box"></i> Eksik Ürünler Listesi (${products.length})</h3>
+                </div>
+                <div class="modal-body" style="max-height: 60vh; overflow-y: auto;">
+                    ${products.map((product, index) => `
+                        <div class="product-item" style="border: 1px solid var(--border-color); border-radius: 8px; padding: 1rem; margin-bottom: 1rem;">
+                            <div style="display: flex; justify-content: between; align-items: center;">
+                                <div style="flex: 1;">
+                                    <h4 style="margin: 0 0 0.5rem 0; color: var(--primary-color);">${product.product}</h4>
+                                    <p style="margin: 0.25rem 0; color: var(--text-secondary);"><strong>Kategori:</strong> ${product.category}</p>
+                                    <p style="margin: 0.25rem 0; color: var(--text-secondary);"><strong>Bildiren:</strong> ${product.reportedBy}</p>
+                                    <p style="margin: 0.25rem 0; color: var(--text-secondary);"><strong>Tarih:</strong> ${new Date(product.reportedAt).toLocaleString('tr-TR')}</p>
+                                </div>
+                                <div style="margin-left: 1rem;">
+                                    <button class="btn btn-success" onclick="completeProductInModal('${product.id}')" style="margin-right: 0.5rem;">
+                                        <i class="fas fa-check"></i> Tamamla
+                                    </button>
+                                    <button class="btn btn-error" onclick="deleteProductInModal('${product.id}')">
+                                        <i class="fas fa-trash"></i> Sil
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    `).join('')}
+                </div>
+                <div class="modal-footer">
+                    <button class="btn btn-secondary" onclick="closeModal()">Kapat</button>
+                    <button class="btn btn-error" onclick="clearAllProducts()">Tümünü Temizle</button>
+                </div>
+            `;
+            
+            showModal(modalContent);
+        }
+        
+        function viewPendingUsers() {
+            const pendingUsers = appState.data.pendingUsers || [];
+            
+            if (pendingUsers.length === 0) {
+                showToast('Onay bekleyen kullanıcı bulunmuyor', 'info');
+                return;
+            }
+            
+            let modalContent = `
+                <div class="modal-header">
+                    <h3><i class="fas fa-user-clock"></i> Onay Bekleyen Kullanıcılar (${pendingUsers.length})</h3>
+                </div>
+                <div class="modal-body" style="max-height: 60vh; overflow-y: auto;">
+                    ${pendingUsers.map(user => `
+                        <div class="user-item" style="border: 1px solid var(--border-color); border-radius: 8px; padding: 1rem; margin-bottom: 1rem;">
+                            <div style="display: flex; justify-content: between; align-items: center;">
+                                <div style="flex: 1;">
+                                    <h4 style="margin: 0 0 0.5rem 0;">${user.firstName} ${user.lastName || ''}</h4>
+                                    <p style="margin: 0.25rem 0; color: var(--text-secondary);"><strong>Username:</strong> @${user.username || 'Yok'}</p>
+                                    <p style="margin: 0.25rem 0; color: var(--text-secondary);"><strong>Chat ID:</strong> ${user.chatId}</p>
+                                    <p style="margin: 0.25rem 0; color: var(--text-secondary);"><strong>Başvuru:</strong> ${new Date(user.requestedAt).toLocaleString('tr-TR')}</p>
+                                </div>
+                                <div style="margin-left: 1rem;">
+                                    <button class="btn btn-success" onclick="approveUserInModal('${user.chatId}')" style="margin-right: 0.5rem;">
+                                        <i class="fas fa-check"></i> Onayla
+                                    </button>
+                                    <button class="btn btn-error" onclick="rejectUserInModal('${user.chatId}')">
+                                        <i class="fas fa-times"></i> Reddet
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    `).join('')}
+                </div>
+                <div class="modal-footer">
+                    <button class="btn btn-secondary" onclick="closeModal()">Kapat</button>
+                </div>
+            `;
+            
+            showModal(modalContent);
+        }
+        
+        function viewAllTasks() {
+            const tasks = appState.data.tasks || [];
+            const pendingTasks = tasks.filter(t => t.status === 'pending');
+            const completedTasks = tasks.filter(t => t.status === 'completed');
+            
+            let modalContent = `
+                <div class="modal-header">
+                    <h3><i class="fas fa-tasks"></i> Tüm Görevler</h3>
+                    <p>Bekleyen: ${pendingTasks.length} | Tamamlanan: ${completedTasks.length}</p>
+                </div>
+                <div class="modal-body" style="max-height: 60vh; overflow-y: auto;">
+                    ${tasks.length === 0 ? '<p>Henüz görev bulunmuyor.</p>' : 
+                    tasks.map(task => `
+                        <div class="task-item" style="border: 1px solid var(--border-color); border-radius: 8px; padding: 1rem; margin-bottom: 1rem;">
+                            <div style="display: flex; justify-content: between; align-items: start;">
+                                <div style="flex: 1;">
+                                    <h4 style="margin: 0 0 0.5rem 0;">${task.title}</h4>
+                                    <p style="margin: 0.25rem 0;">${task.description}</p>
+                                    <p style="margin: 0.25rem 0; color: var(--text-secondary);"><strong>Atanan:</strong> ${task.assignedToName}</p>
+                                    <p style="margin: 0.25rem 0; color: var(--text-secondary);"><strong>Tür:</strong> ${task.type === 'bulk' ? 'Toplu' : 'Tekil'}</p>
+                                    <p style="margin: 0.25rem 0; color: var(--text-secondary);"><strong>Tarih:</strong> ${new Date(task.createdAt).toLocaleString('tr-TR')}</p>
+                                    ${task.completedAt ? `<p style="margin: 0.25rem 0; color: var(--text-secondary);"><strong>Tamamlandı:</strong> ${new Date(task.completedAt).toLocaleString('tr-TR')}</p>` : ''}
+                                </div>
+                                <div style="margin-left: 1rem;">
+                                    <span class="badge ${task.status === 'completed' ? 'success' : 'warning'}">
+                                        ${task.status === 'completed' ? 'Tamamlandı' : 'Bekliyor'}
+                                    </span>
+                                </div>
+                            </div>
+                        </div>
+                    `).join('')}
+                </div>
+                <div class="modal-footer">
+                    <button class="btn btn-secondary" onclick="closeModal()">Kapat</button>
+                </div>
+            `;
+            
+            showModal(modalContent);
+        }
+        
+        function broadcastMessage() {
+            const message = prompt('Tüm kullanıcılara gönderilecek mesajı yazın:');
+            if (!message) return;
+            
+            if (confirm(`"${message}" mesajını tüm kullanıcılara göndermek istediğinizden emin misiniz?`)) {
+                // Bot'a broadcast komutu gönder
+                fetch('/api/broadcast', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ message })
+                }).then(response => {
+                    if (response.ok) {
+                        showToast('Genel duyuru gönderildi', 'success');
+                    } else {
+                        showToast('Duyuru gönderilemedi', 'error');
+                    }
+                }).catch(() => {
+                    showToast('Bağlantı hatası', 'error');
+                });
+            }
+        }
+        
+        // Modal Functions
+        function showModal(content) {
+            const modal = document.createElement('div');
+            modal.className = 'modal-overlay';
+            modal.style.cssText = `
+                position: fixed; top: 0; left: 0; width: 100%; height: 100%; 
+                background: rgba(0,0,0,0.5); display: flex; align-items: center; 
+                justify-content: center; z-index: 1000;
+            `;
+            
+            const modalBox = document.createElement('div');
+            modalBox.className = 'modal-box';
+            modalBox.style.cssText = `
+                background: var(--bg-primary); border-radius: 12px; 
+                width: 90%; max-width: 800px; max-height: 90%; 
+                box-shadow: 0 20px 50px rgba(0,0,0,0.3);
+            `;
+            modalBox.innerHTML = content;
+            
+            modal.appendChild(modalBox);
+            document.body.appendChild(modal);
+            
+            // Close on overlay click
+            modal.addEventListener('click', (e) => {
+                if (e.target === modal) closeModal();
+            });
+        }
+        
+        function closeModal() {
+            const modal = document.querySelector('.modal-overlay');
+            if (modal) {
+                modal.remove();
+            }
+        }
+        
+        // Modal Action Functions
+        function completeProductInModal(productId) {
+            completeProduct(productId);
+            setTimeout(() => {
+                closeModal();
+                viewMissingProducts();
+            }, 500);
+        }
+        
+        function deleteProductInModal(productId) {
+            deleteProduct(productId);
+            setTimeout(() => {
+                closeModal();
+                viewMissingProducts();
+            }, 500);
+        }
+        
+        function clearAllProducts() {
+            if (!confirm('Tüm eksik ürün listesini temizlemek istediğinizden emin misiniz?')) return;
+            
+            appState.data.products = [];
+            
+            fetch('/api/data', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(appState.data)
+            }).then(() => {
+                showToast('Tüm eksik ürün listesi temizlendi', 'success');
+                closeModal();
+            }).catch(() => {
+                showToast('Temizleme başarısız', 'error');
+            });
+        }
+        
+        function approveUserInModal(chatId) {
+            // API call to approve user
+            fetch(`/api/approve/${chatId}`, { method: 'POST' })
+                .then(() => {
+                    showToast('Kullanıcı onaylandı', 'success');
+                    setTimeout(() => {
+                        closeModal();
+                        viewPendingUsers();
+                    }, 500);
+                })
+                .catch(() => showToast('Onaylama başarısız', 'error'));
+        }
+        
+        function rejectUserInModal(chatId) {
+            // API call to reject user
+            fetch(`/api/reject/${chatId}`, { method: 'POST' })
+                .then(() => {
+                    showToast('Kullanıcı reddedildi', 'info');
+                    setTimeout(() => {
+                        closeModal();
+                        viewPendingUsers();
+                    }, 500);
+                })
+                .catch(() => showToast('Reddetme başarısız', 'error'));
         }
 
         // Initialize Application

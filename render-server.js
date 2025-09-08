@@ -253,13 +253,20 @@ function handleStartCommand(chatId, from) {
                            `${isAdmin ? '👑 Yetki: Admin\n' : ''}` +
                            `✅ Giriş başarılı - Artık sistemi kullanabilirsin.`;
         
-        const keyboard = [
-            [{ text: "📦 Eksik Ürün Bildir" }, { text: "📋 Görevlerim" }],
-            [{ text: "📊 İstatistikler" }, { text: "ℹ️ Yardım" }]
-        ];
+        let keyboard;
         
         if (isAdmin) {
-            keyboard.splice(1, 0, [{ text: "👑 Admin Panel" }]);
+            // Admin menüsü - Görevlerim yok, admin paneli var
+            keyboard = [
+                [{ text: "📦 Eksik Ürün Bildir" }, { text: "👑 Admin Panel" }],
+                [{ text: "📊 İstatistikler" }, { text: "ℹ️ Yardım" }]
+            ];
+        } else {
+            // Çalışan menüsü - Görevlerim var, admin panel yok
+            keyboard = [
+                [{ text: "📦 Eksik Ürün Bildir" }, { text: "📋 Görevlerim" }],
+                [{ text: "📊 İstatistikler" }, { text: "ℹ️ Yardım" }]
+            ];
         }
         
         sendTelegramMessage(chatId, welcomeText, {
@@ -1094,14 +1101,20 @@ app.post('/webhook', async (req, res) => {
                 // Check if user is admin
                 const isAdmin = adminSettings.adminUsers.includes(numericChatId);
                 
-                const keyboard = [
-                    [{ text: "📦 Eksik Ürün Bildir" }, { text: "📋 Görevlerim" }],
-                    [{ text: "📊 İstatistikler" }, { text: "ℹ️ Yardım" }]
-                ];
+                let keyboard;
                 
-                // Add admin panel button only for admins
                 if (isAdmin) {
-                    keyboard.splice(1, 0, [{ text: "👑 Admin Panel" }]);
+                    // Admin menüsü - Görevlerim yok, admin paneli var
+                    keyboard = [
+                        [{ text: "📦 Eksik Ürün Bildir" }, { text: "👑 Admin Panel" }],
+                        [{ text: "📊 İstatistikler" }, { text: "ℹ️ Yardım" }]
+                    ];
+                } else {
+                    // Çalışan menüsü - Görevlerim var, admin panel yok
+                    keyboard = [
+                        [{ text: "📦 Eksik Ürün Bildir" }, { text: "📋 Görevlerim" }],
+                        [{ text: "📊 İstatistikler" }, { text: "ℹ️ Yardım" }]
+                    ];
                 }
                 
                 sendTelegramMessage(chatId, "🏠 Ana menüye dönüldü.", {
