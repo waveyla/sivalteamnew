@@ -527,14 +527,302 @@ app.post('/webhook', async (req, res) => {
                 
                 sendTelegramMessage(chatId, statsText);
             }
+            else if (text === "📋 Görevlerim") {
+                const employees = readJsonFile(DATA_FILES.employees);
+                const tasks = readJsonFile(DATA_FILES.tasks);
+                const numericChatId = Number(chatId);
+                const employee = employees.find(e => Number(e.chatId) === numericChatId);
+                
+                if (!employee) {
+                    sendTelegramMessage(chatId, "❌ Bu özelliği kullanmak için önce kayıt olmalısınız.");
+                    return;
+                }
+                
+                const userTasks = tasks.filter(task => Number(task.assignedTo) === numericChatId);
+                
+                if (userTasks.length === 0) {
+                    sendTelegramMessage(chatId, 
+                        `📋 <b>Görevleriniz</b>\n\n` +
+                        `📝 Şu anda size atanmış görev bulunmuyor.\n\n` +
+                        `✅ Yeni görevler atandığında size bildirim gelecektir.`
+                    );
+                } else {
+                    const taskList = userTasks.map(task => 
+                        `${task.status === 'completed' ? '✅' : task.status === 'in_progress' ? '🔄' : '📋'} ` +
+                        `<b>${protectTurkishChars(task.title)}</b>\n` +
+                        `📝 ${protectTurkishChars(task.description)}\n` +
+                        `📅 ${new Date(task.createdAt).toLocaleDateString('tr-TR')}\n`
+                    ).join('\n');
+                    
+                    sendTelegramMessage(chatId, 
+                        `📋 <b>Görevleriniz (${userTasks.length})</b>\n\n${taskList}`
+                    );
+                }
+            }
+            else if (text === "👑 Admin Panel") {
+                const adminSettings = readJsonFile(DATA_FILES.adminSettings);
+                const numericChatId = Number(chatId);
+                
+                if (!adminSettings.adminUsers.includes(numericChatId)) {
+                    sendTelegramMessage(chatId, "❌ Bu özellik sadece adminler için erişilebilir.");
+                    return;
+                }
+                
+                const employees = readJsonFile(DATA_FILES.employees);
+                const products = readJsonFile(DATA_FILES.missingProducts);
+                const activities = readJsonFile(DATA_FILES.activityLog);
+                
+                const adminText = `👑 <b>Admin Panel</b>\n\n` +
+                    `📊 <b>Sistem Durumu:</b>\n` +
+                    `👥 Toplam Çalışan: ${employees.length}\n` +
+                    `📦 Eksik Ürün: ${products.length}\n` +
+                    `📈 Son Aktiviteler: ${activities.slice(-5).length}\n\n` +
+                    `🔧 <b>Admin Komutları:</b>\n` +
+                    `/adduser <chatId> <ad> <departman> - Kullanıcı ekle\n` +
+                    `/removeuser <chatId> - Kullanıcı sil\n` +
+                    `/listusers - Tüm kullanıcıları listele\n` +
+                    `/clearproducts - Eksik ürün listesini temizle\n` +
+                    `/broadcast <mesaj> - Tüm kullanıcılara mesaj gönder`;
+                
+                sendTelegramMessage(chatId, adminText);
+            }
             else if (text === "ℹ️ Yardım") {
                 const helpText = `ℹ️ <b>SivalTeam Yardım</b>\n\n` +
                     `📦 <b>Eksik Ürün Bildir:</b> Mağazada eksik olan ürünleri bildirin\n` +
                     `📋 <b>Görevlerim:</b> Size atanan görevleri görün\n` +
-                    `📊 <b>İstatistikler:</b> Sistem istatistiklerini görün\n\n` +
+                    `📊 <b>İstatistikler:</b> Sistem istatistiklerini görün\n` +
+                    `👑 <b>Admin Panel:</b> Admin yetkilerine sahipseniz yönetim paneli\n\n` +
                     `❓ Sorun yaşıyorsanız sistem yöneticisiyle iletişime geçin.`;
                 
                 sendTelegramMessage(chatId, helpText);
+            }
+            else if (text.startsWith('/adduser')) {
+                const adminSettings = readJsonFile(DATA_FILES.adminSettings);
+                const numericChatId = Number(chatId);
+                
+                if (!adminSettings.adminUsers.includes(numericChatId)) {
+                    sendTelegramMessage(chatId, "❌ Bu komut sadece adminler tarafından kullanılabilir.");
+                    return;
+                }
+                
+                const parts = text.split(' ');
+                if (parts.length < 4) {
+                    sendTelegramMessage(chatId, "❌ Kullanım: /adduser <chatId> <ad> <departman>");
+                    return;
+                }
+                
+                const targetChatId = Number(parts[1]);
+                const name = protectTurkishChars(parts[2]);
+                const department = protectTurkishChars(parts.slice(3).join(' '));
+                
+                const employees = readJsonFile(DATA_FILES.employees);
+                const existingEmployee = employees.find(e => Number(e.chatId) === targetChatId);
+                
+                if (existingEmployee) {
+                    sendTelegramMessage(chatId, "❌ Bu chatId zaten kayıtlı.");
+                    return;
+                }
+                
+                const newEmployee = {
+                    chatId: targetChatId,
+                    name: name,
+                    department: department,
+                    role: 'employee',
+                    addedBy: numericChatId,
+                    addedAt: new Date().toISOString(),
+                    status: 'active'
+                };
+                
+                employees.push(newEmployee);
+                writeJsonFile(DATA_FILES.employees, employees);
+                
+                sendTelegramMessage(chatId, `✅ Kullanıcı eklendi: ${name} (${department})`);
+                sendTelegramMessage(targetChatId, 
+                    `🎉 <b>SivalTeam'e Hoşgeldin!</b>\n\n` +
+                    `👤 Adınız: ${name}\n` +
+                    `🏢 Departman: ${department}\n\n` +
+                    `✅ Artık sistemi kullanabilirsiniz! /start ile başlayın.`
+                );
+                
+                logActivity(`Yeni kullanıcı eklendi: ${name}`, chatId, from.first_name);
+            }
+            else if (text === '/listusers') {
+                const adminSettings = readJsonFile(DATA_FILES.adminSettings);
+                const numericChatId = Number(chatId);
+                
+                if (!adminSettings.adminUsers.includes(numericChatId)) {
+                    sendTelegramMessage(chatId, "❌ Bu komut sadece adminler tarafından kullanılabilir.");
+                    return;
+                }
+                
+                const employees = readJsonFile(DATA_FILES.employees);
+                
+                if (employees.length === 0) {
+                    sendTelegramMessage(chatId, "📋 Henüz kayıtlı kullanıcı bulunmuyor.");
+                    return;
+                }
+                
+                const userList = employees.map((emp, index) => 
+                    `${index + 1}. <b>${protectTurkishChars(emp.name)}</b>\n` +
+                    `   🏢 ${protectTurkishChars(emp.department)}\n` +
+                    `   🆔 ${emp.chatId}\n` +
+                    `   ${adminSettings.adminUsers.includes(Number(emp.chatId)) ? '👑 Admin' : '👤 Çalışan'}`
+                ).join('\n\n');
+                
+                sendTelegramMessage(chatId, `👥 <b>Kayıtlı Kullanıcılar (${employees.length})</b>\n\n${userList}`);
+            }
+            else if (text.startsWith('/removeuser')) {
+                const adminSettings = readJsonFile(DATA_FILES.adminSettings);
+                const numericChatId = Number(chatId);
+                
+                if (!adminSettings.adminUsers.includes(numericChatId)) {
+                    sendTelegramMessage(chatId, "❌ Bu komut sadece adminler tarafından kullanılabilir.");
+                    return;
+                }
+                
+                const parts = text.split(' ');
+                if (parts.length !== 2) {
+                    sendTelegramMessage(chatId, "❌ Kullanım: /removeuser <chatId>");
+                    return;
+                }
+                
+                const targetChatId = Number(parts[1]);
+                const employees = readJsonFile(DATA_FILES.employees);
+                const employeeIndex = employees.findIndex(e => Number(e.chatId) === targetChatId);
+                
+                if (employeeIndex === -1) {
+                    sendTelegramMessage(chatId, "❌ Bu chatId'ye sahip kullanıcı bulunamadı.");
+                    return;
+                }
+                
+                const removedEmployee = employees[employeeIndex];
+                employees.splice(employeeIndex, 1);
+                writeJsonFile(DATA_FILES.employees, employees);
+                
+                // Add to deleted employees
+                const deletedEmployees = readJsonFile(DATA_FILES.deletedEmployees);
+                deletedEmployees.push({
+                    ...removedEmployee,
+                    deletedAt: new Date().toISOString(),
+                    deletedBy: numericChatId
+                });
+                writeJsonFile(DATA_FILES.deletedEmployees, deletedEmployees);
+                
+                sendTelegramMessage(chatId, `✅ Kullanıcı silindi: ${removedEmployee.name}`);
+                sendTelegramMessage(targetChatId, 
+                    `❌ <b>SivalTeam Erişiminiz İptal Edildi</b>\n\n` +
+                    `Üzgünüz, sistem erişiminiz admin tarafından iptal edildi.\n` +
+                    `Daha fazla bilgi için sistem yöneticisiyle iletişime geçin.`
+                );
+                
+                logActivity(`Kullanıcı silindi: ${removedEmployee.name}`, chatId, from.first_name);
+            }
+            else if (text === '/clearproducts') {
+                const adminSettings = readJsonFile(DATA_FILES.adminSettings);
+                const numericChatId = Number(chatId);
+                
+                if (!adminSettings.adminUsers.includes(numericChatId)) {
+                    sendTelegramMessage(chatId, "❌ Bu komut sadece adminler tarafından kullanılabilir.");
+                    return;
+                }
+                
+                const products = readJsonFile(DATA_FILES.missingProducts);
+                const productCount = products.length;
+                
+                writeJsonFile(DATA_FILES.missingProducts, []);
+                
+                sendTelegramMessage(chatId, `✅ Eksik ürün listesi temizlendi. ${productCount} ürün silindi.`);
+                logActivity(`Eksik ürün listesi temizlendi (${productCount} ürün)`, chatId, from.first_name);
+            }
+            else if (text.startsWith('/broadcast ')) {
+                const adminSettings = readJsonFile(DATA_FILES.adminSettings);
+                const numericChatId = Number(chatId);
+                
+                if (!adminSettings.adminUsers.includes(numericChatId)) {
+                    sendTelegramMessage(chatId, "❌ Bu komut sadece adminler tarafından kullanılabilir.");
+                    return;
+                }
+                
+                const message = protectTurkishChars(text.replace('/broadcast ', ''));
+                const employees = readJsonFile(DATA_FILES.employees);
+                
+                if (!message.trim()) {
+                    sendTelegramMessage(chatId, "❌ Kullanım: /broadcast <mesaj>");
+                    return;
+                }
+                
+                let sentCount = 0;
+                const broadcastMessage = `📢 <b>Genel Duyuru</b>\n\n${message}`;
+                
+                for (const employee of employees) {
+                    try {
+                        await sendTelegramMessage(employee.chatId, broadcastMessage);
+                        sentCount++;
+                        await new Promise(resolve => setTimeout(resolve, 100)); // Rate limiting
+                    } catch (error) {
+                        console.error(`Broadcast error for ${employee.chatId}:`, error);
+                    }
+                }
+                
+                sendTelegramMessage(chatId, `✅ Duyuru ${sentCount}/${employees.length} kullanıcıya gönderildi.`);
+                logActivity(`Genel duyuru gönderildi: ${sentCount} kullanıcı`, chatId, from.first_name);
+            }
+            else if (text.startsWith('/addtask ')) {
+                const adminSettings = readJsonFile(DATA_FILES.adminSettings);
+                const numericChatId = Number(chatId);
+                
+                if (!adminSettings.adminUsers.includes(numericChatId)) {
+                    sendTelegramMessage(chatId, "❌ Bu komut sadece adminler tarafından kullanılabilir.");
+                    return;
+                }
+                
+                // /addtask <chatId> <başlık> | <açıklama>
+                const taskText = text.replace('/addtask ', '');
+                const parts = taskText.split(' ');
+                
+                if (parts.length < 2 || !taskText.includes('|')) {
+                    sendTelegramMessage(chatId, "❌ Kullanım: /addtask <chatId> <başlık> | <açıklama>");
+                    return;
+                }
+                
+                const targetChatId = Number(parts[0]);
+                const taskContent = parts.slice(1).join(' ');
+                const [title, description] = taskContent.split('|').map(s => protectTurkishChars(s.trim()));
+                
+                const employees = readJsonFile(DATA_FILES.employees);
+                const targetEmployee = employees.find(e => Number(e.chatId) === targetChatId);
+                
+                if (!targetEmployee) {
+                    sendTelegramMessage(chatId, "❌ Bu chatId'ye sahip çalışan bulunamadı.");
+                    return;
+                }
+                
+                const tasks = readJsonFile(DATA_FILES.tasks);
+                const newTask = {
+                    id: Date.now(),
+                    title: title,
+                    description: description || 'Açıklama belirtilmedi',
+                    assignedTo: targetChatId,
+                    assignedToName: targetEmployee.name,
+                    assignedBy: numericChatId,
+                    createdAt: new Date().toISOString(),
+                    status: 'pending'
+                };
+                
+                tasks.push(newTask);
+                writeJsonFile(DATA_FILES.tasks, tasks);
+                
+                sendTelegramMessage(chatId, `✅ Görev atandı: "${title}" → ${targetEmployee.name}`);
+                sendTelegramMessage(targetChatId, 
+                    `📋 <b>Yeni Görev Atandı</b>\n\n` +
+                    `📝 <b>${title}</b>\n` +
+                    `📄 ${description}\n\n` +
+                    `👤 Atayan: Admin\n` +
+                    `📅 Tarih: ${new Date().toLocaleDateString('tr-TR')}\n\n` +
+                    `✅ Tamamladığınızda bildirin.`
+                );
+                
+                logActivity(`Görev atandı: "${title}" → ${targetEmployee.name}`, chatId, from.first_name);
             }
             else {
                 // Handle category selection or product name input
