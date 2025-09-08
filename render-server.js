@@ -89,14 +89,37 @@ function initializeDataFiles() {
 }
 
 // Read JSON file with UTF-8 encoding
+// Simple cache for frequently accessed files (lasts 3 seconds)
+const fileCache = new Map();
+const CACHE_DURATION = 3000; // 3 seconds
+
 function readJsonFile(filename) {
     try {
+        const now = Date.now();
+        const cached = fileCache.get(filename);
+        
+        // Return cached data if still fresh (for employees and admin_settings)
+        if (cached && (now - cached.timestamp) < CACHE_DURATION && 
+            (filename.includes('employees') || filename.includes('admin_settings'))) {
+            return cached.data;
+        }
+        
         if (!fs.existsSync(filename)) {
-            return filename === 'admin_settings.json' ? { adminUsers: [], approvalRequired: false } :
-                   filename === 'categories.json' ? ["Tişört", "Gömlek", "Pantolon"] : [];
+            const defaultData = filename === 'admin_settings.json' ? { adminUsers: [], approvalRequired: false } :
+                               filename === 'categories.json' ? ["Tişört", "Gömlek", "Pantolon"] : [];
+            // Cache default data too
+            fileCache.set(filename, { data: defaultData, timestamp: now });
+            return defaultData;
         }
         const data = fs.readFileSync(filename, 'utf8');
-        return JSON.parse(data);
+        const parsed = JSON.parse(data);
+        
+        // Cache frequently accessed files
+        if (filename.includes('employees') || filename.includes('admin_settings')) {
+            fileCache.set(filename, { data: parsed, timestamp: now });
+        }
+        
+        return parsed;
     } catch (error) {
         console.error(`Error reading ${filename}:`, error);
         return filename === 'admin_settings.json' ? { adminUsers: [], approvalRequired: false } :
@@ -104,11 +127,15 @@ function readJsonFile(filename) {
     }
 }
 
-// Write JSON file with UTF-8 encoding - V2.0.0 CRITICAL FIX
+// Write JSON file with UTF-8 encoding - V2.0.0 CRITICAL FIX + CACHE CLEAR
 function writeJsonFile(filename, data) {
     try {
         fs.writeFileSync(filename, JSON.stringify(data, null, 2), 'utf8');
         console.log(`💾 ${filename} saved with UTF-8 encoding`);
+        
+        // Clear cache for this file to ensure fresh data next time
+        fileCache.delete(filename);
+        
     } catch (error) {
         console.error(`Error writing ${filename}:`, error);
     }
@@ -444,6 +471,9 @@ function handleProductNameInput(chatId, productName, from) {
 
 // Webhook endpoint - Main bot handler
 app.post('/webhook', async (req, res) => {
+    // IMMEDIATELY respond to Telegram to prevent timeout
+    res.status(200).json({ status: 'ok' });
+    
     try {
         const { message, callback_query } = req.body;
         
@@ -452,18 +482,16 @@ app.post('/webhook', async (req, res) => {
             const { data, from, message: callbackMessage } = callback_query;
             const chatId = from.id;
             
-            // Answer callback query to stop loading animation
-            try {
-                await axios.post(`https://api.telegram.org/bot${BOT_TOKEN}/answerCallbackQuery`, {
-                    callback_query_id: callback_query.id,
-                    text: "İşlem alındı..."
-                });
-            } catch (error) {
-                // Ignore timeout errors for callback queries
+            // Answer callback query to stop loading animation - FAST
+            axios.post(`https://api.telegram.org/bot${BOT_TOKEN}/answerCallbackQuery`, {
+                callback_query_id: callback_query.id,
+                text: "İşlem alındı..."
+            }, { timeout: 2000 }).catch(error => {
+                // Ignore all callback query errors for speed
                 if (!error.message.includes('Bad Request: query is too old')) {
-                    console.error('Callback query error:', error.message);
+                    console.error('Callback query timeout - ignored for speed');
                 }
-            }
+            });
             
             // Handle admin approval/rejection
             if (data.startsWith('approve_') || data.startsWith('reject_')) {
@@ -1623,11 +1651,9 @@ app.post('/webhook', async (req, res) => {
                 }
             }
         }
-        
-        res.status(200).json({ status: 'ok' });
     } catch (error) {
         console.error('Webhook Error:', error);
-        res.status(500).json({ error: 'Internal server error' });
+        // Don't send response again, already sent at the beginning
     }
 });
 
