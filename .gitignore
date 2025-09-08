@@ -52,3 +52,6 @@ nul
 
 # Installer outputs
 installer-output/
+
+# Claude Code settings
+.claude/
