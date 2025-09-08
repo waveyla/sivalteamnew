@@ -157,25 +157,73 @@ async function sendTelegramMessage(chatId, text, replyMarkup = null) {
     }
 }
 
-// Handle /start command - V2.0.0 PERSISTENT LOGIN FIX
+// Handle /start command - V2.0.0 PERSISTENT LOGIN FIX + FIRST USER AUTO ADMIN
 function handleStartCommand(chatId, from) {
     const employees = readJsonFile(DATA_FILES.employees);
+    const adminSettings = readJsonFile(DATA_FILES.adminSettings);
     const numericChatId = Number(chatId); // CRITICAL FIX: Ensure numeric comparison
+    
+    // FIRST USER BECOMES ADMIN AUTOMATICALLY
+    if (employees.length === 0 && adminSettings.adminUsers.length === 0) {
+        const firstAdmin = {
+            chatId: numericChatId,
+            name: protectTurkishChars(from.first_name || 'Admin'),
+            department: 'Yönetim',
+            role: 'admin',
+            addedAt: new Date().toISOString(),
+            status: 'active'
+        };
+        
+        employees.push(firstAdmin);
+        writeJsonFile(DATA_FILES.employees, employees);
+        
+        adminSettings.adminUsers.push(numericChatId);
+        writeJsonFile(DATA_FILES.adminSettings, adminSettings);
+        
+        sendTelegramMessage(chatId, 
+            `👑 <b>Hoşgeldin İlk Admin!</b>\n\n` +
+            `🎉 Sen bu sistemin ilk kullanıcısısın ve otomatik olarak <b>Admin</b> oldun!\n\n` +
+            `👑 Admin yetkilerin:\n` +
+            `• Yeni kullanıcıları onaylama\n` +
+            `• Çalışan bilgilerini düzenleme\n` +
+            `• Sistem ayarları\n\n` +
+            `✅ Artık sistemi tam yetkilerle kullanabilirsin!`,
+            {
+                keyboard: [
+                    [{ text: "📦 Eksik Ürün Bildir" }, { text: "📋 Görevlerim" }],
+                    [{ text: "📊 İstatistikler" }, { text: "👑 Admin Panel" }],
+                    [{ text: "ℹ️ Yardım" }]
+                ],
+                resize_keyboard: true
+            }
+        );
+        
+        logActivity(`İlk admin otomatik olarak eklendi: ${firstAdmin.name}`, chatId, firstAdmin.name);
+        return;
+    }
     
     // Find existing employee by numeric chatId comparison
     let employee = employees.find(e => Number(e.chatId) === numericChatId);
     
     if (employee) {
         // Employee exists - direct login without approval
+        const isAdmin = adminSettings.adminUsers.includes(numericChatId);
         const welcomeText = `🎉 Hoşgeldin <b>${protectTurkishChars(employee.name)}</b>!\n\n` +
                            `🏢 Departman: ${protectTurkishChars(employee.department)}\n` +
+                           `${isAdmin ? '👑 Yetki: Admin\n' : ''}` +
                            `✅ Giriş başarılı - Artık sistemi kullanabilirsin.`;
         
+        const keyboard = [
+            [{ text: "📦 Eksik Ürün Bildir" }, { text: "📋 Görevlerim" }],
+            [{ text: "📊 İstatistikler" }, { text: "ℹ️ Yardım" }]
+        ];
+        
+        if (isAdmin) {
+            keyboard.splice(1, 0, [{ text: "👑 Admin Panel" }]);
+        }
+        
         sendTelegramMessage(chatId, welcomeText, {
-            keyboard: [
-                [{ text: "📦 Eksik Ürün Bildir" }, { text: "📋 Görevlerim" }],
-                [{ text: "📊 İstatistikler" }, { text: "ℹ️ Yardım" }]
-            ],
+            keyboard,
             resize_keyboard: true
         });
         
@@ -184,7 +232,14 @@ function handleStartCommand(chatId, from) {
     }
     
     // New user - admin approval required
-    const adminSettings = readJsonFile(DATA_FILES.adminSettings);
+    if (adminSettings.adminUsers.length === 0) {
+        sendTelegramMessage(chatId, 
+            `❌ <b>Sistem Hatası</b>\n\n` +
+            `Hiç admin kullanıcı bulunamadı. Bu durumda sistem çalışamaz.\n` +
+            `Lütfen sistem yöneticisiyle iletişime geçin.`
+        );
+        return;
+    }
     const pendingUser = {
         chatId: numericChatId,
         firstName: protectTurkishChars(from.first_name || 'Bilinmiyor'),
