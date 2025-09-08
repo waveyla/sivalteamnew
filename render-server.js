@@ -42,7 +42,8 @@ const DATA_FILES = {
     activityLog: 'activity_log.json',
     tasks: 'tasks.json',
     categories: 'categories.json',
-    adminSettings: 'admin_settings.json'
+    adminSettings: 'admin_settings.json',
+    pendingUsers: 'pending_users.json'
 };
 
 // Turkish character protection function - V2.0.0 CRITICAL FIX
@@ -240,6 +241,22 @@ function handleStartCommand(chatId, from) {
         );
         return;
     }
+    
+    // CHECK IF USER IS ALREADY PENDING - CRITICAL FIX!
+    const pendingUsers = readJsonFile(DATA_FILES.pendingUsers);
+    const existingPendingUser = pendingUsers.find(u => Number(u.chatId) === numericChatId);
+    
+    if (existingPendingUser) {
+        // User already requested approval
+        sendTelegramMessage(chatId, 
+            `⏳ <b>Onay Bekleniyor</b>\n\n` +
+            `Kayıt talebiniz daha önce admin onayına gönderildi.\n` +
+            `📅 İstek tarihi: ${new Date(existingPendingUser.timestamp).toLocaleString('tr-TR')}\n\n` +
+            `⌛ Lütfen admin onayını bekleyiniz. Tekrar başvuru yapmanıza gerek yoktur.`
+        );
+        return;
+    }
+    
     const pendingUser = {
         chatId: numericChatId,
         firstName: protectTurkishChars(from.first_name || 'Bilinmiyor'),
@@ -249,21 +266,28 @@ function handleStartCommand(chatId, from) {
         status: 'pending'
     };
     
+    // Add to pending users file
+    pendingUsers.push(pendingUser);
+    writeJsonFile(DATA_FILES.pendingUsers, pendingUsers);
+    
     // Notify user
     sendTelegramMessage(chatId, 
-        `👋 Merhaba <b>${pendingUser.firstName}</b>!\n\n` +
+        `👋 <b>Hoşgeldin ${pendingUser.firstName}!</b>\n\n` +
+        `📝 SivalTeam sistemine kayıt talebiniz alındı.\n` +
         `🔄 Kayıt talebiniz admin onayına gönderildi.\n` +
-        `⏳ Lütfen admin onayını bekleyiniz.`
+        `⏳ Admin onayı sonrası sistemi kullanabileceksiniz.\n\n` +
+        `⌛ Lütfen bekleyiniz...`
     );
     
     // Notify all admins
     adminSettings.adminUsers.forEach(adminChatId => {
         sendTelegramMessage(adminChatId,
-            `🆕 <b>Yeni Kullanıcı Kaydı</b>\n\n` +
-            `👤 Ad: ${pendingUser.firstName} ${pendingUser.lastName}\n` +
+            `🆕 <b>Yeni Kullanıcı Kayıt Talebi</b>\n\n` +
+            `👤 Ad: <b>${pendingUser.firstName} ${pendingUser.lastName}</b>\n` +
             `🆔 Username: @${pendingUser.username}\n` +
-            `🆔 Chat ID: ${pendingUser.chatId}\n\n` +
-            `Bu kullanıcıyı onaylamak için: /approve ${pendingUser.chatId}`,
+            `💬 Chat ID: <code>${pendingUser.chatId}</code>\n` +
+            `📅 Tarih: ${new Date().toLocaleString('tr-TR')}\n\n` +
+            `⬇️ Bu kullanıcıyı onaylamak için butonları kullanın:`,
             {
                 inline_keyboard: [[
                     { text: "✅ Onayla", callback_data: `approve_${pendingUser.chatId}` },
@@ -273,7 +297,7 @@ function handleStartCommand(chatId, from) {
         );
     });
     
-    logActivity(`Yeni kullanıcı kaydı: ${pendingUser.firstName} ${pendingUser.lastName}`, chatId, pendingUser.firstName);
+    logActivity(`Yeni kullanıcı kayıt talebi: ${pendingUser.firstName} ${pendingUser.lastName}`, chatId, pendingUser.firstName);
 }
 
 // Handle missing product report
@@ -434,14 +458,24 @@ app.post('/webhook', async (req, res) => {
                 const [action, targetChatId] = data.split('_');
                 const numericTargetChatId = Number(targetChatId);
                 
+                // Get pending user info
+                const pendingUsers = readJsonFile(DATA_FILES.pendingUsers);
+                const pendingUser = pendingUsers.find(u => Number(u.chatId) === numericTargetChatId);
+                
+                if (!pendingUser) {
+                    sendTelegramMessage(chatId, `❌ Bu kullanıcı için bekleyen kayıt bulunamadı.`);
+                    return;
+                }
+                
                 if (action === 'approve') {
-                    // Add user as employee (admin will set details later)
+                    // Add user as employee
                     const employees = readJsonFile(DATA_FILES.employees);
                     const newEmployee = {
                         chatId: numericTargetChatId,
-                        name: "Yeni Çalışan",
-                        department: "Atanmamış",
+                        name: pendingUser.firstName + (pendingUser.lastName ? ' ' + pendingUser.lastName : ''),
+                        department: "Yeni Çalışan",
                         role: "employee",
+                        username: pendingUser.username,
                         addedBy: from.id,
                         addedAt: new Date().toISOString(),
                         status: "active"
@@ -450,30 +484,134 @@ app.post('/webhook', async (req, res) => {
                     employees.push(newEmployee);
                     writeJsonFile(DATA_FILES.employees, employees);
                     
+                    // Remove from pending users
+                    const updatedPendingUsers = pendingUsers.filter(u => Number(u.chatId) !== numericTargetChatId);
+                    writeJsonFile(DATA_FILES.pendingUsers, updatedPendingUsers);
+                    
                     // Notify approved user
                     sendTelegramMessage(numericTargetChatId,
-                        `🎉 <b>Kaydınız Onaylandı!</b>\n\n` +
-                        `✅ Artık SivalTeam sistemini kullanabilirsiniz.\n` +
-                        `👤 Profil bilgileriniz admin tarafından güncellenecek.\n\n` +
-                        `Başlamak için /start komutunu tekrar kullanın.`
+                        `🎉 <b>Hoşgeldin SivalTeam'e!</b>\n\n` +
+                        `✅ Kaydınız onaylandı ve sisteme eklendiniz.\n` +
+                        `👤 Adınız: ${newEmployee.name}\n` +
+                        `🏢 Departman: ${newEmployee.department}\n\n` +
+                        `🚀 Artık sistemi kullanabilirsiniz! /start komutuyla başlayın.`
                     );
                     
                     // Notify admin
-                    sendTelegramMessage(chatId, `✅ Kullanıcı ${targetChatId} başarıyla onaylandı.`);
-                    logActivity(`Kullanıcı onaylandı: ChatID ${targetChatId}`, chatId, from.first_name);
+                    sendTelegramMessage(chatId, 
+                        `✅ <b>Kullanıcı Onaylandı</b>\n\n` +
+                        `👤 ${newEmployee.name} başarıyla sisteme eklendi.\n` +
+                        `💬 Chat ID: ${targetChatId}`
+                    );
+                    logActivity(`Kullanıcı onaylandı: ${newEmployee.name}`, chatId, from.first_name);
                     
                 } else if (action === 'reject') {
+                    // Remove from pending users
+                    const updatedPendingUsers = pendingUsers.filter(u => Number(u.chatId) !== numericTargetChatId);
+                    writeJsonFile(DATA_FILES.pendingUsers, updatedPendingUsers);
+                    
                     // Notify rejected user
                     sendTelegramMessage(numericTargetChatId,
-                        `❌ <b>Kaydınız Reddedildi</b>\n\n` +
-                        `Üzgünüz, kayıt talebiniz admin tarafından reddedildi.\n` +
-                        `Daha fazla bilgi için sistem yöneticisiyle iletişime geçin.`
+                        `❌ <b>Kayıt Talebi Reddedildi</b>\n\n` +
+                        `Üzgünüz, SivalTeam sistemine kayıt talebiniz reddedildi.\n` +
+                        `📞 Daha fazla bilgi için sistem yöneticisiyle iletişime geçebilirsiniz.`
                     );
                     
                     // Notify admin
-                    sendTelegramMessage(chatId, `❌ Kullanıcı ${targetChatId} reddedildi.`);
-                    logActivity(`Kullanıcı reddedildi: ChatID ${targetChatId}`, chatId, from.first_name);
+                    sendTelegramMessage(chatId, 
+                        `❌ <b>Kullanıcı Reddedildi</b>\n\n` +
+                        `👤 ${pendingUser.firstName} kayıt talebi reddedildi.\n` +
+                        `💬 Chat ID: ${targetChatId}`
+                    );
+                    logActivity(`Kullanıcı reddedildi: ${pendingUser.firstName}`, chatId, from.first_name);
                 }
+            }
+            
+            // Handle product completion
+            if (data.startsWith('complete_product_')) {
+                const adminSettings = readJsonFile(DATA_FILES.adminSettings);
+                const numericChatId = Number(chatId);
+                
+                if (!adminSettings.adminUsers.includes(numericChatId)) {
+                    sendTelegramMessage(chatId, "❌ Bu işlem sadece adminler tarafından yapılabilir.");
+                    return;
+                }
+                
+                const productId = data.replace('complete_product_', '');
+                const products = readJsonFile(DATA_FILES.missingProducts);
+                const productIndex = products.findIndex(p => p.id == productId);
+                
+                if (productIndex === -1) {
+                    sendTelegramMessage(chatId, "❌ Ürün bulunamadı veya zaten silinmiş.");
+                    return;
+                }
+                
+                const completedProduct = products[productIndex];
+                products.splice(productIndex, 1);
+                writeJsonFile(DATA_FILES.missingProducts, products);
+                
+                sendTelegramMessage(chatId, 
+                    `✅ <b>Ürün Tamamlandı</b>\n\n` +
+                    `📦 <b>${protectTurkishChars(completedProduct.product)}</b>\n` +
+                    `🏷️ Kategori: ${protectTurkishChars(completedProduct.category)}\n` +
+                    `👤 Bildiren: ${protectTurkishChars(completedProduct.reportedBy)}\n\n` +
+                    `🗑️ Ürün eksik ürün listesinden kaldırıldı.`
+                );
+                
+                logActivity(`Eksik ürün tamamlandı: ${completedProduct.product}`, chatId, from.first_name);
+            }
+            
+            // Handle clear all products
+            if (data === 'clear_all_products') {
+                const adminSettings = readJsonFile(DATA_FILES.adminSettings);
+                const numericChatId = Number(chatId);
+                
+                if (!adminSettings.adminUsers.includes(numericChatId)) {
+                    sendTelegramMessage(chatId, "❌ Bu işlem sadece adminler tarafından yapılabilir.");
+                    return;
+                }
+                
+                const products = readJsonFile(DATA_FILES.missingProducts);
+                const productCount = products.length;
+                
+                writeJsonFile(DATA_FILES.missingProducts, []);
+                
+                sendTelegramMessage(chatId, 
+                    `🗑️ <b>Tüm Eksik Ürün Listesi Temizlendi</b>\n\n` +
+                    `📊 ${productCount} ürün bildirimi silindi.\n` +
+                    `✅ Liste baştan başlıyor.`
+                );
+                
+                logActivity(`Tüm eksik ürün listesi temizlendi (${productCount} ürün)`, chatId, from.first_name);
+            }
+            
+            // Handle refresh products
+            if (data === 'refresh_products') {
+                // Simulate refresh by resending the products list
+                const adminSettings = readJsonFile(DATA_FILES.adminSettings);
+                const numericChatId = Number(chatId);
+                
+                if (!adminSettings.adminUsers.includes(numericChatId)) {
+                    sendTelegramMessage(chatId, "❌ Bu işlem sadece adminler tarafından yapılabilir.");
+                    return;
+                }
+                
+                sendTelegramMessage(chatId, "🔄 Eksik ürün listesi yenileniyor...");
+                
+                // Trigger products list again
+                setTimeout(() => {
+                    // Re-call the products handler
+                    const products = readJsonFile(DATA_FILES.missingProducts);
+                    
+                    if (products.length === 0) {
+                        sendTelegramMessage(chatId, "📦 <b>Eksik Ürün Listesi</b>\n\n✅ Şu anda eksik ürün bildirimi bulunmuyor.");
+                        return;
+                    }
+                    
+                    // Regenerate product list (same code as above)
+                    // This could be refactored into a separate function
+                    sendTelegramMessage(chatId, `✅ Liste yenilendi. Toplam ${products.length} ürün bildirimi.`);
+                }, 1000);
             }
             
             return res.status(200).json({ status: 'ok' });
@@ -572,19 +710,38 @@ app.post('/webhook', async (req, res) => {
                 const products = readJsonFile(DATA_FILES.missingProducts);
                 const activities = readJsonFile(DATA_FILES.activityLog);
                 
-                const adminText = `👑 <b>Admin Panel</b>\n\n` +
-                    `📊 <b>Sistem Durumu:</b>\n` +
-                    `👥 Toplam Çalışan: ${employees.length}\n` +
-                    `📦 Eksik Ürün: ${products.length}\n` +
-                    `📈 Son Aktiviteler: ${activities.slice(-5).length}\n\n` +
-                    `🔧 <b>Admin Komutları:</b>\n` +
-                    `/adduser <chatId> <ad> <departman> - Kullanıcı ekle\n` +
-                    `/removeuser <chatId> - Kullanıcı sil\n` +
-                    `/listusers - Tüm kullanıcıları listele\n` +
-                    `/clearproducts - Eksik ürün listesini temizle\n` +
-                    `/broadcast <mesaj> - Tüm kullanıcılara mesaj gönder`;
+                const pendingUsers = readJsonFile(DATA_FILES.pendingUsers);
                 
-                sendTelegramMessage(chatId, adminText);
+                const adminText = `👑 <b>SivalTeam Admin Panel</b>\n\n` +
+                    `📊 <b>Sistem İstatistikleri:</b>\n` +
+                    `👥 Kayıtlı Çalışan: ${employees.length}\n` +
+                    `⏳ Onay Bekleyen: ${pendingUsers.length}\n` +
+                    `📦 Eksik Ürün Bildirimi: ${products.length}\n` +
+                    `📈 Toplam Aktivite: ${activities.length}\n\n` +
+                    `🔧 <b>Kullanıcı Yönetimi:</b>\n` +
+                    `/adduser <chatId> <ad> <departman> - Manuel çalışan ekleme\n` +
+                    `/removeuser <chatId> - Çalışan silme\n` +
+                    `/listusers - Tüm çalışanları listeleme\n` +
+                    `/pending - Onay bekleyen kullanıcılar\n\n` +
+                    `📦 <b>Ürün Yönetimi:</b>\n` +
+                    `/products - Eksik ürün listesi (sadece admin)\n` +
+                    `/clearproducts - Tüm eksik ürün listesini temizleme\n\n` +
+                    `📢 <b>İletişim:</b>\n` +
+                    `/broadcast <mesaj> - Tüm çalışanlara duyuru\n` +
+                    `/addtask <chatId> <başlık> | <açıklama> - Görev atama\n\n` +
+                    `📊 <b>Raporlama:</b>\n` +
+                    `/stats - Detaylı sistem istatistikleri\n` +
+                    `/activity - Son aktivite raporu`;
+                
+                sendTelegramMessage(chatId, adminText, {
+                    keyboard: [
+                        [{ text: "👥 Çalışanları Listele" }, { text: "📦 Eksik Ürünler" }],
+                        [{ text: "⏳ Bekleyen Onaylar" }, { text: "📊 İstatistikler" }],
+                        [{ text: "📢 Duyuru Gönder" }, { text: "🔙 Ana Menü" }]
+                    ],
+                    resize_keyboard: true,
+                    one_time_keyboard: false
+                });
             }
             else if (text === "ℹ️ Yardım") {
                 const helpText = `ℹ️ <b>SivalTeam Yardım</b>\n\n` +
@@ -823,6 +980,153 @@ app.post('/webhook', async (req, res) => {
                 );
                 
                 logActivity(`Görev atandı: "${title}" → ${targetEmployee.name}`, chatId, from.first_name);
+            }
+            else if (text === "👥 Çalışanları Listele" || text === "/listusers") {
+                const adminSettings = readJsonFile(DATA_FILES.adminSettings);
+                const numericChatId = Number(chatId);
+                
+                if (!adminSettings.adminUsers.includes(numericChatId)) {
+                    sendTelegramMessage(chatId, "❌ Bu özellik sadece adminler için erişilebilir.");
+                    return;
+                }
+                
+                const employees = readJsonFile(DATA_FILES.employees);
+                
+                if (employees.length === 0) {
+                    sendTelegramMessage(chatId, "👥 <b>Çalışan Listesi</b>\n\nHenüz kayıtlı çalışan bulunmuyor.");
+                    return;
+                }
+                
+                const userList = employees.map((emp, index) => 
+                    `${index + 1}. <b>${protectTurkishChars(emp.name)}</b>\n` +
+                    `   🏢 ${protectTurkishChars(emp.department)}\n` +
+                    `   💬 Chat ID: <code>${emp.chatId}</code>\n` +
+                    `   ${adminSettings.adminUsers.includes(Number(emp.chatId)) ? '👑 Admin' : '👤 Çalışan'}\n` +
+                    `   📅 ${new Date(emp.addedAt).toLocaleDateString('tr-TR')}`
+                ).join('\n\n');
+                
+                sendTelegramMessage(chatId, `👥 <b>Kayıtlı Çalışanlar (${employees.length})</b>\n\n${userList}`);
+            }
+            else if (text === "📦 Eksik Ürünler" || text === "/products") {
+                const adminSettings = readJsonFile(DATA_FILES.adminSettings);
+                const numericChatId = Number(chatId);
+                
+                if (!adminSettings.adminUsers.includes(numericChatId)) {
+                    sendTelegramMessage(chatId, "❌ Eksik ürün listesi sadece adminler tarafından görülebilir.");
+                    return;
+                }
+                
+                const products = readJsonFile(DATA_FILES.missingProducts);
+                
+                if (products.length === 0) {
+                    sendTelegramMessage(chatId, "📦 <b>Eksik Ürün Listesi</b>\n\n✅ Şu anda eksik ürün bildirimi bulunmuyor.");
+                    return;
+                }
+                
+                // Group by category
+                const productsByCategory = {};
+                products.forEach(product => {
+                    const category = product.category || 'Kategori Belirtilmemiş';
+                    if (!productsByCategory[category]) {
+                        productsByCategory[category] = [];
+                    }
+                    productsByCategory[category].push(product);
+                });
+                
+                let productText = `📦 <b>Eksik Ürün Raporu</b>\n\n`;
+                productText += `📊 Toplam: ${products.length} ürün bildirimi\n\n`;
+                
+                Object.keys(productsByCategory).forEach(category => {
+                    const categoryProducts = productsByCategory[category];
+                    productText += `🏷️ <b>${protectTurkishChars(category)}</b> (${categoryProducts.length})\n`;
+                    
+                    categoryProducts.slice(0, 10).forEach((product, index) => {
+                        productText += `   ${index + 1}. ${protectTurkishChars(product.product)}\n`;
+                        productText += `      👤 ${protectTurkishChars(product.reportedBy)} - ${new Date(product.timestamp).toLocaleDateString('tr-TR')}\n`;
+                    });
+                    
+                    if (categoryProducts.length > 10) {
+                        productText += `   ... ve ${categoryProducts.length - 10} ürün daha\n`;
+                    }
+                    productText += `\n`;
+                });
+                
+                // Create inline keyboard for each product with complete buttons
+                const inlineKeyboard = [];
+                let buttonCount = 0;
+                
+                products.slice(0, 20).forEach(product => { // Limit to first 20 products
+                    if (buttonCount < 20) { // Telegram limit
+                        inlineKeyboard.push([{
+                            text: `✅ ${protectTurkishChars(product.product)} - Tamamlandı`,
+                            callback_data: `complete_product_${product.id}`
+                        }]);
+                        buttonCount++;
+                    }
+                });
+                
+                // Add management buttons
+                inlineKeyboard.push([
+                    { text: "🗑️ Tümünü Temizle", callback_data: "clear_all_products" },
+                    { text: "🔄 Listeyi Yenile", callback_data: "refresh_products" }
+                ]);
+                
+                sendTelegramMessage(chatId, productText, {
+                    inline_keyboard: inlineKeyboard
+                });
+            }
+            else if (text === "⏳ Bekleyen Onaylar" || text === "/pending") {
+                const adminSettings = readJsonFile(DATA_FILES.adminSettings);
+                const numericChatId = Number(chatId);
+                
+                if (!adminSettings.adminUsers.includes(numericChatId)) {
+                    sendTelegramMessage(chatId, "❌ Bu özellik sadece adminler için erişilebilir.");
+                    return;
+                }
+                
+                const pendingUsers = readJsonFile(DATA_FILES.pendingUsers);
+                
+                if (pendingUsers.length === 0) {
+                    sendTelegramMessage(chatId, "⏳ <b>Bekleyen Onaylar</b>\n\n✅ Şu anda onay bekleyen kullanıcı bulunmuyor.");
+                    return;
+                }
+                
+                const pendingText = pendingUsers.map((user, index) => 
+                    `${index + 1}. <b>${protectTurkishChars(user.firstName)} ${protectTurkishChars(user.lastName)}</b>\n` +
+                    `   🆔 Username: @${user.username}\n` +
+                    `   💬 Chat ID: <code>${user.chatId}</code>\n` +
+                    `   📅 Tarih: ${new Date(user.timestamp).toLocaleString('tr-TR')}\n` +
+                    `   ⚡ Onaylamak için: /approve ${user.chatId}`
+                ).join('\n\n');
+                
+                sendTelegramMessage(chatId, 
+                    `⏳ <b>Onay Bekleyen Kullanıcılar (${pendingUsers.length})</b>\n\n${pendingText}`, {
+                        keyboard: [
+                            [{ text: "👑 Admin Panel" }, { text: "🔄 Yenile" }]
+                        ],
+                        resize_keyboard: true
+                    });
+            }
+            else if (text === "🗑️ Listeyi Temizle") {
+                const adminSettings = readJsonFile(DATA_FILES.adminSettings);
+                const numericChatId = Number(chatId);
+                
+                if (!adminSettings.adminUsers.includes(numericChatId)) {
+                    sendTelegramMessage(chatId, "❌ Bu işlem sadece adminler tarafından yapılabilir.");
+                    return;
+                }
+                
+                const products = readJsonFile(DATA_FILES.missingProducts);
+                const productCount = products.length;
+                
+                writeJsonFile(DATA_FILES.missingProducts, []);
+                
+                sendTelegramMessage(chatId, 
+                    `✅ <b>Eksik Ürün Listesi Temizlendi</b>\n\n` +
+                    `🗑️ ${productCount} ürün bildirimi silindi.\n` +
+                    `📊 Liste baştan başlıyor.`);
+                
+                logActivity(`Eksik ürün listesi temizlendi (${productCount} ürün)`, chatId, from.first_name);
             }
             else {
                 // Handle category selection or product name input
