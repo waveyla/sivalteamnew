@@ -167,6 +167,14 @@ function logActivity(message, userId = null, userName = null) {
 async function sendTelegramMessage(chatId, text, replyMarkup = null) {
     try {
         const protectedText = protectTurkishChars(text);
+        
+        // Telegram message length limit: 4096 characters
+        if (protectedText.length > 4000) {
+            console.error('Message too long:', protectedText.length, 'characters');
+            const truncatedText = protectedText.substring(0, 3900) + '\n\n... (mesaj kısaltıldı)';
+            return sendTelegramMessage(chatId, truncatedText, replyMarkup);
+        }
+        
         const payload = {
             chat_id: chatId,
             text: protectedText,
@@ -190,6 +198,7 @@ async function sendTelegramMessage(chatId, text, replyMarkup = null) {
             console.error('Telegram timeout - message may have been delivered');
         } else if (error.response?.status === 400) {
             console.error('Telegram 400 Error:', error.response.data.description);
+            console.error('Problem message preview:', text.substring(0, 200) + '...');
         } else {
             console.error('Telegram API Error:', error.response?.data || error.message);
         }
@@ -1249,7 +1258,7 @@ app.post('/webhook', async (req, res) => {
                     `/products - Eksik ürün listesi (sadece admin)\n` +
                     `/clearproducts - Tüm eksik ürün listesini temizleme\n\n` +
                     `📢 <b>İletişim:</b>\n` +
-                    `/broadcast <mesaj> - Tüm çalışanlara duyuru\n` +
+                    `/broadcast &lt;mesaj&gt; - Tüm çalışanlara duyuru\n` +
                     `/addtask &lt;chatId&gt; &lt;başlık&gt; | &lt;açıklama&gt; - Görev atama\n\n` +
                     `📊 <b>Raporlama:</b>\n` +
                     `/stats - Detaylı sistem istatistikleri\n` +
@@ -1426,7 +1435,7 @@ app.post('/webhook', async (req, res) => {
                 const employees = readJsonFile(DATA_FILES.employees);
                 
                 if (!message.trim()) {
-                    sendTelegramMessage(chatId, "❌ Kullanım: /broadcast <mesaj>");
+                    sendTelegramMessage(chatId, "❌ Kullanım: /broadcast &lt;mesaj&gt;");
                     return;
                 }
                 
