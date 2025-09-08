@@ -1113,6 +1113,210 @@
             });
         }
 
+        // Missing Functions - Bot Integration Compatibility
+        function updateEmployeeList() {
+            loadEmployees();
+        }
+
+        function updateProductList() {
+            loadProducts();
+        }
+
+        function updateActivityLog() {
+            loadActivity();
+        }
+
+        function updateStats() {
+            updateDashboard();
+        }
+
+        // Load Tasks
+        function loadTasks() {
+            const tasks = appState.data.tasks || [];
+            const tableBody = document.getElementById('tasksTableBody');
+            
+            if (!tableBody) {
+                console.log('Tasks table not found');
+                return;
+            }
+            
+            if (tasks.length === 0) {
+                tableBody.innerHTML = `
+                    <tr>
+                        <td colspan="6" class="empty-state">
+                            <i class="fas fa-tasks"></i>
+                            <p>Henüz görev eklenmemiş</p>
+                        </td>
+                    </tr>
+                `;
+                return;
+            }
+            
+            tableBody.innerHTML = tasks.map(task => `
+                <tr>
+                    <td>${task.title || 'Başlık Yok'}</td>
+                    <td>${task.description || 'Açıklama Yok'}</td>
+                    <td>${task.assignedToName || 'Bilinmeyen'}</td>
+                    <td><span class="badge ${task.status === 'completed' ? 'success' : 'warning'}">${task.status === 'completed' ? 'Tamamlandı' : 'Bekliyor'}</span></td>
+                    <td>${task.type === 'bulk' ? 'Toplu' : 'Tekil'}</td>
+                    <td>${new Date(task.createdAt).toLocaleDateString('tr-TR')}</td>
+                </tr>
+            `).join('');
+        }
+
+        // Load Products
+        function loadProducts() {
+            const products = appState.data.products || [];
+            const tableBody = document.getElementById('productsTableBody');
+            
+            if (!tableBody) {
+                console.log('Products table not found');
+                return;
+            }
+            
+            if (products.length === 0) {
+                tableBody.innerHTML = `
+                    <tr>
+                        <td colspan="5" class="empty-state">
+                            <i class="fas fa-box"></i>
+                            <p>Eksik ürün bildirimi yok</p>
+                        </td>
+                    </tr>
+                `;
+                return;
+            }
+            
+            tableBody.innerHTML = products.map(product => `
+                <tr>
+                    <td>${product.product || 'Ürün Adı Yok'}</td>
+                    <td>${product.category || 'Kategori Yok'}</td>
+                    <td>${product.reportedBy || 'Bilinmeyen'}</td>
+                    <td>${new Date(product.reportedAt).toLocaleDateString('tr-TR')}</td>
+                    <td>
+                        <button class="btn btn-success" onclick="completeProduct('${product.id}')">
+                            <i class="fas fa-check"></i> Tamamla
+                        </button>
+                        <button class="btn btn-error" onclick="deleteProduct('${product.id}')">
+                            <i class="fas fa-trash"></i>
+                        </button>
+                    </td>
+                </tr>
+            `).join('');
+        }
+
+        // Load Activity
+        function loadActivity() {
+            const activities = appState.data.activities || [];
+            const tableBody = document.getElementById('activityTableBody');
+            
+            if (!tableBody) {
+                console.log('Activity table not found');
+                return;
+            }
+            
+            if (activities.length === 0) {
+                tableBody.innerHTML = `
+                    <tr>
+                        <td colspan="4" class="empty-state">
+                            <i class="fas fa-history"></i>
+                            <p>Henüz aktivite kaydı yok</p>
+                        </td>
+                    </tr>
+                `;
+                return;
+            }
+            
+            tableBody.innerHTML = activities.slice(-20).reverse().map(activity => `
+                <tr>
+                    <td>${activity.message || 'Mesaj Yok'}</td>
+                    <td>${activity.userName || 'Sistem'}</td>
+                    <td>${new Date(activity.timestamp).toLocaleString('tr-TR')}</td>
+                    <td><span class="badge info">Sistem</span></td>
+                </tr>
+            `).join('');
+        }
+
+        // Employee Management Functions
+        function editEmployee(chatId) {
+            const employee = appState.data.employees.find(emp => emp.chatId == chatId);
+            if (!employee) {
+                showToast('Çalışan bulunamadı', 'error');
+                return;
+            }
+            
+            const newName = prompt('Yeni isim:', employee.name);
+            const newDepartment = prompt('Yeni departman:', employee.department);
+            
+            if (newName && newDepartment) {
+                employee.name = newName;
+                employee.department = newDepartment;
+                
+                // Save to server
+                fetch('/api/data', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(appState.data)
+                }).then(() => {
+                    loadEmployees();
+                    showToast('Çalışan güncellendi', 'success');
+                }).catch(() => {
+                    showToast('Güncelleme başarısız', 'error');
+                });
+            }
+        }
+
+        function deleteEmployee(chatId) {
+            if (!confirm('Bu çalışanı silmek istediğinizden emin misiniz?')) return;
+            
+            appState.data.employees = appState.data.employees.filter(emp => emp.chatId != chatId);
+            
+            // Save to server
+            fetch('/api/data', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(appState.data)
+            }).then(() => {
+                loadEmployees();
+                showToast('Çalışan silindi', 'success');
+            }).catch(() => {
+                showToast('Silme başarısız', 'error');
+            });
+        }
+
+        function completeProduct(productId) {
+            appState.data.products = appState.data.products.filter(p => p.id != productId);
+            
+            // Save to server
+            fetch('/api/data', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(appState.data)
+            }).then(() => {
+                loadProducts();
+                showToast('Ürün tamamlandı', 'success');
+            }).catch(() => {
+                showToast('İşlem başarısız', 'error');
+            });
+        }
+
+        function deleteProduct(productId) {
+            if (!confirm('Bu ürün bildirimini silmek istediğinizden emin misiniz?')) return;
+            
+            appState.data.products = appState.data.products.filter(p => p.id != productId);
+            
+            // Save to server
+            fetch('/api/data', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(appState.data)
+            }).then(() => {
+                loadProducts();
+                showToast('Ürün silindi', 'success');
+            }).catch(() => {
+                showToast('Silme başarısız', 'error');
+            });
+        }
+
         // Initialize Application
         function initializeApp() {
             // Load saved theme
