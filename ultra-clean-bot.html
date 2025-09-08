@@ -183,6 +183,142 @@
             background: #5a67d8;
         }
         
+        .add-btn, .clear-btn, .admin-btn {
+            padding: 8px 15px;
+            border: none;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 0.9em;
+            margin-left: 10px;
+        }
+        
+        .add-btn {
+            background: #27ae60;
+            color: white;
+        }
+        
+        .clear-btn {
+            background: #e74c3c;
+            color: white;
+        }
+        
+        .admin-btn {
+            background: #667eea;
+            color: white;
+            margin: 5px;
+            display: inline-block;
+        }
+        
+        .admin-actions {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 10px;
+        }
+        
+        .task-list {
+            max-height: 300px;
+            overflow-y: auto;
+        }
+        
+        .task-item {
+            padding: 12px;
+            margin: 8px 0;
+            background: #f8f9ff;
+            border-radius: 8px;
+            border-left: 4px solid #667eea;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        
+        .task-status-pending { border-left-color: #f39c12; }
+        .task-status-in_progress { border-left-color: #3498db; }
+        .task-status-completed { border-left-color: #27ae60; }
+        
+        .employee-actions, .task-actions {
+            display: flex;
+            gap: 5px;
+        }
+        
+        .action-btn {
+            padding: 4px 8px;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 0.8em;
+        }
+        
+        .edit-btn { background: #3498db; color: white; }
+        .delete-btn { background: #e74c3c; color: white; }
+        .admin-toggle-btn { background: #9b59b6; color: white; }
+        .complete-btn { background: #27ae60; color: white; }
+        
+        .modal {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0,0,0,0.5);
+            z-index: 1000;
+        }
+        
+        .modal-content {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            background: white;
+            padding: 30px;
+            border-radius: 15px;
+            width: 90%;
+            max-width: 500px;
+        }
+        
+        .modal-header {
+            color: #667eea;
+            margin-bottom: 20px;
+            font-size: 1.5em;
+        }
+        
+        .form-group {
+            margin-bottom: 15px;
+        }
+        
+        .form-group label {
+            display: block;
+            margin-bottom: 5px;
+            color: #333;
+            font-weight: bold;
+        }
+        
+        .form-group input, .form-group textarea, .form-group select {
+            width: 100%;
+            padding: 10px;
+            border: 2px solid #eee;
+            border-radius: 8px;
+            font-size: 1em;
+        }
+        
+        .modal-actions {
+            display: flex;
+            gap: 10px;
+            justify-content: flex-end;
+            margin-top: 20px;
+        }
+        
+        .modal-btn {
+            padding: 10px 20px;
+            border: none;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 1em;
+        }
+        
+        .modal-btn-primary { background: #667eea; color: white; }
+        .modal-btn-secondary { background: #95a5a6; color: white; }
+        
         @media (max-width: 768px) {
             .main-content {
                 grid-template-columns: 1fr;
@@ -221,7 +357,7 @@
         
         <div class="main-content">
             <div class="panel">
-                <h2>👥 Çalışanlar</h2>
+                <h2>👥 Çalışanlar <button class="add-btn" onclick="showAddUserModal()">➕ Ekle</button></h2>
                 <div class="employee-list" id="employeeList">
                     <div class="employee-item">
                         <div>
@@ -232,11 +368,31 @@
             </div>
             
             <div class="panel">
-                <h2>📦 Eksik Ürünler</h2>
+                <h2>📦 Eksik Ürünler <button class="clear-btn" onclick="clearProducts()">🗑️ Temizle</button></h2>
                 <div class="product-list" id="productList">
                     <div class="product-item">
                         <div>Veri yükleniyor...</div>
                     </div>
+                </div>
+            </div>
+        </div>
+        
+        <div class="main-content">
+            <div class="panel">
+                <h2>📋 Görevler <button class="add-btn" onclick="showAddTaskModal()">➕ Görev Ekle</button></h2>
+                <div class="task-list" id="taskList">
+                    <div class="task-item">
+                        <div>Görevler yükleniyor...</div>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="panel">
+                <h2>🔧 Admin İşlemleri</h2>
+                <div class="admin-actions">
+                    <button class="admin-btn" onclick="broadcastMessage()">📢 Duyuru Gönder</button>
+                    <button class="admin-btn" onclick="exportData()">💾 Veri Dışa Aktar</button>
+                    <button class="admin-btn" onclick="refreshAll()">🔄 Tümünü Yenile</button>
                 </div>
             </div>
         </div>
@@ -255,6 +411,69 @@
             <span class="online-indicator"></span>
             <span id="syncStatus">Render.com ile senkronize ediliyor...</span>
             <button class="refresh-btn" onclick="loadData()">🔄 Yenile</button>
+        </div>
+    </div>
+
+    <!-- Modal for Adding User -->
+    <div id="addUserModal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">➕ Yeni Çalışan Ekle</div>
+            <div class="form-group">
+                <label>Chat ID:</label>
+                <input type="number" id="userChatId" placeholder="Telegram Chat ID">
+            </div>
+            <div class="form-group">
+                <label>Ad Soyad:</label>
+                <input type="text" id="userName" placeholder="Çalışan adı">
+            </div>
+            <div class="form-group">
+                <label>Departman:</label>
+                <input type="text" id="userDepartment" placeholder="Departman">
+            </div>
+            <div class="modal-actions">
+                <button class="modal-btn modal-btn-secondary" onclick="closeModal('addUserModal')">İptal</button>
+                <button class="modal-btn modal-btn-primary" onclick="addUser()">Ekle</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal for Adding Task -->
+    <div id="addTaskModal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">📋 Yeni Görev Ekle</div>
+            <div class="form-group">
+                <label>Atanacak Çalışan:</label>
+                <select id="taskAssignee">
+                    <option value="">Çalışan seçin...</option>
+                </select>
+            </div>
+            <div class="form-group">
+                <label>Görev Başlığı:</label>
+                <input type="text" id="taskTitle" placeholder="Görev başlığı">
+            </div>
+            <div class="form-group">
+                <label>Açıklama:</label>
+                <textarea id="taskDescription" placeholder="Görev açıklaması" rows="3"></textarea>
+            </div>
+            <div class="modal-actions">
+                <button class="modal-btn modal-btn-secondary" onclick="closeModal('addTaskModal')">İptal</button>
+                <button class="modal-btn modal-btn-primary" onclick="addTask()">Ekle</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal for Broadcast Message -->
+    <div id="broadcastModal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">📢 Duyuru Gönder</div>
+            <div class="form-group">
+                <label>Duyuru Mesajı:</label>
+                <textarea id="broadcastMessage" placeholder="Tüm çalışanlara gönderilecek mesaj..." rows="4"></textarea>
+            </div>
+            <div class="modal-actions">
+                <button class="modal-btn modal-btn-secondary" onclick="closeModal('broadcastModal')">İptal</button>
+                <button class="modal-btn modal-btn-primary" onclick="sendBroadcast()">Gönder</button>
+            </div>
         </div>
     </div>
 
@@ -278,7 +497,7 @@
             document.getElementById('taskCount').textContent = appState.data.tasks?.filter(t => t.status !== 'completed').length || 0;
         }
 
-        // Update employee list
+        // Update employee list with admin controls
         function updateEmployeeList() {
             const list = document.getElementById('employeeList');
             const employees = appState.data.employees || [];
@@ -292,11 +511,23 @@
                 <div class="employee-item">
                     <div>
                         <div class="employee-name">${emp.name || 'Bilinmeyen'}</div>
-                        <div class="employee-dept">${emp.department || 'Bilinmeyen Bölüm'}</div>
+                        <div class="employee-dept">${emp.department || 'Bilinmeyen Bölüm'} ${emp.role === 'admin' ? '👑' : ''}</div>
+                        <small>ID: ${emp.chatId}</small>
                     </div>
-                    <div class="status-active">✓ Aktif</div>
+                    <div class="employee-actions">
+                        <button class="action-btn admin-toggle-btn" onclick="toggleAdmin(${emp.chatId})">
+                            ${emp.role === 'admin' ? '👤 Normal' : '👑 Admin'}
+                        </button>
+                        <button class="action-btn edit-btn" onclick="editEmployee(${emp.chatId})">✏️</button>
+                        <button class="action-btn delete-btn" onclick="deleteEmployee(${emp.chatId})">🗑️</button>
+                    </div>
                 </div>
             `).join('');
+            
+            // Update task assignee dropdown
+            const taskAssignee = document.getElementById('taskAssignee');
+            taskAssignee.innerHTML = '<option value="">Çalışan seçin...</option>' + 
+                employees.map(emp => `<option value="${emp.chatId}">${emp.name}</option>`).join('');
         }
 
         // Update product list
@@ -348,6 +579,7 @@
                 updateStats();
                 updateEmployeeList();
                 updateProductList();
+                updateTaskList();
                 updateActivityLog();
                 
                 document.getElementById('syncStatus').textContent = `Son güncelleme: ${new Date().toLocaleTimeString('tr-TR')}`;
@@ -369,6 +601,219 @@
                 console.log('💾 Veri kaydedildi');
             } catch (error) {
                 console.error('Veri kaydetme hatası:', error);
+            }
+        }
+
+        // Update task list
+        function updateTaskList() {
+            const list = document.getElementById('taskList');
+            const tasks = appState.data.tasks || [];
+            
+            if (tasks.length === 0) {
+                list.innerHTML = '<div class="task-item"><div>Henüz görev eklenmemiş</div></div>';
+                return;
+            }
+            
+            list.innerHTML = tasks.map(task => `
+                <div class="task-item task-status-${task.status}">
+                    <div>
+                        <strong>${task.title}</strong><br>
+                        <span style="color:#666;">${task.description}</span><br>
+                        <small>📅 ${new Date(task.createdAt).toLocaleDateString('tr-TR')} - 👤 ${task.assignedToName}</small>
+                    </div>
+                    <div class="task-actions">
+                        ${task.status !== 'completed' ? 
+                            `<button class="action-btn complete-btn" onclick="completeTask(${task.id})">✅ Tamamla</button>` : 
+                            '<span style="color: #27ae60;">✅ Tamamlandı</span>'
+                        }
+                        <button class="action-btn delete-btn" onclick="deleteTask(${task.id})">🗑️</button>
+                    </div>
+                </div>
+            `).join('');
+        }
+
+        // Modal functions
+        function showAddUserModal() {
+            document.getElementById('addUserModal').style.display = 'block';
+        }
+
+        function showAddTaskModal() {
+            document.getElementById('addTaskModal').style.display = 'block';
+        }
+
+        function broadcastMessage() {
+            document.getElementById('broadcastModal').style.display = 'block';
+        }
+
+        function closeModal(modalId) {
+            document.getElementById(modalId).style.display = 'none';
+        }
+
+        // Admin functions
+        async function addUser() {
+            const chatId = document.getElementById('userChatId').value;
+            const name = document.getElementById('userName').value;
+            const department = document.getElementById('userDepartment').value;
+
+            if (!chatId || !name || !department) {
+                alert('Lütfen tüm alanları doldurun');
+                return;
+            }
+
+            const newEmployee = {
+                chatId: Number(chatId),
+                name: name,
+                department: department,
+                role: 'employee',
+                addedAt: new Date().toISOString(),
+                status: 'active'
+            };
+
+            appState.data.employees = appState.data.employees || [];
+            appState.data.employees.push(newEmployee);
+            
+            await saveData();
+            updateEmployeeList();
+            updateStats();
+            closeModal('addUserModal');
+            
+            // Clear form
+            document.getElementById('userChatId').value = '';
+            document.getElementById('userName').value = '';
+            document.getElementById('userDepartment').value = '';
+            
+            alert('Çalışan başarıyla eklendi!');
+        }
+
+        async function deleteEmployee(chatId) {
+            if (!confirm('Bu çalışanı silmek istediğinizden emin misiniz?')) return;
+
+            appState.data.employees = appState.data.employees.filter(emp => Number(emp.chatId) !== Number(chatId));
+            
+            await saveData();
+            updateEmployeeList();
+            updateStats();
+            alert('Çalışan silindi!');
+        }
+
+        async function toggleAdmin(chatId) {
+            const employee = appState.data.employees.find(emp => Number(emp.chatId) === Number(chatId));
+            if (!employee) return;
+
+            employee.role = employee.role === 'admin' ? 'employee' : 'admin';
+            
+            await saveData();
+            updateEmployeeList();
+            alert(`${employee.name} ${employee.role === 'admin' ? 'admin' : 'normal çalışan'} olarak ayarlandı!`);
+        }
+
+        async function addTask() {
+            const assigneeChatId = document.getElementById('taskAssignee').value;
+            const title = document.getElementById('taskTitle').value;
+            const description = document.getElementById('taskDescription').value;
+
+            if (!assigneeChatId || !title) {
+                alert('Lütfen çalışan seçin ve başlık girin');
+                return;
+            }
+
+            const assignee = appState.data.employees.find(emp => Number(emp.chatId) === Number(assigneeChatId));
+            
+            const newTask = {
+                id: Date.now(),
+                title: title,
+                description: description || 'Açıklama belirtilmedi',
+                assignedTo: Number(assigneeChatId),
+                assignedToName: assignee.name,
+                createdAt: new Date().toISOString(),
+                status: 'pending'
+            };
+
+            appState.data.tasks = appState.data.tasks || [];
+            appState.data.tasks.push(newTask);
+            
+            await saveData();
+            updateTaskList();
+            updateStats();
+            closeModal('addTaskModal');
+            
+            // Clear form
+            document.getElementById('taskAssignee').value = '';
+            document.getElementById('taskTitle').value = '';
+            document.getElementById('taskDescription').value = '';
+            
+            alert('Görev başarıyla atandı!');
+        }
+
+        async function completeTask(taskId) {
+            const task = appState.data.tasks.find(t => t.id === taskId);
+            if (!task) return;
+
+            task.status = 'completed';
+            task.completedAt = new Date().toISOString();
+            
+            await saveData();
+            updateTaskList();
+            updateStats();
+            alert('Görev tamamlandı olarak işaretlendi!');
+        }
+
+        async function deleteTask(taskId) {
+            if (!confirm('Bu görevi silmek istediğinizden emin misiniz?')) return;
+
+            appState.data.tasks = appState.data.tasks.filter(t => t.id !== taskId);
+            
+            await saveData();
+            updateTaskList();
+            updateStats();
+            alert('Görev silindi!');
+        }
+
+        async function clearProducts() {
+            if (!confirm('Tüm eksik ürün listesini temizlemek istediğinizden emin misiniz?')) return;
+
+            appState.data.products = [];
+            
+            await saveData();
+            updateProductList();
+            updateStats();
+            alert('Eksik ürün listesi temizlendi!');
+        }
+
+        async function sendBroadcast() {
+            const message = document.getElementById('broadcastMessage').value;
+            if (!message.trim()) {
+                alert('Lütfen duyuru mesajını girin');
+                return;
+            }
+
+            // Bu bir demo - gerçekte Telegram API'ye gönderilir
+            alert(`Duyuru mesajı ${appState.data.employees?.length || 0} çalışana gönderildi:\n\n"${message}"`);
+            
+            closeModal('broadcastModal');
+            document.getElementById('broadcastMessage').value = '';
+        }
+
+        function exportData() {
+            const dataStr = JSON.stringify(appState.data, null, 2);
+            const dataBlob = new Blob([dataStr], { type: 'application/json' });
+            const url = URL.createObjectURL(dataBlob);
+            const link = document.createElement('a');
+            link.href = url;
+            link.download = `sivalteam-data-${new Date().toISOString().split('T')[0]}.json`;
+            link.click();
+            URL.revokeObjectURL(url);
+        }
+
+        function refreshAll() {
+            loadData();
+            alert('Tüm veriler yenilendi!');
+        }
+
+        // Close modal when clicking outside
+        window.onclick = function(event) {
+            if (event.target.classList.contains('modal')) {
+                event.target.style.display = 'none';
             }
         }
 
