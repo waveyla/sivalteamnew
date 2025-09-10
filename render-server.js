@@ -3955,6 +3955,7 @@ class CallbackQueryHandler {
                 `🗑️ Ürün eksik ürün listesinden kaldırıldı.\n` +
                 `📅 Tamamlanma: ${new Date().toLocaleString('tr-TR')}`
             );
+            }
             
             // Notify the person who reported the product
             if (Number(completedProduct.reportedByChatId) !== Number(chatId)) {
