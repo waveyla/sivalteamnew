@@ -541,6 +541,21 @@ class TelegramAPI {
         });
     }
     
+    async editMessageReplyMarkup(chatId, messageId, replyMarkup = {}) {
+        return new Promise((resolve, reject) => {
+            this.messageQueue.push({
+                method: 'editMessageReplyMarkup',
+                chatId,
+                messageId,
+                replyMarkup,
+                resolve,
+                reject
+            });
+            
+            this.processQueue();
+        });
+    }
+    
     async processQueue() {
         if (this.processing || this.messageQueue.length === 0) return;
         
@@ -646,6 +661,14 @@ class TelegramAPI {
                         inline_keyboard: options.inline_keyboard
                     };
                 }
+                break;
+                
+            case 'editMessageReplyMarkup':
+                payload = {
+                    chat_id: chatId,
+                    message_id: messageId,
+                    reply_markup: replyMarkup
+                };
                 break;
         }
         
@@ -3804,9 +3827,23 @@ class CallbackQueryHandler {
             const endTime = new Date(completedTask.completedAt);
             const timeTaken = Math.round((endTime - startTime) / (1000 * 60 * 60)); // hours
             
-            // Notify user
-            await telegramAPI.sendMessage(chatId,
-                `✅ <b>Görev Tamamlandı!</b>\n\n` +
+            // Remove button from original message
+            try {
+                await telegramAPI.editMessageReplyMarkup(chatId, message.message_id, {
+                    inline_keyboard: []
+                });
+                
+                await telegramAPI.editMessageText(chatId, message.message_id,
+                    `✅ <b>TAMAMLANDI</b>\n\n` +
+                    `🎯 ${completedTask.title}\n` +
+                    `📝 ${completedTask.description}\n\n` +
+                    `✅ <b>Görev tamamlandı</b> - 📅 ${new Date().toLocaleString('tr-TR')}`
+                );
+            } catch (editError) {
+                console.log('Could not edit task message, sending new one');
+                // Fallback to new message  
+                await telegramAPI.sendMessage(chatId,
+                    `✅ <b>Görev Tamamlandı!</b>\n\n` +
                 `🎯 <b>${completedTask.title}</b>\n` +
                 `📝 ${completedTask.description}\n\n` +
                 `⏱️ <b>Tamamlanma Süresi:</b> ${timeTaken < 1 ? 'Aynı gün' : timeTaken + ' saat'}\n` +
@@ -3894,7 +3931,22 @@ class CallbackQueryHandler {
         try {
             const completedProduct = await productManager.completeProduct(productId, chatId);
             
-            await telegramAPI.sendMessage(chatId,
+            // Remove button from original message
+            try {
+                await telegramAPI.editMessageReplyMarkup(chatId, message.message_id, {
+                    inline_keyboard: []
+                });
+                
+                await telegramAPI.editMessageText(chatId, message.message_id,
+                    `✅ <b>TAMAMLANDI</b>\n\n` +
+                    `📦 ${completedProduct.product}\n` +
+                    `🏷️ ${completedProduct.category}\n` +
+                    `👤 Bildiren: ${completedProduct.reportedBy}\n\n` +
+                    `✅ <b>Temin edildi</b> - 📅 ${new Date().toLocaleString('tr-TR')}`
+                );
+            } catch (editError) {
+                console.log('Could not edit message, sending new one');
+                await telegramAPI.sendMessage(chatId,
                 `✅ <b>Ürün Tamamlandı!</b>\n\n` +
                 `📦 <b>${completedProduct.product}</b>\n` +
                 `🏷️ Kategori: ${completedProduct.category}\n` +
