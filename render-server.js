@@ -1322,9 +1322,9 @@ class CommandHandler {
         this.keyboards.set('admin_panel', [
             [{ text: "👥 Çalışanları Listele" }, { text: "📦 Eksik Ürünler" }],
             [{ text: "📋 Görev Yönetimi" }, { text: "⏳ Bekleyen Onaylar" }],
-            [{ text: "👑 Admin Ata" }, { text: "📊 Detaylı Raporlar" }],
-            [{ text: "📢 Duyuru Gönder" }, { text: "🗑️ Listeyi Temizle" }],
-            [{ text: "🔙 Ana Menü" }]
+            [{ text: "👑 Admin Ata" }, { text: "🗑️ Çalışan Sil" }],
+            [{ text: "📊 Detaylı Raporlar" }, { text: "📢 Duyuru Gönder" }],
+            [{ text: "🗑️ Listeyi Temizle" }, { text: "🔙 Ana Menü" }]
         ]);
         
         this.keyboards.set('back_menu', [
@@ -1772,6 +1772,68 @@ class CommandHandler {
             'info'
         );
         
+        // Check if user was previously deleted
+        const deletedEmployees = await dataManager.readFile(DATA_FILES.deletedEmployees);
+        const wasDeleted = deletedEmployees.find(emp => Number(emp.chatId) === Number(chatId));
+        
+        if (wasDeleted) {
+            // User was previously deleted - require re-approval
+            await telegramAPI.sendMessage(chatId,
+                `🚫 <b>Hesabınız Daha Önce Silindi</b>\n\n` +
+                `📅 <b>Silme Tarihi:</b> ${new Date(wasDeleted.deletedAt).toLocaleString('tr-TR')}\n` +
+                `👤 <b>Silen Yönetici:</b> ${wasDeleted.deletedByName}\n\n` +
+                `🔄 Sisteme tekrar giriş için <b>admin onayı</b> gereklidir.\n` +
+                `📝 Kayıt talebiniz otomatik olarak admin onayına gönderildi.\n\n` +
+                `⏳ Lütfen admin onayını bekleyiniz...`
+            );
+            
+            // Create pending approval for deleted user
+            const pendingUser = await userManager.setPendingApproval({
+                chatId,
+                firstName: from.first_name,
+                lastName: from.last_name,
+                username: from.username,
+                wasDeleted: true,
+                originalName: wasDeleted.name,
+                deletedAt: wasDeleted.deletedAt,
+                deletedBy: wasDeleted.deletedByName
+            });
+            
+            // Notify admins about re-entry attempt
+            const adminSettings = await dataManager.readFile(DATA_FILES.adminSettings);
+            for (const adminChatId of adminSettings.adminUsers) {
+                await telegramAPI.sendMessage(adminChatId,
+                    `🔴 <b>SİLİNMİŞ KULLANICI GİRİŞİ</b>\n\n` +
+                    `⚠️ Daha önce silinen bir kullanıcı tekrar giriş yapmak istiyor!\n\n` +
+                    `👤 <b>Ad:</b> ${from.first_name}\n` +
+                    `🆔 <b>Username:</b> @${from.username || 'yok'}\n` +
+                    `💬 <b>Chat ID:</b> <code>${chatId}</code>\n\n` +
+                    `📋 <b>Eski Bilgiler:</b>\n` +
+                    `• Eski Ad: ${wasDeleted.name}\n` +
+                    `• Silme Tarihi: ${new Date(wasDeleted.deletedAt).toLocaleString('tr-TR')}\n` +
+                    `• Silen: ${wasDeleted.deletedByName}\n\n` +
+                    `🔍 <b>Dikkatli değerlendirme yapınız!</b>`,
+                    {
+                        inline_keyboard: [
+                            [
+                                { text: "✅ Tekrar Onay Ver", callback_data: `approve_deleted_${chatId}` },
+                                { text: "❌ Reddet", callback_data: `reject_deleted_${chatId}` }
+                            ]
+                        ]
+                    }
+                );
+            }
+            
+            await activityLogger.log(
+                `🔴 Silinen kullanıcı tekrar giriş denemesi: ${from.first_name} (Eski: ${wasDeleted.name})`,
+                chatId,
+                from.first_name,
+                'warning'
+            );
+            
+            return;
+        }
+        
         // Check if this is the first user (becomes admin automatically)
         const employees = await dataManager.readFile(DATA_FILES.employees);
         const adminSettings = await dataManager.readFile(DATA_FILES.adminSettings);
@@ -1960,6 +2022,11 @@ class CommandHandler {
                 await this.handlePromoteAdmin(chatId, user);
                 break;
                 
+            case "🗑️ Çalışan Sil":
+                if (!isAdmin) return;
+                await this.handleRemoveEmployee(chatId, user);
+                break;
+                
             case "⏳ Bekleyen Onaylar":
                 if (!isAdmin) return;
                 await this.handlePendingUsers(chatId, text, from, user, isAdmin);
@@ -2142,22 +2209,17 @@ class CommandHandler {
                 return;
             }
             
-            if (!text.includes('|')) {
+            if (text.trim().length < 5) {
                 await telegramAPI.sendMessage(chatId,
-                    `❌ <b>Format Hatası!</b>\n\n` +
-                    `Lütfen formatı kullanın: Görev başlığı | Açıklama\n\n` +
-                    `Örnek: Rapor hazırla | Haftalık satış verilerini derle`
+                    `❌ <b>Görev Çok Kısa!</b>\n\n` +
+                    `Lütfen en az 5 karakter uzunluğunda bir görev yazın.`
                 );
                 return;
             }
             
-            const [title, description] = text.split('|').map(part => part.trim());
-            if (!title || !description) {
-                await telegramAPI.sendMessage(chatId,
-                    "❌ Hem görev başlığı hem de açıklama gerekli!"
-                );
-                return;
-            }
+            const taskText = text.trim();
+            const title = taskText.length > 50 ? taskText.substring(0, 47) + '...' : taskText;
+            const description = taskText;
             
             try {
                 const targetEmployee = userState.targetEmployee;
@@ -2177,8 +2239,7 @@ class CommandHandler {
                 await telegramAPI.sendMessage(chatId,
                     `✅ <b>Görev Başarıyla Atandı!</b>\n\n` +
                     `👤 <b>Çalışan:</b> ${targetEmployee.name}\n` +
-                    `📋 <b>Görev:</b> ${title}\n` +
-                    `📝 <b>Açıklama:</b> ${description}\n` +
+                    `📋 <b>Görev:</b> ${taskText}\n` +
                     `📅 <b>Tarih:</b> ${new Date().toLocaleString('tr-TR')}\n\n` +
                     `🔔 Çalışana bildirim gönderildi.`,
                     {
@@ -2190,8 +2251,7 @@ class CommandHandler {
                 // Notify the employee
                 await telegramAPI.sendMessage(Number(targetEmployee.chatId),
                     `🎯 <b>Yeni Görev Atandı!</b>\n\n` +
-                    `📋 <b>Görev:</b> ${title}\n` +
-                    `📝 <b>Açıklama:</b> ${description}\n` +
+                    `📋 <b>Görev:</b> ${taskText}\n` +
                     `👤 <b>Atayan:</b> ${user.name}\n` +
                     `📅 <b>Tarih:</b> ${new Date().toLocaleString('tr-TR')}\n\n` +
                     `📋 Görevlerinizi görmek için: "📋 Görevlerim" butonunu kullanın.`,
@@ -2218,22 +2278,17 @@ class CommandHandler {
                 return;
             }
             
-            if (!text.includes('|')) {
+            if (text.trim().length < 5) {
                 await telegramAPI.sendMessage(chatId,
-                    `❌ <b>Format Hatası!</b>\n\n` +
-                    `Lütfen formatı kullanın: Görev başlığı | Açıklama\n\n` +
-                    `Örnek: Haftalık toplantı | Pazartesi 14:00'da genel toplantı`
+                    `❌ <b>Görev Çok Kısa!</b>\n\n` +
+                    `Lütfen en az 5 karakter uzunluğunda bir görev yazın.`
                 );
                 return;
             }
             
-            const [title, description] = text.split('|').map(part => part.trim());
-            if (!title || !description) {
-                await telegramAPI.sendMessage(chatId,
-                    "❌ Hem görev başlığı hem de açıklama gerekli!"
-                );
-                return;
-            }
+            const taskText = text.trim();
+            const title = taskText.length > 50 ? taskText.substring(0, 47) + '...' : taskText;
+            const description = taskText;
             
             try {
                 const employees = await dataManager.readFile(DATA_FILES.employees);
@@ -2262,8 +2317,7 @@ class CommandHandler {
                         // Notify each employee
                         await telegramAPI.sendMessage(Number(employee.chatId),
                             `🎯 <b>Yeni Toplu Görev!</b>\n\n` +
-                            `📋 <b>Görev:</b> ${title}\n` +
-                            `📝 <b>Açıklama:</b> ${description}\n` +
+                            `📋 <b>Görev:</b> ${taskText}\n` +
                             `👤 <b>Atayan:</b> ${user.name}\n` +
                             `📅 <b>Tarih:</b> ${new Date().toLocaleString('tr-TR')}\n\n` +
                             `👥 Bu görev tüm çalışanlara atanmıştır.\n` +
@@ -2289,8 +2343,7 @@ class CommandHandler {
                 
                 await telegramAPI.sendMessage(chatId,
                     `✅ <b>Toplu Görev Atama Tamamlandı!</b>\n\n` +
-                    `📋 <b>Görev:</b> ${title}\n` +
-                    `📝 <b>Açıklama:</b> ${description}\n` +
+                    `📋 <b>Görev:</b> ${taskText}\n` +
                     `👥 <b>Atanan Çalışan:</b> ${successCount}/${activeEmployees.length}\n` +
                     `📅 <b>Tarih:</b> ${new Date().toLocaleString('tr-TR')}\n\n` +
                     `🔔 Tüm çalışanlara bildirim gönderildi.`,
@@ -3245,6 +3298,85 @@ class CommandHandler {
         }
     }
 
+    async handleRemoveEmployee(chatId, user) {
+        try {
+            const employees = await dataManager.readFile(DATA_FILES.employees);
+            const adminSettings = await dataManager.readFile(DATA_FILES.adminSettings);
+            
+            // Don't show current admin in removal list
+            const removableEmployees = employees.filter(emp => Number(emp.chatId) !== Number(chatId));
+            
+            if (removableEmployees.length === 0) {
+                await telegramAPI.sendMessage(chatId,
+                    "🗑️ <b>Çalışan Silme Paneli</b>\n\n" +
+                    "❌ Silinebilecek çalışan bulunamadı.\n" +
+                    "📋 Kendi hesabınızı silemezsiniz.",
+                    {
+                        keyboard: this.getKeyboard('admin_panel'),
+                        resize_keyboard: true
+                    }
+                );
+                return;
+            }
+            
+            let removeText = `🗑️ <b>Çalışan Silme Paneli</b>\n\n`;
+            removeText += `📊 <b>Mevcut Durum:</b>\n`;
+            removeText += `├ 👤 Silinebilir Çalışan: ${removableEmployees.length}\n`;
+            removeText += `├ 👑 Admin Sayısı: ${adminSettings.adminUsers.length}\n`;
+            removeText += `└ 📈 Toplam Kullanıcı: ${employees.length}\n\n`;
+            removeText += `⚠️ <b>DİKKAT:</b> Silinen çalışan sistemden tamamen çıkarılır!\n\n`;
+            
+            await telegramAPI.sendMessage(chatId, removeText, {
+                keyboard: this.getKeyboard('admin_panel'),
+                resize_keyboard: true
+            });
+            
+            // Show each employee with remove button
+            for (let i = 0; i < Math.min(removableEmployees.length, 10); i++) {
+                const employee = removableEmployees[i];
+                const daysSinceJoined = Math.floor((Date.now() - new Date(employee.addedAt)) / (1000 * 60 * 60 * 24));
+                const isEmpAdmin = adminSettings.adminUsers.includes(Number(employee.chatId));
+                
+                await telegramAPI.sendMessage(chatId,
+                    `${i + 1}. ${isEmpAdmin ? '👑' : '👤'} <b>${employee.name}</b>\n` +
+                    `🏢 Departman: ${employee.department}\n` +
+                    `🎭 Rol: ${isEmpAdmin ? 'Admin' : 'Çalışan'}\n` +
+                    `📅 ${daysSinceJoined} gün önce katıldı\n` +
+                    `📋 ${employee.totalTasks || 0} görev tamamladı\n` +
+                    `💬 ID: <code>${employee.chatId}</code>\n\n` +
+                    `⚠️ Bu işlem geri alınamaz!`,
+                    {
+                        inline_keyboard: [
+                            [
+                                { text: "🗑️ Çalışanı Sil", callback_data: `remove_employee_${employee.chatId}` },
+                                isEmpAdmin ? 
+                                    { text: "👤 Admin Yetkisi Al", callback_data: `demote_admin_${employee.chatId}` } :
+                                    { text: "📊 Detay", callback_data: `user_detail_${employee.chatId}` }
+                            ]
+                        ]
+                    }
+                );
+            }
+            
+            if (removableEmployees.length > 10) {
+                await telegramAPI.sendMessage(chatId,
+                    `... ve ${removableEmployees.length - 10} çalışan daha\n\n` +
+                    `💡 <b>Manuel Çalışan Silme:</b>\n` +
+                    `Komut: <code>/removeuser @kullanıcı</code>\n` +
+                    `Örnek: <code>/removeuser @ahmet</code>`,
+                    {
+                        keyboard: this.getKeyboard('admin_panel'),
+                        resize_keyboard: true
+                    }
+                );
+            }
+            
+        } catch (error) {
+            console.error('❌ Remove employee error:', error);
+            await telegramAPI.sendMessage(chatId, "❌ Çalışan silme paneli yüklenirken hata oluştu.");
+        }
+    }
+
     async handleDetailedReports(chatId, user) {
         try {
             const employees = await dataManager.readFile(DATA_FILES.employees);
@@ -3389,6 +3521,10 @@ class CallbackQueryHandler {
         this.handlers.set('show_active_tasks', this.handleShowActiveTasks.bind(this));
         this.handlers.set('select_employee_', this.handleSelectEmployee.bind(this));
         this.handlers.set('back_to_task_menu', this.handleBackToTaskMenu.bind(this));
+        this.handlers.set('remove_employee_', this.handleRemoveEmployeeCallback.bind(this));
+        this.handlers.set('demote_admin_', this.handleDemoteAdminCallback.bind(this));
+        this.handlers.set('approve_deleted_', this.handleApproveDeletedCallback.bind(this));
+        this.handlers.set('reject_deleted_', this.handleRejectDeletedCallback.bind(this));
     }
     
     async handleCallback(callbackQuery) {
@@ -3915,12 +4051,9 @@ class CallbackQueryHandler {
         
         await telegramAPI.sendMessage(chatId,
             `👥 <b>Herkese Görev Atama</b>\n\n` +
-            `📝 Görev başlığını ve açıklamasını yazın:\n\n` +
-            `📋 <b>Format:</b>\n` +
-            `Görev başlığı | Görev açıklaması\n\n` +
-            `💡 <b>Örnek:</b>\n` +
-            `Haftalık rapor hazırlama | Bu haftanın satış verilerini derleyip rapor halinde sunun\n\n` +
-            `✍️ Şimdi görevinizi yazın:`,
+            `📝 Tüm çalışanlara göndereceğiniz görevi yazın:\n\n` +
+            `💡 <b>Örnek:</b> "Bu haftanın satış verilerini derleyip haftalık raporu hazırlayın"\n\n` +
+            `✍️ Görevinizi doğrudan yazın:`,
             {
                 keyboard: [[{ text: "❌ İptal Et" }]],
                 resize_keyboard: true
@@ -3950,12 +4083,9 @@ class CallbackQueryHandler {
             
             await telegramAPI.sendMessage(chatId,
                 `👤 <b>Görev Atama - ${selectedEmployee.name}</b>\n\n` +
-                `📝 Görev başlığını ve açıklamasını yazın:\n\n` +
-                `📋 <b>Format:</b>\n` +
-                `Görev başlığı | Görev açıklaması\n\n` +
-                `💡 <b>Örnek:</b>\n` +
-                `Müşteri araması | Yeni müşteri listesindeki 10 kişiyi arayıp bilgi ver\n\n` +
-                `✍️ Şimdi görevinizi yazın:`,
+                `📝 ${selectedEmployee.name} kişisine vereceğiniz görevi yazın:\n\n` +
+                `💡 <b>Örnek:</b> "Müşteri listesindeki 10 kişiyi arayıp bilgi toplayın"\n\n` +
+                `✍️ Görevinizi doğrudan yazın:`,
                 {
                     keyboard: [[{ text: "❌ İptal Et" }]],
                     resize_keyboard: true
@@ -4080,6 +4210,303 @@ class CallbackQueryHandler {
         
         // Go back to task management panel
         await this.handleTaskManagement(chatId, user);
+    }
+
+    async handleRemoveEmployeeCallback(data, chatId, from, message, user, isAdmin) {
+        if (!isAdmin) {
+            await telegramAPI.sendMessage(chatId, "❌ Bu işlem sadece adminler tarafından yapılabilir.");
+            return;
+        }
+        
+        const targetChatId = data.replace('remove_employee_', '');
+        
+        try {
+            const employees = await dataManager.readFile(DATA_FILES.employees);
+            const adminSettings = await dataManager.readFile(DATA_FILES.adminSettings);
+            
+            // Find target user
+            const targetUser = employees.find(emp => Number(emp.chatId) === Number(targetChatId));
+            if (!targetUser) {
+                await telegramAPI.sendMessage(chatId, "❌ Silinecek kullanıcı bulunamadı.");
+                return;
+            }
+            
+            // Prevent self-removal
+            if (Number(targetChatId) === Number(chatId)) {
+                await telegramAPI.sendMessage(chatId, "❌ Kendi hesabınızı silemezsiniz!");
+                return;
+            }
+            
+            // Remove from employees
+            const updatedEmployees = employees.filter(emp => Number(emp.chatId) !== Number(targetChatId));
+            
+            // Remove from admin list if admin
+            const updatedAdminUsers = adminSettings.adminUsers.filter(adminId => Number(adminId) !== Number(targetChatId));
+            adminSettings.adminUsers = updatedAdminUsers;
+            
+            // Save to deleted employees for tracking
+            const deletedEmployees = await dataManager.readFile(DATA_FILES.deletedEmployees);
+            const deletedEmployee = {
+                ...targetUser,
+                deletedAt: new Date().toISOString(),
+                deletedBy: chatId,
+                deletedByName: user.name
+            };
+            deletedEmployees.push(deletedEmployee);
+            
+            // Save all changes
+            await dataManager.writeFile(DATA_FILES.employees, updatedEmployees);
+            await dataManager.writeFile(DATA_FILES.adminSettings, adminSettings);
+            await dataManager.writeFile(DATA_FILES.deletedEmployees, deletedEmployees);
+            
+            // Log activity
+            await activityLogger.log(
+                `🗑️ Çalışan silindi: ${targetUser.name} (${user.name} tarafından)`,
+                chatId,
+                user.name,
+                'warning'
+            );
+            
+            // Notify the admin who removed
+            await telegramAPI.sendMessage(chatId,
+                `✅ <b>Çalışan Başarıyla Silindi!</b>\n\n` +
+                `🗑️ <b>Silinen:</b> ${targetUser.name}\n` +
+                `🏢 <b>Departman:</b> ${targetUser.department}\n` +
+                `🎭 <b>Rol:</b> ${targetUser.role === 'admin' ? 'Admin' : 'Çalışan'}\n` +
+                `📅 <b>Silme Tarihi:</b> ${new Date().toLocaleString('tr-TR')}\n\n` +
+                `🔒 <b>Güvenlik:</b> Kullanıcı sistemden tamamen çıkarıldı.\n` +
+                `📝 <b>Not:</b> Tekrar giriş yaparsa admin onayı gerekecek.`
+            );
+            
+            // Notify the removed user
+            await telegramAPI.sendMessage(Number(targetChatId),
+                `🚫 <b>Hesabınız Sistem Yöneticisi Tarafından Silindi</b>\n\n` +
+                `👤 <b>İşlemi Yapan:</b> ${user.name}\n` +
+                `📅 <b>Silme Tarihi:</b> ${new Date().toLocaleString('tr-TR')}\n\n` +
+                `🔒 Artık SivalTeam sistemine erişiminiz bulunmamaktadır.\n` +
+                `🚪 Tekrar sisteme girmek için yönetici onayı almalısınız.`
+            );
+            
+        } catch (error) {
+            console.error('❌ Remove employee callback error:', error);
+            await telegramAPI.sendMessage(chatId, "❌ Çalışan silme sırasında hata oluştu.");
+        }
+    }
+    
+    async handleDemoteAdminCallback(data, chatId, from, message, user, isAdmin) {
+        if (!isAdmin) {
+            await telegramAPI.sendMessage(chatId, "❌ Bu işlem sadece adminler tarafından yapılabilir.");
+            return;
+        }
+        
+        const targetChatId = data.replace('demote_admin_', '');
+        
+        try {
+            const employees = await dataManager.readFile(DATA_FILES.employees);
+            const adminSettings = await dataManager.readFile(DATA_FILES.adminSettings);
+            
+            // Find target user
+            const targetUser = employees.find(emp => Number(emp.chatId) === Number(targetChatId));
+            if (!targetUser) {
+                await telegramAPI.sendMessage(chatId, "❌ Kullanıcı bulunamadı.");
+                return;
+            }
+            
+            // Prevent self-demotion
+            if (Number(targetChatId) === Number(chatId)) {
+                await telegramAPI.sendMessage(chatId, "❌ Kendi admin yetkilerinizi alamazsınız!");
+                return;
+            }
+            
+            // Check if really admin
+            if (targetUser.role !== 'admin' && !adminSettings.adminUsers.includes(Number(targetChatId))) {
+                await telegramAPI.sendMessage(chatId, `❌ ${targetUser.name} zaten admin değil.`);
+                return;
+            }
+            
+            // Check if this is the last admin
+            if (adminSettings.adminUsers.length <= 1) {
+                await telegramAPI.sendMessage(chatId,
+                    `❌ <b>Son Admin Silinemez!</b>\n\n` +
+                    `🔒 Sistemde en az bir admin bulunmalıdır.\n` +
+                    `👑 Önce başka birisini admin yapın, sonra yetkiyi alın.`
+                );
+                return;
+            }
+            
+            // Demote to employee
+            targetUser.role = 'employee';
+            targetUser.permissions = ['limited_access'];
+            targetUser.demotedAt = new Date().toISOString();
+            targetUser.demotedBy = chatId;
+            
+            // Remove from admin list
+            adminSettings.adminUsers = adminSettings.adminUsers.filter(adminId => Number(adminId) !== Number(targetChatId));
+            
+            // Save changes
+            await dataManager.writeFile(DATA_FILES.employees, employees);
+            await dataManager.writeFile(DATA_FILES.adminSettings, adminSettings);
+            
+            // Log activity
+            await activityLogger.log(
+                `👤 Admin yetkisi alındı: ${targetUser.name} (${user.name} tarafından)`,
+                chatId,
+                user.name,
+                'warning'
+            );
+            
+            // Notify the admin who demoted
+            await telegramAPI.sendMessage(chatId,
+                `✅ <b>Admin Yetkisi Başarıyla Alındı!</b>\n\n` +
+                `👤 <b>Eski Admin:</b> ${targetUser.name}\n` +
+                `📅 <b>Tarih:</b> ${new Date().toLocaleString('tr-TR')}\n\n` +
+                `🔄 <b>Yeni Durumu:</b> Normal çalışan\n` +
+                `📝 <b>Not:</b> Artık admin paneline erişemeyecek.`
+            );
+            
+            // Notify the demoted user
+            await telegramAPI.sendMessage(Number(targetChatId),
+                `👤 <b>Admin Yetkileriniz Alındı</b>\n\n` +
+                `👑 <b>Yetkiyi Alan:</b> ${user.name}\n` +
+                `📅 <b>Tarih:</b> ${new Date().toLocaleString('tr-TR')}\n\n` +
+                `🔄 Artık normal çalışan statüsündesiniz.\n` +
+                `📋 Görevlerinizi takip edebilir ve ürün bildirimde bulunabilirsiniz.`,
+                {
+                    keyboard: this.getKeyboard('main', false),
+                    resize_keyboard: true
+                }
+            );
+            
+        } catch (error) {
+            console.error('❌ Demote admin callback error:', error);
+            await telegramAPI.sendMessage(chatId, "❌ Yetki alma sırasında hata oluştu.");
+        }
+    }
+
+    async handleApproveDeletedCallback(data, chatId, from, message, user, isAdmin) {
+        if (!isAdmin) {
+            await telegramAPI.sendMessage(chatId, "❌ Bu işlem sadece adminler tarafından yapılabilir.");
+            return;
+        }
+        
+        const targetChatId = data.replace('approve_deleted_', '');
+        
+        try {
+            // Find in pending users
+            const pendingUsers = await dataManager.readFile(DATA_FILES.pendingUsers);
+            const pendingUser = pendingUsers.find(u => Number(u.chatId) === Number(targetChatId));
+            
+            if (!pendingUser) {
+                await telegramAPI.sendMessage(chatId, "❌ Bekleyen kullanıcı bulunamadı.");
+                return;
+            }
+            
+            // Remove from pending
+            const updatedPendingUsers = pendingUsers.filter(u => Number(u.chatId) !== Number(targetChatId));
+            await dataManager.writeFile(DATA_FILES.pendingUsers, updatedPendingUsers);
+            
+            // Remove from deleted employees
+            const deletedEmployees = await dataManager.readFile(DATA_FILES.deletedEmployees);
+            const updatedDeletedEmployees = deletedEmployees.filter(emp => Number(emp.chatId) !== Number(targetChatId));
+            await dataManager.writeFile(DATA_FILES.deletedEmployees, updatedDeletedEmployees);
+            
+            // Add as new employee
+            const newEmployee = await userManager.addUser({
+                chatId: targetChatId,
+                name: turkishHandler.protect(pendingUser.firstName || 'Kullanıcı'),
+                username: pendingUser.username,
+                department: 'Genel',
+                role: 'employee',
+                permissions: ['limited_access'],
+                reApproved: true,
+                reApprovedAt: new Date().toISOString(),
+                reApprovedBy: chatId
+            });
+            
+            // Notify admin
+            await telegramAPI.sendMessage(chatId,
+                `✅ <b>Silinen Kullanıcı Yeniden Onaylandı!</b>\n\n` +
+                `👤 <b>Kullanıcı:</b> ${newEmployee.name}\n` +
+                `📅 <b>Onay Tarihi:</b> ${new Date().toLocaleString('tr-TR')}\n\n` +
+                `🔄 Artık sistemde aktif çalışan olarak yer alıyor.`
+            );
+            
+            // Notify approved user
+            await telegramAPI.sendMessage(Number(targetChatId),
+                `✅ <b>Kaydınız Yeniden Onaylandı!</b>\n\n` +
+                `🎉 SivalTeam sistemine tekrar hoşgeldiniz!\n` +
+                `👤 <b>Onaylayan Admin:</b> ${user.name}\n` +
+                `📅 <b>Onay Tarihi:</b> ${new Date().toLocaleString('tr-TR')}\n\n` +
+                `✅ Artık sistemi tam olarak kullanabilirsiniz.`,
+                {
+                    keyboard: commandHandler.getKeyboard('main', false),
+                    resize_keyboard: true
+                }
+            );
+            
+            await activityLogger.log(
+                `✅ Silinen kullanıcı yeniden onaylandı: ${newEmployee.name} (${user.name} tarafından)`,
+                chatId,
+                user.name,
+                'info'
+            );
+            
+        } catch (error) {
+            console.error('❌ Approve deleted user error:', error);
+            await telegramAPI.sendMessage(chatId, "❌ Kullanıcı onaylanırken hata oluştu.");
+        }
+    }
+    
+    async handleRejectDeletedCallback(data, chatId, from, message, user, isAdmin) {
+        if (!isAdmin) {
+            await telegramAPI.sendMessage(chatId, "❌ Bu işlem sadece adminler tarafından yapılabilir.");
+            return;
+        }
+        
+        const targetChatId = data.replace('reject_deleted_', '');
+        
+        try {
+            // Find in pending users
+            const pendingUsers = await dataManager.readFile(DATA_FILES.pendingUsers);
+            const pendingUser = pendingUsers.find(u => Number(u.chatId) === Number(targetChatId));
+            
+            if (!pendingUser) {
+                await telegramAPI.sendMessage(chatId, "❌ Bekleyen kullanıcı bulunamadı.");
+                return;
+            }
+            
+            // Remove from pending users
+            const updatedPendingUsers = pendingUsers.filter(u => Number(u.chatId) !== Number(targetChatId));
+            await dataManager.writeFile(DATA_FILES.pendingUsers, updatedPendingUsers);
+            
+            // Notify admin
+            await telegramAPI.sendMessage(chatId,
+                `❌ <b>Silinen Kullanıcı Reddedildi!</b>\n\n` +
+                `👤 <b>Kullanıcı:</b> ${pendingUser.firstName}\n` +
+                `📅 <b>Red Tarihi:</b> ${new Date().toLocaleString('tr-TR')}\n\n` +
+                `🚫 Kullanıcı sisteme erişemeyecek.`
+            );
+            
+            // Notify rejected user
+            await telegramAPI.sendMessage(Number(targetChatId),
+                `❌ <b>Giriş Talebiniz Reddedildi</b>\n\n` +
+                `🚫 Daha önce sistemden silindiğiniz için tekrar giriş talebiniz reddedildi.\n` +
+                `👤 <b>Reddeden Admin:</b> ${user.name}\n` +
+                `📅 <b>Red Tarihi:</b> ${new Date().toLocaleString('tr-TR')}\n\n` +
+                `📞 Daha fazla bilgi için yöneticinizle iletişime geçin.`
+            );
+            
+            await activityLogger.log(
+                `❌ Silinen kullanıcı reddedildi: ${pendingUser.firstName} (${user.name} tarafından)`,
+                chatId,
+                user.name,
+                'warning'
+            );
+            
+        } catch (error) {
+            console.error('❌ Reject deleted user error:', error);
+            await telegramAPI.sendMessage(chatId, "❌ Kullanıcı reddedilirken hata oluştu.");
+        }
     }
 
     async handleUserAction(data, chatId, from, message, user, isAdmin) {
