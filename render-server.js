@@ -2299,8 +2299,11 @@ class CommandHandler {
                     `📋 <b>Görev:</b> ${taskText}\n` +
                     `👤 <b>Atayan:</b> ${user.name}\n` +
                     `📅 <b>Tarih:</b> ${new Date().toLocaleString('tr-TR')}\n\n` +
-                    `📋 Görevlerinizi görmek için: "📋 Görevlerim" butonunu kullanın.`,
+                    `✅ Görevi tamamladığınızda butonu kullanın.`,
                     {
+                        inline_keyboard: [[
+                            { text: "✅ Görevi Tamamla", callback_data: `complete_task_${newTask.id}` }
+                        ]],
                         keyboard: this.getKeyboard('main', false),
                         resize_keyboard: true
                     }
@@ -2366,8 +2369,11 @@ class CommandHandler {
                             `👤 <b>Atayan:</b> ${user.name}\n` +
                             `📅 <b>Tarih:</b> ${new Date().toLocaleString('tr-TR')}\n\n` +
                             `👥 Bu görev tüm çalışanlara atanmıştır.\n` +
-                            `📋 Görevlerinizi görmek için: "📋 Görevlerim" butonunu kullanın.`,
+                            `✅ Görevi tamamladığınızda butonu kullanın.`,
                             {
+                                inline_keyboard: [[
+                                    { text: "✅ Görevi Tamamla", callback_data: `complete_task_${newTask.id}` }
+                                ]],
                                 keyboard: [{
                                     text: "📋 Görevlerim"
                                 }, {
@@ -2441,7 +2447,7 @@ class CommandHandler {
                 for (const employee of allUsers) {
                     try {
                         await telegramAPI.sendMessage(Number(employee.chatId),
-                            `📢 <b>GÜNEL DUYURU</b>\n\n` +
+                            `📢 <b>GENEL DUYURU</b>\n\n` +
                             `${broadcastText}\n\n` +
                             `👤 <b>Gönderen:</b> ${user.name}\n` +
                             `📅 <b>Tarih:</b> ${new Date().toLocaleString('tr-TR')}`
@@ -4173,6 +4179,8 @@ class CallbackQueryHandler {
         
         // Set user state for task input
         await userManager.setUserState(chatId, { action: 'entering_bulk_task' });
+        
+        console.log(`📝 Bulk task state set for ${chatId}:`, await userManager.getUserState(chatId));
         
         await telegramAPI.sendMessage(chatId,
             `👥 <b>Herkese Görev Atama</b>\n\n` +
