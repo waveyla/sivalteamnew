@@ -3652,7 +3652,9 @@ class CallbackQueryHandler {
             let handled = false;
             for (const [prefix, handler] of this.handlers.entries()) {
                 if (data.startsWith(prefix) || data === prefix) {
-                    await handler(data, chatId, from, message, user, isAdmin);
+                    // For deleted user callbacks, pass null user but still allow execution
+                    const passUser = (data.startsWith('approve_deleted_') || data.startsWith('reject_deleted_')) ? (user || { name: 'Admin', chatId }) : user;
+                    await handler(data, chatId, from, message, passUser, isAdmin);
                     handled = true;
                     break;
                 }
