@@ -3854,6 +3854,7 @@ class CallbackQueryHandler {
                     resize_keyboard: true
                 }
             );
+            }
             
             // Notify admin who assigned the task
             const adminSettings = await dataManager.readFile(DATA_FILES.adminSettings);
