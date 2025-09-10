@@ -2007,9 +2007,6 @@ class CommandHandler {
             return;
         }
         
-        // Clear user state for fresh start
-        await userManager.clearUserState(chatId);
-        
         switch (text) {
             case "📦 Eksik Ürün Bildir":
                 await this.handleMissingProductReport(chatId, user);
