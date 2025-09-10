@@ -1238,6 +1238,8 @@ class CommandHandler {
         this.commands.set('/bekleyenler', this.handlePendingUsers.bind(this));
         this.commands.set('/broadcast', this.handleBroadcast.bind(this));
         this.commands.set('/duyuru', this.handleBroadcast.bind(this));
+        this.commands.set('/promote', this.handlePromoteCommand.bind(this));
+        this.commands.set('/adminata', this.handlePromoteCommand.bind(this));
         this.commands.set('/backup', this.handleBackup.bind(this));
     }
     
@@ -1256,8 +1258,9 @@ class CommandHandler {
         this.keyboards.set('admin_panel', [
             [{ text: "👥 Çalışanları Listele" }, { text: "📦 Eksik Ürünler" }],
             [{ text: "📋 Görev Yönetimi" }, { text: "⏳ Bekleyen Onaylar" }],
-            [{ text: "📊 Detaylı Raporlar" }, { text: "📢 Duyuru Gönder" }],
-            [{ text: "🗑️ Listeyi Temizle" }, { text: "🔙 Ana Menü" }]
+            [{ text: "👑 Admin Ata" }, { text: "📊 Detaylı Raporlar" }],
+            [{ text: "📢 Duyuru Gönder" }, { text: "🗑️ Listeyi Temizle" }],
+            [{ text: "🔙 Ana Menü" }]
         ]);
         
         this.keyboards.set('back_menu', [
@@ -1677,6 +1680,11 @@ class CommandHandler {
             case "📋 Görev Yönetimi":
                 if (!isAdmin) return;
                 await this.handleTaskManagement(chatId, user);
+                break;
+                
+            case "👑 Admin Ata":
+                if (!isAdmin) return;
+                await this.handlePromoteAdmin(chatId, user);
                 break;
                 
             case "⏳ Bekleyen Onaylar":
@@ -2570,6 +2578,207 @@ class CommandHandler {
         }
     }
 
+    async handlePromoteAdmin(chatId, user) {
+        try {
+            const employees = await dataManager.readFile(DATA_FILES.employees);
+            const adminSettings = await dataManager.readFile(DATA_FILES.adminSettings);
+            
+            // Filter out existing admins
+            const regularEmployees = employees.filter(emp => 
+                emp.role !== 'admin' && !adminSettings.adminUsers.includes(Number(emp.chatId))
+            );
+            
+            if (regularEmployees.length === 0) {
+                await telegramAPI.sendMessage(chatId,
+                    "👑 <b>Admin Atama Paneli</b>\n\n" +
+                    "✅ Tüm çalışanlar zaten admin yetkisine sahip.\n" +
+                    "📋 Yeni çalışanlar eklenince buradan admin yapabilirsiniz.",
+                    {
+                        keyboard: this.getKeyboard('admin_panel'),
+                        resize_keyboard: true
+                    }
+                );
+                return;
+            }
+            
+            let adminText = `👑 <b>Admin Atama Paneli</b>\n\n`;
+            adminText += `📊 <b>Mevcut Durum:</b>\n`;
+            adminText += `├ 👑 Admin Sayısı: ${adminSettings.adminUsers.length}\n`;
+            adminText += `├ 👤 Çalışan Sayısı: ${regularEmployees.length}\n`;
+            adminText += `└ 📈 Toplam Kullanıcı: ${employees.length}\n\n`;
+            
+            adminText += `👤 <b>Admin Yapılabilir Çalışanlar:</b>\n\n`;
+            
+            // Show each employee with promotion button
+            for (let i = 0; i < Math.min(regularEmployees.length, 8); i++) {
+                const employee = regularEmployees[i];
+                const daysSinceJoined = Math.floor((Date.now() - new Date(employee.addedAt)) / (1000 * 60 * 60 * 24));
+                
+                await telegramAPI.sendMessage(chatId,
+                    `${i + 1}. 👤 <b>${employee.name}</b>\n` +
+                    `🏢 Departman: ${employee.department}\n` +
+                    `📅 ${daysSinceJoined} gün önce katıldı\n` +
+                    `📋 ${employee.totalTasks || 0} görev tamamladı\n` +
+                    `💬 ID: <code>${employee.chatId}</code>`,
+                    {
+                        inline_keyboard: [[
+                            { text: "👑 Admin Yap", callback_data: `promote_admin_${employee.chatId}` },
+                            { text: "📊 Detay", callback_data: `user_detail_${employee.chatId}` }
+                        ]]
+                    }
+                );
+            }
+            
+            if (regularEmployees.length > 8) {
+                await telegramAPI.sendMessage(chatId,
+                    `... ve ${regularEmployees.length - 8} çalışan daha\n\n` +
+                    `💡 <b>Manuel Admin Atama:</b>\n` +
+                    `Komut: <code>/promote @kullanıcı</code>\n` +
+                    `Örnek: <code>/promote @ahmet</code>`,
+                    {
+                        keyboard: this.getKeyboard('admin_panel'),
+                        resize_keyboard: true
+                    }
+                );
+            } else {
+                await telegramAPI.sendMessage(chatId,
+                    `💡 <b>Admin Atama Tamamlandı</b>\n\n` +
+                    `Yukarıdaki çalışanlardan admin yapmak istediğinizi seçin.\n` +
+                    `Manuel atama için: <code>/promote @kullanıcı</code>`,
+                    {
+                        keyboard: this.getKeyboard('admin_panel'),
+                        resize_keyboard: true
+                    }
+                );
+            }
+            
+        } catch (error) {
+            console.error('❌ Promote admin error:', error);
+            await telegramAPI.sendMessage(chatId, "❌ Admin atama paneli yüklenirken hata oluştu.");
+        }
+    }
+
+    async handlePromoteCommand(chatId, text, from, user, isAdmin) {
+        if (!isAdmin) {
+            await telegramAPI.sendMessage(chatId, "❌ Bu komut sadece adminler tarafından kullanılabilir.");
+            return;
+        }
+        
+        // Parse command: /promote @username or /promote username
+        const args = text.split(' ').slice(1);
+        if (args.length === 0) {
+            await telegramAPI.sendMessage(chatId,
+                `❌ <b>Kullanım Hatası</b>\n\n` +
+                `📝 <b>Doğru kullanım:</b>\n` +
+                `<code>/promote @kullanıcı_adı</code>\n\n` +
+                `💡 <b>Örnekler:</b>\n` +
+                `• <code>/promote @ahmet</code>\n` +
+                `• <code>/promote ahmet</code>\n\n` +
+                `👑 Bu komut seçilen çalışanı admin yapar.`
+            );
+            return;
+        }
+        
+        let username = args[0].toLowerCase();
+        username = username.replace('@', ''); // Remove @ if exists
+        
+        try {
+            const employees = await dataManager.readFile(DATA_FILES.employees);
+            const adminSettings = await dataManager.readFile(DATA_FILES.adminSettings);
+            
+            // Find user by username or name
+            const targetUser = employees.find(emp => 
+                (emp.username && emp.username.toLowerCase() === username) ||
+                emp.name.toLowerCase().includes(username)
+            );
+            
+            if (!targetUser) {
+                await telegramAPI.sendMessage(chatId,
+                    `❌ <b>Kullanıcı bulunamadı!</b>\n\n` +
+                    `🔍 Aranan: "${args[0]}"\n\n` +
+                    `💡 <b>İpuçları:</b>\n` +
+                    `• Username'i tam olarak yazın\n` +
+                    `• @ işareti ile veya olmadan deneyin\n` +
+                    `• Kullanıcının sistemde kayıtlı olduğundan emin olun\n\n` +
+                    `📋 Kayıtlı kullanıcıları görmek için "👥 Çalışanları Listele" butonunu kullanın.`
+                );
+                return;
+            }
+            
+            // Check if already admin
+            if (targetUser.role === 'admin' || adminSettings.adminUsers.includes(Number(targetUser.chatId))) {
+                await telegramAPI.sendMessage(chatId,
+                    `❌ <b>Admin Atama Hatası</b>\n\n` +
+                    `👑 ${targetUser.name} zaten admin yetkisine sahip!\n\n` +
+                    `📅 Admin olma tarihi: ${targetUser.promotedAt ? 
+                        new Date(targetUser.promotedAt).toLocaleString('tr-TR') : 
+                        'Bilinmiyor'}`
+                );
+                return;
+            }
+            
+            // Promote to admin
+            targetUser.role = 'admin';
+            targetUser.permissions = ['all_access'];
+            targetUser.promotedAt = new Date().toISOString();
+            targetUser.promotedBy = chatId;
+            
+            // Add to admin list
+            adminSettings.adminUsers.push(Number(targetUser.chatId));
+            
+            // Save changes
+            await dataManager.writeFile(DATA_FILES.employees, employees);
+            await dataManager.writeFile(DATA_FILES.adminSettings, adminSettings);
+            
+            // Log activity
+            await activityLogger.log(
+                `👑 Admin atandı (komut): ${targetUser.name} (${user.name} tarafından)`,
+                chatId,
+                user.name,
+                'success'
+            );
+            
+            // Notify the promoter
+            await telegramAPI.sendMessage(chatId,
+                `✅ <b>Admin Atama Başarılı!</b>\n\n` +
+                `👑 <b>${targetUser.name}</b> başarıyla admin yapıldı!\n\n` +
+                `🎯 <b>Verilen Yetkiler:</b>\n` +
+                `• 👥 Kullanıcı yönetimi\n` +
+                `• 📋 Görev atama/yönetimi\n` +
+                `• 📦 Ürün yönetimi\n` +
+                `• 📊 Sistem raporları\n` +
+                `• 📢 Duyuru gönderme\n` +
+                `• 👑 Admin paneli erişimi\n\n` +
+                `📅 Atama Tarihi: ${new Date().toLocaleString('tr-TR')}\n` +
+                `💬 Kullanıcıya bildirim gönderildi.`
+            );
+            
+            // Notify the new admin
+            await telegramAPI.sendMessage(Number(targetUser.chatId),
+                `🎉 <b>Tebrikler! Admin Oldunuz!</b>\n\n` +
+                `👑 Sizi admin yapan: <b>${user.name}</b>\n` +
+                `📅 Tarih: ${new Date().toLocaleString('tr-TR')}\n` +
+                `💬 Komut: <code>${text}</code>\n\n` +
+                `🔥 <b>Yeni Admin Yetkilerin:</b>\n` +
+                `• 👥 Kullanıcı onaylama ve yönetimi\n` +
+                `• 📋 Görev atama ve takibi\n` +
+                `• 📦 Eksik ürün yönetimi\n` +
+                `• 📊 Detaylı sistem raporları\n` +
+                `• 📢 Toplu duyuru gönderme\n` +
+                `• 👑 Tam admin paneli erişimi\n\n` +
+                `🚀 Hemen ana menüden "👑 Admin Panel" butonuna tıklayarak yetkileri kullanmaya başlayabilirsin!`,
+                {
+                    keyboard: this.getKeyboard('main', true),
+                    resize_keyboard: true
+                }
+            );
+            
+        } catch (error) {
+            console.error('❌ Promote command error:', error);
+            await telegramAPI.sendMessage(chatId, "❌ Admin atama sırasında hata oluştu.");
+        }
+    }
+
     async handleDetailedReports(chatId, user) {
         try {
             const employees = await dataManager.readFile(DATA_FILES.employees);
@@ -2704,6 +2913,8 @@ class CallbackQueryHandler {
         // Admin handlers
         this.handlers.set('admin_', this.handleAdminAction.bind(this));
         this.handlers.set('user_', this.handleUserAction.bind(this));
+        this.handlers.set('promote_admin_', this.handlePromoteAdminCallback.bind(this));
+        this.handlers.set('user_detail_', this.handleUserDetailCallback.bind(this));
     }
     
     async handleCallback(callbackQuery) {
@@ -3052,6 +3263,149 @@ class CallbackQueryHandler {
         await telegramAPI.sendMessage(chatId, "🚧 Admin işlemleri geliştiriliyor...");
     }
     
+    async handlePromoteAdminCallback(data, chatId, from, message, user, isAdmin) {
+        if (!isAdmin) {
+            await telegramAPI.sendMessage(chatId, "❌ Bu işlem sadece adminler tarafından yapılabilir.");
+            return;
+        }
+        
+        const targetChatId = data.replace('promote_admin_', '');
+        
+        try {
+            const employees = await dataManager.readFile(DATA_FILES.employees);
+            const adminSettings = await dataManager.readFile(DATA_FILES.adminSettings);
+            
+            // Find target user
+            const targetUser = employees.find(emp => Number(emp.chatId) === Number(targetChatId));
+            if (!targetUser) {
+                await telegramAPI.sendMessage(chatId, "❌ Kullanıcı bulunamadı.");
+                return;
+            }
+            
+            // Check if already admin
+            if (targetUser.role === 'admin' || adminSettings.adminUsers.includes(Number(targetChatId))) {
+                await telegramAPI.sendMessage(chatId, `❌ ${targetUser.name} zaten admin yetkisine sahip.`);
+                return;
+            }
+            
+            // Promote to admin
+            targetUser.role = 'admin';
+            targetUser.permissions = ['all_access'];
+            targetUser.promotedAt = new Date().toISOString();
+            targetUser.promotedBy = chatId;
+            
+            // Add to admin list
+            adminSettings.adminUsers.push(Number(targetChatId));
+            
+            // Save changes
+            await dataManager.writeFile(DATA_FILES.employees, employees);
+            await dataManager.writeFile(DATA_FILES.adminSettings, adminSettings);
+            
+            // Log activity
+            await activityLogger.log(
+                `👑 Yeni admin atandı: ${targetUser.name} (${user.name} tarafından)`,
+                chatId,
+                user.name,
+                'success'
+            );
+            
+            // Notify the promoter
+            await telegramAPI.sendMessage(chatId,
+                `✅ <b>Admin Atama Başarılı!</b>\n\n` +
+                `👑 <b>${targetUser.name}</b> artık admin yetkisine sahip!\n\n` +
+                `🎯 <b>Verilen Yetkiler:</b>\n` +
+                `• Kullanıcı onaylama/reddetme\n` +
+                `• Görev atama ve yönetimi\n` +
+                `• Eksik ürün yönetimi\n` +
+                `• Sistem istatistikleri\n` +
+                `• Toplu duyuru gönderme\n` +
+                `• Admin paneli erişimi\n\n` +
+                `📅 Atama Tarihi: ${new Date().toLocaleString('tr-TR')}`
+            );
+            
+            // Notify the new admin
+            await telegramAPI.sendMessage(Number(targetChatId),
+                `🎉 <b>Tebrikler! Admin Oldunuz!</b>\n\n` +
+                `👑 Sizi admin yapan: <b>${user.name}</b>\n` +
+                `📅 Tarih: ${new Date().toLocaleString('tr-TR')}\n\n` +
+                `🔥 <b>Yeni Yetkilerin:</b>\n` +
+                `• 👥 Kullanıcı yönetimi\n` +
+                `• 📋 Görev yönetimi\n` +
+                `• 📦 Ürün yönetimi\n` +
+                `• 📊 Sistem raporları\n` +
+                `• 📢 Duyuru gönderme\n\n` +
+                `🚀 Hemen "👑 Admin Panel" butonuna tıklayarak yetkilere erişebilirsin!`,
+                {
+                    keyboard: commandHandler.getKeyboard('main', true),
+                    resize_keyboard: true
+                }
+            );
+            
+        } catch (error) {
+            console.error('❌ Admin promotion error:', error);
+            await telegramAPI.sendMessage(chatId, "❌ Admin atama sırasında hata oluştu.");
+        }
+    }
+    
+    async handleUserDetailCallback(data, chatId, from, message, user, isAdmin) {
+        if (!isAdmin) return;
+        
+        const targetChatId = data.replace('user_detail_', '');
+        
+        try {
+            const employees = await dataManager.readFile(DATA_FILES.employees);
+            const tasks = await dataManager.readFile(DATA_FILES.tasks);
+            const products = await dataManager.readFile(DATA_FILES.missingProducts);
+            
+            const targetUser = employees.find(emp => Number(emp.chatId) === Number(targetChatId));
+            if (!targetUser) {
+                await telegramAPI.sendMessage(chatId, "❌ Kullanıcı bulunamadı.");
+                return;
+            }
+            
+            // Calculate user statistics
+            const userTasks = tasks.filter(task => Number(task.assignedToChatId) === Number(targetChatId));
+            const completedTasks = userTasks.filter(task => task.status === 'completed');
+            const pendingTasks = userTasks.filter(task => task.status === 'pending');
+            const userProducts = products.filter(product => Number(product.reportedByChatId) === Number(targetChatId));
+            
+            const daysSinceJoined = Math.floor((Date.now() - new Date(targetUser.addedAt)) / (1000 * 60 * 60 * 24));
+            const completionRate = userTasks.length > 0 ? Math.round((completedTasks.length / userTasks.length) * 100) : 0;
+            
+            let detailText = `📊 <b>${targetUser.name} - Detaylı Profil</b>\n\n`;
+            detailText += `🏷️ <b>Temel Bilgiler:</b>\n`;
+            detailText += `├ 👤 İsim: ${targetUser.name}\n`;
+            detailText += `├ 🏢 Departman: ${targetUser.department}\n`;
+            detailText += `├ 🎭 Rol: ${targetUser.role === 'admin' ? '👑 Admin' : '👤 Çalışan'}\n`;
+            detailText += `├ 📅 Katılım: ${daysSinceJoined} gün önce\n`;
+            detailText += `└ 💬 ID: <code>${targetUser.chatId}</code>\n\n`;
+            
+            detailText += `📋 <b>Görev İstatistikleri:</b>\n`;
+            detailText += `├ 📈 Toplam Görev: ${userTasks.length}\n`;
+            detailText += `├ ✅ Tamamlanan: ${completedTasks.length}\n`;
+            detailText += `├ ⏳ Bekleyen: ${pendingTasks.length}\n`;
+            detailText += `└ 📊 Başarı Oranı: %${completionRate}\n\n`;
+            
+            detailText += `📦 <b>Ürün Bildirimleri:</b>\n`;
+            detailText += `└ 📝 Bildirdiği Ürün: ${userProducts.length}\n\n`;
+            
+            if (targetUser.lastActivityAt) {
+                const lastActivity = Math.floor((Date.now() - new Date(targetUser.lastActivityAt)) / (1000 * 60 * 60 * 24));
+                detailText += `🔄 <b>Son Aktivite:</b> ${lastActivity} gün önce`;
+            }
+            
+            await telegramAPI.sendMessage(chatId, detailText, {
+                inline_keyboard: targetUser.role !== 'admin' ? [[
+                    { text: "👑 Admin Yap", callback_data: `promote_admin_${targetUser.chatId}` }
+                ]] : []
+            });
+            
+        } catch (error) {
+            console.error('❌ User detail error:', error);
+            await telegramAPI.sendMessage(chatId, "❌ Kullanıcı detayları yüklenirken hata oluştu.");
+        }
+    }
+
     async handleUserAction(data, chatId, from, message, user, isAdmin) {
         await telegramAPI.sendMessage(chatId, "🚧 Kullanıcı işlemleri geliştiriliyor...");
     }
