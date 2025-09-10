@@ -1272,6 +1272,128 @@ class CommandHandler {
         return this.keyboards.get(type) || this.keyboards.get('back_menu');
     }
     
+    // 🛡️ Advanced Spam/Ad Detection System
+    isSpamOrAd(text) {
+        if (!text || typeof text !== 'string') return false;
+        
+        const lowerText = text.toLowerCase();
+        
+        // Spam keywords (Turkish & English)
+        const spamKeywords = [
+            // Advertisement words
+            'reklam', 'ilan', 'tanıtım', 'pazarlama', 'satış', 'indirim', 'kampanya',
+            'promosyon', 'teklif', 'fırsat', 'bedava', 'ücretsiz', 'kazan', 'para',
+            'advertisement', 'promo', 'sale', 'discount', 'free', 'earn', 'money',
+            'win', 'prize', 'offer', 'deal', 'marketing', 'buy', 'cheap',
+            
+            // Spam phrases
+            'hemen tıkla', 'şimdi al', 'sınırlı süre', 'kaçırma', 'acele et',
+            'click now', 'buy now', 'limited time', 'hurry up', 'act fast',
+            'visit our', 'check out', 'amazing offer', 'best deal',
+            
+            // Crypto/MLM/Scam
+            'kripto', 'bitcoin', 'forex', 'yatırım', 'borsa', 'trading',
+            'mlm', 'network', 'piramit', 'referans', 'kazanç', 'gelir',
+            'crypto', 'invest', 'profit', 'passive income', 'make money',
+            
+            // Dating/Adult content
+            'flört', 'arkadaş', 'buluş', 'tanış', 'dating', 'meet',
+            'hot', 'sexy', 'adult', 'xxx',
+            
+            // Channel/Group promotion
+            'kanala katıl', 'gruba gel', 'takip et', 'abone ol',
+            'join channel', 'follow us', 'subscribe', '@', 'http', 'www',
+            't.me/', 'telegram.me', 'bit.ly', 'tinyurl'
+        ];
+        
+        // Check for spam keywords
+        for (const keyword of spamKeywords) {
+            if (lowerText.includes(keyword)) {
+                return true;
+            }
+        }
+        
+        // Check for suspicious patterns
+        
+        // Too many emojis (more than 5)
+        const emojiCount = (text.match(/[\u{1F600}-\u{1F64F}\u{1F300}-\u{1F5FF}\u{1F680}-\u{1F6FF}\u{1F1E0}-\u{1F1FF}\u{2600}-\u{26FF}\u{2700}-\u{27BF}]/gu) || []).length;
+        if (emojiCount > 5) return true;
+        
+        // Too many capital letters (more than 70% of text)
+        const capitalCount = (text.match(/[A-Z]/g) || []).length;
+        const totalLetters = (text.match(/[a-zA-Z]/g) || []).length;
+        if (totalLetters > 10 && (capitalCount / totalLetters) > 0.7) return true;
+        
+        // Repeated characters (like "harikaaaa", "woooow")
+        if (/(.)\1{4,}/.test(text)) return true;
+        
+        // Contains links
+        if (/https?:\/\/|www\.|\.com|\.org|\.net|\.tr|t\.me/.test(lowerText)) return true;
+        
+        // Contains phone numbers
+        if (/(\+90|0)[0-9]{10}/.test(text.replace(/\s/g, ''))) return true;
+        
+        // Contains @ mentions for external promotion
+        if (/@\w+/.test(text) && !lowerText.includes('sival')) return true;
+        
+        // All caps words longer than 4 characters
+        if (/\b[A-Z]{4,}\b/.test(text)) return true;
+        
+        return false;
+    }
+    
+    // 🔍 Suspicious Name Detection
+    isSuspiciousName(name) {
+        if (!name || typeof name !== 'string') return true;
+        
+        const lowerName = name.toLowerCase();
+        
+        // Suspicious patterns
+        const suspiciousPatterns = [
+            // Bot-like names
+            /^bot\d*/i,
+            /user\d+/i,
+            /admin\d+/i,
+            /test\d*/i,
+            /fake/i,
+            /spam/i,
+            
+            // Too many numbers (more than 30% of name)
+            /\d{3,}/, // 3+ consecutive digits
+            
+            // Special characters that might indicate fake accounts
+            /[^a-zA-ZçğıöşüÇĞIİÖŞÜ\s]/,
+            
+            // Very short or very long names
+            /^.{1}$|^.{25,}$/,
+            
+            // Repeated characters
+            /(.)\1{3,}/,
+            
+            // Common fake name patterns
+            /^(xxx|aaa|bbb|ccc|zzz)/i,
+            /delete/i,
+            /removed/i,
+            /account/i
+        ];
+        
+        // Check patterns
+        for (const pattern of suspiciousPatterns) {
+            if (pattern.test(name)) {
+                return true;
+            }
+        }
+        
+        // Check if name is mostly numbers
+        const digitCount = (name.match(/\d/g) || []).length;
+        const totalLength = name.length;
+        if (totalLength > 0 && (digitCount / totalLength) > 0.3) {
+            return true;
+        }
+        
+        return false;
+    }
+    
     async handleMessage(chatId, text, from) {
         try {
             // Rate limiting check
@@ -1282,12 +1404,45 @@ class CommandHandler {
                 return;
             }
             
-            // Update user activity
-            await userManager.updateUserActivity(chatId);
-            
-            // Check if user exists and is authorized
+            // 🔒 STRICT ACCESS CONTROL - Only registered users allowed
             const user = await userManager.findUser(chatId);
             const isAdmin = await userManager.isAdmin(chatId);
+            
+            // Block unauthorized users immediately
+            if (!user) {
+                // Only allow /start command for registration
+                if (text === '/start') {
+                    await this.handleStart(chatId, text, from, null, false);
+                    return;
+                } else {
+                    // Block everything else for unauthorized users
+                    await telegramAPI.sendMessage(chatId,
+                        "🔒 <b>Erişim Reddedildi</b>\n\n" +
+                        "❌ Bu bot sadece kayıtlı SivalTeam çalışanları içindir.\n\n" +
+                        "🚪 Kayıt olmak için: /start"
+                    );
+                    return;
+                }
+            }
+            
+            // 🛡️ SPAM/AD FILTER - Block promotional content
+            if (this.isSpamOrAd(text)) {
+                await telegramAPI.sendMessage(chatId,
+                    "⚠️ <b>İçerik Engellendi</b>\n\n" +
+                    "❌ Reklam, spam veya uygunsuz içerik tespit edildi.\n" +
+                    "🔄 Lütfen sadece iş ile ilgili mesajlar gönderin."
+                );
+                
+                // Log spam attempt
+                await activityManager.logActivity(
+                    `🛡️ Spam/reklam engellendi: ${user.name} - "${text.substring(0, 50)}..."`,
+                    'spam_blocked'
+                );
+                return;
+            }
+            
+            // Update user activity for authorized users
+            await userManager.updateUserActivity(chatId);
             
             // Handle commands
             if (text.startsWith('/')) {
@@ -1310,7 +1465,32 @@ class CommandHandler {
     }
     
     async handleStart(chatId, text, from, user, isAdmin) {
-        console.log(`🔍 User login attempt: ${from.first_name} (${chatId})`);
+        console.log(`🔍 User registration attempt: ${from.first_name} (${chatId}) - ${from.username || 'No username'}`);
+        
+        // 🔒 Enhanced Security Check for Registration
+        const securityIssues = [];
+        
+        // Check if user has a proper name
+        if (!from.first_name || from.first_name.length < 2) {
+            securityIssues.push("Geçerli bir isim gerekli");
+        }
+        
+        // Check if user has a username (recommended)
+        if (!from.username) {
+            securityIssues.push("Telegram kullanıcı adı önerilir (@username)");
+        }
+        
+        // Check for suspicious names
+        if (from.first_name && this.isSuspiciousName(from.first_name)) {
+            securityIssues.push("İsim doğrulama gerekli");
+        }
+        
+        // Log registration attempt with security details
+        await activityManager.logActivity(
+            `🔍 Kayıt denemesi: ${from.first_name} (@${from.username || 'none'}) - ID: ${chatId}` +
+            (securityIssues.length > 0 ? ` - Güvenlik: ${securityIssues.join(', ')}` : ''),
+            'registration_attempt'
+        );
         
         // Check if this is the first user (becomes admin automatically)
         const employees = await dataManager.readFile(DATA_FILES.employees);
@@ -1402,15 +1582,25 @@ class CommandHandler {
                 `⌛ Lütfen sabırla bekleyiniz...`
             );
             
-            // Notify all admins
+            // Notify all admins with security assessment
             for (const adminChatId of adminSettings.adminUsers) {
+                let securityWarning = '';
+                let warningEmoji = '🟢';
+                
+                if (securityIssues.length > 0) {
+                    warningEmoji = securityIssues.length > 2 ? '🔴' : '🟡';
+                    securityWarning = `\n⚠️ <b>Güvenlik Uyarıları:</b>\n${securityIssues.map(issue => `• ${issue}`).join('\n')}\n`;
+                }
+                
                 await telegramAPI.sendMessage(adminChatId,
-                    `🆕 <b>Yeni Kullanıcı Kayıt Talebi</b>\n\n` +
+                    `🆕 <b>Yeni Kullanıcı Kayıt Talebi</b> ${warningEmoji}\n\n` +
                     `👤 <b>Ad:</b> ${pendingUser.firstName} ${pendingUser.lastName}\n` +
                     `🆔 <b>Username:</b> @${pendingUser.username || 'yok'}\n` +
                     `💬 <b>Chat ID:</b> <code>${pendingUser.chatId}</code>\n` +
-                    `📅 <b>Tarih:</b> ${new Date().toLocaleString('tr-TR')}\n\n` +
-                    `⬇️ Bu kullanıcıyı onaylamak için butonları kullanın:`,
+                    `📅 <b>Tarih:</b> ${new Date().toLocaleString('tr-TR')}` +
+                    securityWarning +
+                    `\n⬇️ Bu kullanıcıyı onaylamak için butonları kullanın:` +
+                    (securityIssues.length > 2 ? `\n🔴 <b>DİKKAT:</b> Yüksek risk, dikkatli onaylayın!` : ''),
                     {
                         inline_keyboard: [[
                             { text: "✅ Onayla", callback_data: `approve_${pendingUser.chatId}` },
@@ -2528,9 +2718,19 @@ class CallbackQueryHandler {
                 return;
             }
             
-            // Check user authorization
+            // 🔒 STRICT ACCESS CONTROL - Only registered users allowed
             const user = await userManager.findUser(chatId);
             const isAdmin = await userManager.isAdmin(chatId);
+            
+            // Block unauthorized users immediately
+            if (!user) {
+                await telegramAPI.sendMessage(chatId,
+                    "🔒 <b>Erişim Reddedildi</b>\n\n" +
+                    "❌ Bu bot sadece kayıtlı SivalTeam çalışanları içindir.\n\n" +
+                    "🚪 Kayıt olmak için: /start"
+                );
+                return;
+            }
             
             // Find appropriate handler
             let handled = false;
