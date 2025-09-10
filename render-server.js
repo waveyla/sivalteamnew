@@ -2063,10 +2063,14 @@ class CommandHandler {
             default:
                 // Check if this is part of a workflow (category selection, product input, etc.)
                 const userState = userManager.getUserState(chatId);
+                console.log(`🔍 Debug - User: ${chatId}, Text: "${text}", UserState:`, userState);
+                
                 if (userState.action) {
+                    console.log(`📝 Processing workflow input for action: ${userState.action}`);
                     await this.handleWorkflowInput(chatId, text, user);
                 } else {
                     // Handle unknown button
+                    console.log(`❓ Unknown input received: "${text}" from user ${chatId}`);
                     await telegramAPI.sendMessage(chatId, 
                         `❓ <b>Bilinmeyen işlem:</b> "${text}"\n\n` +
                         `Ana menüye dönmek için "🔙 Ana Menü" butonunu kullanın.`,
@@ -2110,6 +2114,8 @@ class CommandHandler {
             action: 'selecting_category',
             step: 1
         });
+        
+        console.log(`🔍 Set user state for ${chatId}:`, userManager.getUserState(chatId));
     }
     
     async handleMyTasks(chatId, user) {
@@ -2185,11 +2191,16 @@ class CommandHandler {
     async handleWorkflowInput(chatId, text, user) {
         const userState = userManager.getUserState(chatId);
         
+        console.log(`🔍 Workflow Debug - Action: ${userState.action}, Text: "${text}"`); 
+        
         if (userState.action === 'selecting_category') {
             // User selected a category
             const categories = await dataManager.readFile(DATA_FILES.categories);
+            console.log(`📋 Categories loaded:`, categories);
+            console.log(`🔍 Checking if "${text}" is in categories...`);
             
             if (categories.includes(text)) {
+                console.log(`✅ Category "${text}" found! Setting next state...`);
                 userManager.setUserState(chatId, {
                     action: 'entering_product_name',
                     selectedCategory: text,
