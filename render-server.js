@@ -2199,12 +2199,12 @@ class CommandHandler {
                 await telegramAPI.sendMessage(chatId,
                     `📦 <b>Eksik Ürün Bildirimi</b>\n\n` +
                     `✅ Kategori: <b>${text}</b>\n\n` +
-                    `📝 Şimdi eksik olan ürünü tanımlayın:\n\n` +
-                    `✍️ <b>Seçenekleriniz:</b>\n` +
-                    `• Ürün adını yazın (Örnek: Beyaz Polo Tişört)\n` +
-                    `• 📸 Fotoğraf gönderin (ürün adını açıklama olarak yazın)\n` +
-                    `• 🎤 Ses kaydı gönderin (ürünü sesle tanımlayın)\n\n` +
-                    `💡 <b>İpucu:</b> Medya gönderirken ürün adını açıklama olarak ekleyebilirsiniz.`,
+                    `📝 Şimdi eksik olan ürün adını yazın:\n\n` +
+                    `💡 <b>Örnek:</b>\n` +
+                    `• "Beyaz Polo Tişört"\n` +
+                    `• "Siyah Bot - 42 Numara"\n` +
+                    `• "Kırmızı Eşarp - İpek"\n\n` +
+                    `✍️ Ürün adını doğrudan yazın:`,
                     {
                         keyboard: [[{ text: "🔙 Ana Menü" }]],
                         resize_keyboard: true
@@ -2369,6 +2369,83 @@ class CommandHandler {
             } catch (error) {
                 console.error('❌ Bulk task creation error:', error);
                 await telegramAPI.sendMessage(chatId, "❌ Toplu görev atama sırasında hata oluştu.");
+                userManager.clearUserState(chatId);
+            }
+            
+        } else if (userState.action === 'entering_broadcast') {
+            // Admin entered broadcast message
+            if (text === "❌ İptal Et") {
+                userManager.clearUserState(chatId);
+                await telegramAPI.sendMessage(chatId, "❌ Duyuru gönderim iptal edildi.", {
+                    keyboard: this.getKeyboard('admin_panel'),
+                    resize_keyboard: true
+                });
+                return;
+            }
+            
+            if (text.trim().length < 5) {
+                await telegramAPI.sendMessage(chatId,
+                    `❌ <b>Duyuru Çok Kısa!</b>\n\n` +
+                    `Lütfen en az 5 karakter uzunluğunda bir duyuru yazın.`
+                );
+                return;
+            }
+            
+            const broadcastText = text.trim();
+            
+            try {
+                const employees = await dataManager.readFile(DATA_FILES.employees);
+                const allUsers = employees; // Tüm kullanıcılara gönder (admin dahil)
+                
+                if (allUsers.length === 0) {
+                    await telegramAPI.sendMessage(chatId, "❌ Duyuru gönderilecek kullanıcı bulunamadı.");
+                    userManager.clearUserState(chatId);
+                    return;
+                }
+                
+                let successCount = 0;
+                
+                // Send to all users
+                for (const employee of allUsers) {
+                    try {
+                        await telegramAPI.sendMessage(Number(employee.chatId),
+                            `📢 <b>GÜNEL DUYURU</b>\n\n` +
+                            `${broadcastText}\n\n` +
+                            `👤 <b>Gönderen:</b> ${user.name}\n` +
+                            `📅 <b>Tarih:</b> ${new Date().toLocaleString('tr-TR')}`
+                        );
+                        
+                        successCount++;
+                    } catch (error) {
+                        console.error(`❌ Broadcast failed for ${employee.name}:`, error);
+                    }
+                }
+                
+                // Clear state
+                userManager.clearUserState(chatId);
+                
+                await telegramAPI.sendMessage(chatId,
+                    `✅ <b>Duyuru Başarıyla Gönderildi!</b>\n\n` +
+                    `📢 <b>Duyuru:</b> ${broadcastText}\n` +
+                    `👥 <b>Gönderilen Kişi:</b> ${successCount}/${allUsers.length}\n` +
+                    `📅 <b>Tarih:</b> ${new Date().toLocaleString('tr-TR')}\n\n` +
+                    `🔔 Tüm kullanıcılara bildirim gönderildi.`,
+                    {
+                        keyboard: this.getKeyboard('admin_panel'),
+                        resize_keyboard: true
+                    }
+                );
+                
+                await activityLogger.log(
+                    `📢 Toplu duyuru gönderildi: "${broadcastText.substring(0, 50)}..." (${successCount} kişi)`,
+                    chatId,
+                    user.name,
+                    'info'
+                );
+                
+            } catch (error) {
+                console.error('❌ Broadcast error:', error);
+                await telegramAPI.sendMessage(chatId, "❌ Duyuru gönderim sırasında hata oluştu.");
                 userManager.clearUserState(chatId);
             }
             
@@ -3034,16 +3111,17 @@ class CommandHandler {
     }
     
     async handleBroadcastStart(chatId, user) {
+        // Set user state for broadcast input
+        userManager.setUserState(chatId, { action: 'entering_broadcast' });
+        
         await telegramAPI.sendMessage(chatId,
             `📢 <b>Toplu Duyuru Gönder</b>\n\n` +
-            `Tüm aktif çalışanlara mesaj göndermek için komutu kullanın:\n\n` +
-            `💡 <b>Kullanım:</b>\n` +
-            `/duyuru mesajınız\n\n` +
-            `📝 <b>Örnek:</b>\n` +
-            `/duyuru Yarın saat 14:00'da genel toplantı var.\n\n` +
-            `⚠️ Bu mesaj tüm aktif çalışanlara gönderilecektir.`,
+            `📝 Tüm çalışanlara göndereceğiniz duyuruyu yazın:\n\n` +
+            `💡 <b>Örnek:</b> "Yarın saat 14:00'da genel toplantı var"\n\n` +
+            `⚠️ Bu mesaj tüm aktif çalışanlara gönderilecektir.\n\n` +
+            `✍️ Duyurunuzu doğrudan yazın:`,
             {
-                keyboard: commandHandler.getKeyboard('admin_panel'),
+                keyboard: [[{ text: "❌ İptal Et" }]],
                 resize_keyboard: true
             }
         );
