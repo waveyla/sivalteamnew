@@ -1,40 +1,61 @@
+#!/usr/bin/env node
+
+/**
+ * ███████╗██╗██╗   ██╗ █████╗ ██╗  ████████╗███████╗ █████╗ ███╗   ███╗
+ * ██╔════╝██║██║   ██║██╔══██╗██║  ╚══██╔══╝██╔════╝██╔══██╗████╗ ████║
+ * ███████╗██║██║   ██║███████║██║     ██║   █████╗  ███████║██╔████╔██║
+ * ╚════██║██║╚██╗ ██╔╝██╔══██║██║     ██║   ██╔══╝  ██╔══██║██║╚██╔╝██║
+ * ███████║██║ ╚████╔╝ ██║  ██║███████╗██║   ███████╗██║  ██║██║ ╚═╝ ██║
+ * ╚══════╝╚═╝  ╚═══╝  ╚═╝  ╚═╝╚══════╝╚═╝   ╚══════╝╚═╝  ╚═╝╚═╝     ╚═╝
+ * 
+ * 🤖 SIVALTEAM PROFESSIONAL BOT v3.0.0
+ * =====================================
+ * 🔥 Professional Enterprise-Grade Telegram Bot
+ * 🇹🇷 Advanced Turkish Character Support
+ * ⚡ High-Performance Architecture
+ * 🔒 Secure User Management
+ * 📊 Real-time Dashboard Integration
+ * 🔄 Full Desktop App Synchronization
+ * 
+ * Built with ❤️ for SivalTeam
+ * Copyright 2025 - All Rights Reserved
+ */
+
 const express = require('express');
-const fs = require('fs');
+const fs = require('fs').promises;
+const fsSync = require('fs');
 const path = require('path');
 const axios = require('axios');
+const crypto = require('crypto');
 
-const app = express();
-const PORT = process.env.PORT || 10000;
+// 🚀 Application Configuration
+const CONFIG = {
+    PORT: process.env.PORT || 10000,
+    BOT_TOKEN: '8229159175:AAGRFoLpK9ma5ekPiaaCdI8EKJeca14XoOg',
+    WEBHOOK_URL: 'https://sivalteam-bot.onrender.com/webhook',
+    VERSION: '3.0.0',
+    BUILD_DATE: new Date().toISOString(),
+    ENVIRONMENT: process.env.NODE_ENV || 'production',
+    
+    // Performance Settings
+    MAX_CONCURRENT_REQUESTS: 100,
+    REQUEST_TIMEOUT: 30000,
+    CACHE_TTL: 300000, // 5 minutes
+    MAX_MESSAGE_LENGTH: 4096,
+    MAX_INLINE_BUTTONS: 20,
+    
+    // Security Settings
+    MAX_FAILED_ATTEMPTS: 5,
+    RATE_LIMIT_WINDOW: 60000, // 1 minute
+    MAX_REQUESTS_PER_WINDOW: 30,
+    
+    // Data Settings
+    AUTO_BACKUP_INTERVAL: 3600000, // 1 hour
+    MAX_LOG_ENTRIES: 1000,
+    MAX_ACTIVITY_ENTRIES: 500
+};
 
-// Bot configuration
-const BOT_TOKEN = '8229159175:AAGRFoLpK9ma5ekPiaaCdI8EKJeca14XoOg';
-const WEBHOOK_URL = `https://sivalteam-bot.onrender.com/webhook`;
-
-// Console startup banner
-console.log(`
-███████╗██╗██╗   ██╗ █████╗ ██╗  ████████╗███████╗ █████╗ ███╗   ███╗
-██╔════╝██║██║   ██║██╔══██╗██║  ╚══██╔══╝██╔════╝██╔══██╗████╗ ████║
-███████╗██║██║   ██║███████║██║     ██║   █████╗  ███████║██╔████╔██║
-╚════██║██║╚██╗ ██╔╝██╔══██║██║     ██║   ██╔══╝  ██╔══██║██║╚██╔╝██║
-███████║██║ ╚████╔╝ ██║  ██║███████╗██║   ███████╗██║  ██║██║ ╚═╝ ██║
-╚══════╝╚═╝  ╚═══╝  ╚═╝  ╚═╝╚══════╝╚═╝   ╚══════╝╚═╝  ╚═╝╚═╝     ╚═╝
-
-🤖 SIVALTEAM RENDER SERVER v2.0.0
-==================================
-🌐 Webhook: ${WEBHOOK_URL}
-🔄 Turkish Character Protection: ACTIVE
-✅ Persistent Login: FIXED
-`);
-
-// Middleware
-app.use(express.json());
-app.use((req, res, next) => {
-    res.header('Access-Control-Allow-Origin', '*');
-    res.header('Access-Control-Allow-Headers', 'Origin, X-Requested-With, Content-Type, Accept');
-    next();
-});
-
-// Data files
+// 📁 Data Files Structure
 const DATA_FILES = {
     employees: 'employees.json',
     deletedEmployees: 'deleted_employees.json',
@@ -43,1834 +64,2610 @@ const DATA_FILES = {
     tasks: 'tasks.json',
     categories: 'categories.json',
     adminSettings: 'admin_settings.json',
-    pendingUsers: 'pending_users.json'
+    pendingUsers: 'pending_users.json',
+    backups: 'backups/',
+    systemStats: 'system_stats.json',
+    userSessions: 'user_sessions.json'
 };
 
-// Turkish character protection function - V2.0.0 CRITICAL FIX
-function protectTurkishChars(text) {
-    if (!text || typeof text !== 'string') return text;
-    
-    // Comprehensive Turkish character protection map
-    const charMap = {
-        'Ã¼': 'ü', 'Ã¼': 'ü', 'ÃŸ': 'ş', 'Ã§': 'ç', 'Ä±': 'ı', 'Ã¶': 'ö', 'Ä°': 'İ',
-        'ãŸ': 'ş', 'ã§': 'ç', 'ã¶': 'ö', 'ä±': 'ı', 'Ç': 'Ç', 'Ü': 'Ü', 'Ö': 'Ö',
-        'Ş': 'Ş', 'Ğ': 'Ğ', 'I': 'İ', 'ç': 'ç', 'ü': 'ü', 'ö': 'ö', 'ş': 'ş', 'ğ': 'ğ', 'ı': 'ı',
-        // Clean broken characters
-        ' Â ': ' ', 'Â': '', '\\u00A0': ' ',
-        'Ã': '', 'â€™': "'", 'â€œ': '"', 'â€': '"',
-        '    ': ' ', '   ': ' ', '  ': ' '
-    };
-    
-    let result = text;
-    Object.keys(charMap).forEach(broken => {
-        result = result.replace(new RegExp(broken, 'g'), charMap[broken]);
-    });
-    
-    return result.trim();
-}
+// 🏗️ Express Application Setup
+const app = express();
 
-// Initialize data files
-function initializeDataFiles() {
-    Object.values(DATA_FILES).forEach(filename => {
-        if (!fs.existsSync(filename)) {
-            let initialData = [];
-            if (filename === 'admin_settings.json') {
-                initialData = { adminUsers: [], approvalRequired: false };
-            } else if (filename === 'categories.json') {
-                initialData = [
-                    "Tişört", "Gömlek", "Pantolon", "Etek", "Elbise", 
-                    "Ceket", "Ayakkabı", "Çanta", "Aksesuar", "İç Giyim"
-                ];
-            }
-            writeJsonFile(filename, initialData);
-            console.log(`✅ ${filename} initialized`);
+// 🛡️ Security Middleware
+app.use(express.json({ limit: '10mb' }));
+app.use(express.urlencoded({ extended: true }));
+
+// CORS Configuration
+app.use((req, res, next) => {
+    res.header('Access-Control-Allow-Origin', '*');
+    res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
+    res.header('Access-Control-Allow-Headers', 'Origin, X-Requested-With, Content-Type, Accept, Authorization');
+    
+    if (req.method === 'OPTIONS') {
+        res.sendStatus(200);
+    } else {
+        next();
+    }
+});
+
+// Request Logging Middleware
+app.use((req, res, next) => {
+    const timestamp = new Date().toISOString();
+    console.log(`📡 ${timestamp} - ${req.method} ${req.path} - IP: ${req.ip}`);
+    next();
+});
+
+// 🌟 Startup Banner
+console.log(`
+███████╗██╗██╗   ██╗ █████╗ ██╗  ████████╗███████╗ █████╗ ███╗   ███╗
+██╔════╝██║██║   ██║██╔══██╗██║  ╚══██╔══╝██╔════╝██╔══██╗████╗ ████║
+███████╗██║██║   ██║███████║██║     ██║   █████╗  ███████║██╔████╔██║
+╚════██║██║╚██╗ ██╔╝██╔══██║██║     ██║   ██╔══╝  ██╔══██║██║╚██╔╝██║
+███████║██║ ╚████╔╝ ██║  ██║███████╗██║   ███████╗██║  ██║██║ ╚═╝ ██║
+╚══════╝╚═╝  ╚═══╝  ╚═╝  ╚═╝╚══════╝╚═╝   ╚══════╝╚═╝  ╚═╝╚═╝     ╚═╝
+
+🔥 SIVALTEAM PROFESSIONAL BOT v${CONFIG.VERSION}
+===============================================
+🌐 Webhook URL: ${CONFIG.WEBHOOK_URL}
+🔄 Turkish Character Protection: ACTIVE
+✅ Enterprise Security: ENABLED
+⚡ High Performance Mode: ON
+📊 Dashboard Integration: READY
+🔄 Desktop Sync: ACTIVE
+💾 Auto Backup: ENABLED
+🛡️ Rate Limiting: ACTIVE
+
+🚀 Starting up at ${new Date().toLocaleString('tr-TR')}...
+`);
+
+// 🧠 Memory Cache System
+class MemoryCache {
+    constructor() {
+        this.cache = new Map();
+        this.ttl = new Map();
+        
+        // Clean expired entries every 5 minutes
+        setInterval(() => this.cleanup(), 300000);
+    }
+    
+    set(key, value, ttl = CONFIG.CACHE_TTL) {
+        this.cache.set(key, value);
+        this.ttl.set(key, Date.now() + ttl);
+    }
+    
+    get(key) {
+        if (this.ttl.get(key) < Date.now()) {
+            this.delete(key);
+            return undefined;
         }
-    });
-}
-
-// Read JSON file with UTF-8 encoding
-// Simple cache for frequently accessed files (lasts 3 seconds)
-const fileCache = new Map();
-const CACHE_DURATION = 3000; // 3 seconds
-
-function readJsonFile(filename) {
-    try {
+        return this.cache.get(key);
+    }
+    
+    delete(key) {
+        this.cache.delete(key);
+        this.ttl.delete(key);
+    }
+    
+    cleanup() {
         const now = Date.now();
-        const cached = fileCache.get(filename);
-        
-        // Return cached data if still fresh (for employees and admin_settings)
-        if (cached && (now - cached.timestamp) < CACHE_DURATION && 
-            (filename.includes('employees') || filename.includes('admin_settings'))) {
-            return cached.data;
+        for (const [key, expiry] of this.ttl.entries()) {
+            if (expiry < now) {
+                this.delete(key);
+            }
         }
-        
-        if (!fs.existsSync(filename)) {
-            const defaultData = filename === 'admin_settings.json' ? { adminUsers: [], approvalRequired: false } :
-                               filename === 'categories.json' ? ["Tişört", "Gömlek", "Pantolon"] : [];
-            // Cache default data too
-            fileCache.set(filename, { data: defaultData, timestamp: now });
-            return defaultData;
-        }
-        const data = fs.readFileSync(filename, 'utf8');
-        const parsed = JSON.parse(data);
-        
-        // Cache frequently accessed files
-        if (filename.includes('employees') || filename.includes('admin_settings')) {
-            fileCache.set(filename, { data: parsed, timestamp: now });
-        }
-        
-        return parsed;
-    } catch (error) {
-        console.error(`Error reading ${filename}:`, error);
-        return filename === 'admin_settings.json' ? { adminUsers: [], approvalRequired: false } :
-               filename === 'categories.json' ? ["Tişört", "Gömlek", "Pantolon"] : [];
+    }
+    
+    clear() {
+        this.cache.clear();
+        this.ttl.clear();
+    }
+    
+    size() {
+        return this.cache.size;
     }
 }
 
-// Write JSON file with UTF-8 encoding - V2.0.0 CRITICAL FIX + CACHE CLEAR
-function writeJsonFile(filename, data) {
-    try {
-        fs.writeFileSync(filename, JSON.stringify(data, null, 2), 'utf8');
-        console.log(`💾 ${filename} saved with UTF-8 encoding`);
-        
-        // Clear cache for this file to ensure fresh data next time
-        fileCache.delete(filename);
-        
-    } catch (error) {
-        console.error(`Error writing ${filename}:`, error);
-    }
-}
+const cache = new MemoryCache();
 
-// Log activity with Turkish character protection
-function logActivity(message, userId = null, userName = null) {
-    const activityLog = readJsonFile(DATA_FILES.activityLog);
-    const protectedMessage = protectTurkishChars(message);
-    const protectedUserName = protectTurkishChars(userName);
-    
-    activityLog.push({
-        id: Date.now(),
-        timestamp: new Date().toISOString(),
-        message: protectedMessage,
-        userId,
-        userName: protectedUserName
-    });
-    
-    // Keep only last 1000 entries
-    if (activityLog.length > 1000) {
-        activityLog.splice(0, activityLog.length - 1000);
+// 🔐 Rate Limiting System
+class RateLimiter {
+    constructor() {
+        this.requests = new Map();
     }
     
-    writeJsonFile(DATA_FILES.activityLog, activityLog);
-}
-
-// Send message to Telegram with Turkish character protection
-async function sendTelegramMessage(chatId, text, replyMarkup = null) {
-    try {
-        const protectedText = protectTurkishChars(text);
+    isAllowed(userId) {
+        const now = Date.now();
+        const windowStart = now - CONFIG.RATE_LIMIT_WINDOW;
         
-        // Telegram message length limit: 4096 characters
-        if (protectedText.length > 4000) {
-            console.error('Message too long:', protectedText.length, 'characters');
-            const truncatedText = protectedText.substring(0, 3900) + '\n\n... (mesaj kısaltıldı)';
-            return sendTelegramMessage(chatId, truncatedText, replyMarkup);
+        if (!this.requests.has(userId)) {
+            this.requests.set(userId, []);
         }
         
-        const payload = {
-            chat_id: chatId,
-            text: protectedText,
-            parse_mode: 'HTML'
+        const userRequests = this.requests.get(userId);
+        
+        // Remove old requests
+        const recentRequests = userRequests.filter(time => time > windowStart);
+        this.requests.set(userId, recentRequests);
+        
+        if (recentRequests.length >= CONFIG.MAX_REQUESTS_PER_WINDOW) {
+            return false;
+        }
+        
+        recentRequests.push(now);
+        return true;
+    }
+    
+    reset(userId) {
+        this.requests.delete(userId);
+    }
+}
+
+const rateLimiter = new RateLimiter();
+
+// 🇹🇷 Advanced Turkish Character Protection System
+class TurkishCharacterHandler {
+    constructor() {
+        this.charMap = {
+            // Broken -> Correct mapping
+            'Ã¼': 'ü', 'Ã¼': 'ü', 'ÃŸ': 'ş', 'Ã§': 'ç', 'Ä±': 'ı', 'Ã¶': 'ö', 'Ä°': 'İ',
+            'ãŸ': 'ş', 'ã§': 'ç', 'ã¶': 'ö', 'ä±': 'ı', 'Ç': 'Ç', 'Ü': 'Ü', 'Ö': 'Ö',
+            'Ş': 'Ş', 'Ğ': 'Ğ', 'I': 'İ', 'ç': 'ç', 'ü': 'ü', 'ö': 'ö', 'ş': 'ş', 'ğ': 'ğ', 'ı': 'ı',
+            
+            // Clean broken characters
+            ' Â ': ' ', 'Â': '', '\\u00A0': ' ', 'Ã': '', 'â€™': "'", 'â€œ': '"', 'â€': '"',
+            '    ': ' ', '   ': ' ', '  ': ' ',
+            
+            // Additional fixes
+            'Äž': 'ğ', 'Å': 'ş', 'Ä°': 'İ', 'Å\u009f': 'ş', 'Ä\u0131': 'ı'
         };
+    }
+    
+    protect(text) {
+        if (!text || typeof text !== 'string') return text;
         
-        if (replyMarkup) {
-            payload.reply_markup = replyMarkup;
+        let result = text;
+        
+        // Apply character mappings
+        Object.keys(this.charMap).forEach(broken => {
+            const regex = new RegExp(this.escapeRegExp(broken), 'g');
+            result = result.replace(regex, this.charMap[broken]);
+        });
+        
+        // Remove extra whitespace
+        result = result.replace(/\s+/g, ' ').trim();
+        
+        return result;
+    }
+    
+    escapeRegExp(string) {
+        return string.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    }
+    
+    validateTurkish(text) {
+        const turkishPattern = /^[a-zA-ZçÇğĞıIİöÖşŞüÜ\s\d\-_.,!?()]+$/;
+        return turkishPattern.test(text);
+    }
+}
+
+const turkishHandler = new TurkishCharacterHandler();
+
+// 💾 Advanced Data Management System
+class DataManager {
+    constructor() {
+        this.initializeFiles();
+        this.startAutoBackup();
+    }
+    
+    async initializeFiles() {
+        try {
+            // Create backup directory
+            if (!fsSync.existsSync(DATA_FILES.backups)) {
+                await fs.mkdir(DATA_FILES.backups, { recursive: true });
+            }
+            
+            // Initialize all data files
+            for (const [key, filename] of Object.entries(DATA_FILES)) {
+                if (key === 'backups') continue;
+                
+                if (!fsSync.existsSync(filename)) {
+                    const initialData = this.getInitialData(key);
+                    await this.writeFile(filename, initialData);
+                    console.log(`✅ Initialized: ${filename}`);
+                }
+            }
+            
+            console.log('💾 Data management system initialized successfully');
+        } catch (error) {
+            console.error('❌ Failed to initialize data files:', error);
+            process.exit(1);
+        }
+    }
+    
+    getInitialData(type) {
+        switch (type) {
+            case 'employees':
+                return [];
+            case 'deletedEmployees':
+                return [];
+            case 'missingProducts':
+                return [];
+            case 'activityLog':
+                return [];
+            case 'tasks':
+                return [];
+            case 'categories':
+                return [
+                    "Tişört", "Gömlek", "Pantolon", "Etek", "Elbise",
+                    "Ceket", "Ayakkabı", "Çanta", "Aksesuar", "İç Giyim",
+                    "Spor Giyim", "Kış Giyim", "Yaz Giyim", "Çocuk Giyim"
+                ];
+            case 'adminSettings':
+                return {
+                    adminUsers: [],
+                    approvalRequired: false,
+                    maintenanceMode: false,
+                    welcomeMessage: "🎉 Hoşgeldin SivalTeam sistemine!",
+                    maxTasksPerUser: 50,
+                    allowGuestAccess: false
+                };
+            case 'pendingUsers':
+                return [];
+            case 'systemStats':
+                return {
+                    totalUsers: 0,
+                    totalTasks: 0,
+                    totalProducts: 0,
+                    uptime: Date.now(),
+                    lastBackup: null,
+                    version: CONFIG.VERSION
+                };
+            case 'userSessions':
+                return [];
+            default:
+                return [];
+        }
+    }
+    
+    async readFile(filename) {
+        try {
+            // Check cache first
+            const cached = cache.get(filename);
+            if (cached) {
+                return cached;
+            }
+            
+            const data = await fs.readFile(filename, 'utf8');
+            const parsed = JSON.parse(data);
+            
+            // Cache the result
+            cache.set(filename, parsed);
+            
+            return parsed;
+        } catch (error) {
+            console.error(`❌ Error reading ${filename}:`, error.message);
+            return this.getInitialData(filename.replace('.json', ''));
+        }
+    }
+    
+    async writeFile(filename, data) {
+        try {
+            // Protect Turkish characters in data
+            const protectedData = this.protectDataTurkishChars(data);
+            
+            await fs.writeFile(filename, JSON.stringify(protectedData, null, 2), 'utf8');
+            
+            // Update cache
+            cache.set(filename, protectedData);
+            
+            console.log(`💾 Saved: ${filename} (${JSON.stringify(protectedData).length} bytes)`);
+            
+            // Update system stats
+            await this.updateSystemStats();
+            
+        } catch (error) {
+            console.error(`❌ Error writing ${filename}:`, error.message);
+            throw error;
+        }
+    }
+    
+    protectDataTurkishChars(data) {
+        if (typeof data === 'string') {
+            return turkishHandler.protect(data);
         }
         
-        const response = await axios.post(`https://api.telegram.org/bot${BOT_TOKEN}/sendMessage`, payload, {
-            timeout: 5000, // 5 second timeout for faster responses
+        if (Array.isArray(data)) {
+            return data.map(item => this.protectDataTurkishChars(item));
+        }
+        
+        if (data && typeof data === 'object') {
+            const protectedData = {};
+            for (const [key, value] of Object.entries(data)) {
+                protectedData[key] = this.protectDataTurkishChars(value);
+            }
+            return protectedData;
+        }
+        
+        return data;
+    }
+    
+    async updateSystemStats() {
+        try {
+            const employees = await this.readFile(DATA_FILES.employees);
+            const tasks = await this.readFile(DATA_FILES.tasks);
+            const products = await this.readFile(DATA_FILES.missingProducts);
+            
+            const stats = await this.readFile(DATA_FILES.systemStats);
+            
+            stats.totalUsers = employees.length;
+            stats.totalTasks = tasks.length;
+            stats.totalProducts = products.length;
+            stats.lastUpdate = new Date().toISOString();
+            
+            await fs.writeFile(DATA_FILES.systemStats, JSON.stringify(stats, null, 2), 'utf8');
+        } catch (error) {
+            console.error('❌ Error updating system stats:', error);
+        }
+    }
+    
+    async createBackup() {
+        try {
+            const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+            const backupDir = path.join(DATA_FILES.backups, `backup_${timestamp}`);
+            
+            await fs.mkdir(backupDir, { recursive: true });
+            
+            // Backup all data files
+            for (const [key, filename] of Object.entries(DATA_FILES)) {
+                if (key === 'backups') continue;
+                
+                if (fsSync.existsSync(filename)) {
+                    const backupPath = path.join(backupDir, filename);
+                    await fs.copyFile(filename, backupPath);
+                }
+            }
+            
+            console.log(`💾 Backup created: ${backupDir}`);
+            
+            // Update backup timestamp
+            const stats = await this.readFile(DATA_FILES.systemStats);
+            stats.lastBackup = new Date().toISOString();
+            await this.writeFile(DATA_FILES.systemStats, stats);
+            
+            return backupDir;
+        } catch (error) {
+            console.error('❌ Backup failed:', error);
+            return null;
+        }
+    }
+    
+    startAutoBackup() {
+        setInterval(async () => {
+            await this.createBackup();
+        }, CONFIG.AUTO_BACKUP_INTERVAL);
+        
+        console.log(`🔄 Auto backup enabled (every ${CONFIG.AUTO_BACKUP_INTERVAL / 60000} minutes)`);
+    }
+}
+
+const dataManager = new DataManager();
+
+// 🤖 Telegram API Handler
+class TelegramAPI {
+    constructor() {
+        this.baseURL = `https://api.telegram.org/bot${CONFIG.BOT_TOKEN}`;
+        this.messageQueue = [];
+        this.processing = false;
+        
+        this.startMessageProcessor();
+    }
+    
+    async sendMessage(chatId, text, options = {}) {
+        return new Promise((resolve, reject) => {
+            this.messageQueue.push({
+                method: 'sendMessage',
+                chatId,
+                text: turkishHandler.protect(text),
+                options,
+                resolve,
+                reject
+            });
+            
+            this.processQueue();
+        });
+    }
+    
+    async answerCallbackQuery(callbackQueryId, text = "İşlem alındı...") {
+        return new Promise((resolve, reject) => {
+            this.messageQueue.push({
+                method: 'answerCallbackQuery',
+                callbackQueryId,
+                text: turkishHandler.protect(text),
+                resolve,
+                reject
+            });
+            
+            this.processQueue();
+        });
+    }
+    
+    async editMessageText(chatId, messageId, text, options = {}) {
+        return new Promise((resolve, reject) => {
+            this.messageQueue.push({
+                method: 'editMessageText',
+                chatId,
+                messageId,
+                text: turkishHandler.protect(text),
+                options,
+                resolve,
+                reject
+            });
+            
+            this.processQueue();
+        });
+    }
+    
+    async processQueue() {
+        if (this.processing || this.messageQueue.length === 0) return;
+        
+        this.processing = true;
+        
+        while (this.messageQueue.length > 0) {
+            const task = this.messageQueue.shift();
+            
+            try {
+                const result = await this.executeTask(task);
+                task.resolve(result);
+            } catch (error) {
+                console.error(`❌ Telegram API Error (${task.method}):`, error.message);
+                task.reject(error);
+            }
+            
+            // Rate limiting - wait between requests
+            await new Promise(resolve => setTimeout(resolve, 50));
+        }
+        
+        this.processing = false;
+    }
+    
+    async executeTask(task) {
+        const { method, chatId, text, options, callbackQueryId, messageId } = task;
+        
+        let payload = {};
+        let endpoint = method;
+        
+        switch (method) {
+            case 'sendMessage':
+                // Validate message length
+                if (text && text.length > CONFIG.MAX_MESSAGE_LENGTH) {
+                    const truncatedText = text.substring(0, CONFIG.MAX_MESSAGE_LENGTH - 50) + '\n\n... (mesaj kısaltıldı)';
+                    payload = { chat_id: chatId, text: truncatedText, parse_mode: 'HTML' };
+                } else {
+                    payload = { chat_id: chatId, text, parse_mode: 'HTML' };
+                }
+                
+                // Add keyboard if provided
+                if (options.keyboard) {
+                    payload.reply_markup = {
+                        keyboard: options.keyboard,
+                        resize_keyboard: options.resize_keyboard || true,
+                        one_time_keyboard: options.one_time_keyboard || false
+                    };
+                }
+                
+                // Add inline keyboard if provided
+                if (options.inline_keyboard) {
+                    payload.reply_markup = {
+                        inline_keyboard: options.inline_keyboard
+                    };
+                }
+                break;
+                
+            case 'answerCallbackQuery':
+                payload = { callback_query_id: callbackQueryId, text };
+                break;
+                
+            case 'editMessageText':
+                payload = {
+                    chat_id: chatId,
+                    message_id: messageId,
+                    text,
+                    parse_mode: 'HTML'
+                };
+                
+                if (options.inline_keyboard) {
+                    payload.reply_markup = {
+                        inline_keyboard: options.inline_keyboard
+                    };
+                }
+                break;
+        }
+        
+        const response = await axios.post(`${this.baseURL}/${endpoint}`, payload, {
+            timeout: CONFIG.REQUEST_TIMEOUT,
             headers: {
                 'Content-Type': 'application/json'
             }
         });
+        
         return response.data;
-    } catch (error) {
-        // Better error handling to prevent slowdowns
-        if (error.code === 'ECONNABORTED') {
-            console.error('Telegram timeout - message may have been delivered');
-        } else if (error.response?.status === 400) {
-            console.error('Telegram 400 Error:', error.response.data.description);
-            console.error('Problem message preview:', text.substring(0, 200) + '...');
-        } else {
-            console.error('Telegram API Error:', error.response?.data || error.message);
-        }
-        return null;
+    }
+    
+    startMessageProcessor() {
+        // Process queue every 100ms
+        setInterval(() => {
+            this.processQueue();
+        }, 100);
     }
 }
 
-// Handle /start command - V2.0.0 PERSISTENT LOGIN FIX + FIRST USER AUTO ADMIN
-function handleStartCommand(chatId, from) {
-    const employees = readJsonFile(DATA_FILES.employees);
-    const adminSettings = readJsonFile(DATA_FILES.adminSettings);
-    const numericChatId = Number(chatId); // CRITICAL FIX: Ensure numeric comparison
+const telegramAPI = new TelegramAPI();
+
+// 📝 Activity Logger System
+class ActivityLogger {
+    constructor() {
+        this.logQueue = [];
+        this.processing = false;
+        
+        this.startProcessor();
+    }
     
-    // DEBUG: Log user check attempt
-    console.log(`🔍 User login attempt: ${from.first_name} (${chatId}) -> numeric: ${numericChatId}`);
-    console.log(`📊 Current employees count: ${employees.length}`);
-    console.log(`👑 Current admins count: ${adminSettings.adminUsers.length}`);
+    async log(message, userId = null, userName = null, level = 'info') {
+        this.logQueue.push({
+            id: Date.now() + Math.random(),
+            timestamp: new Date().toISOString(),
+            message: turkishHandler.protect(message),
+            userId,
+            userName: userName ? turkishHandler.protect(userName) : null,
+            level,
+            ip: null, // Will be set if available
+            userAgent: null // Will be set if available
+        });
+        
+        this.processQueue();
+    }
     
-    // FIRST USER BECOMES ADMIN AUTOMATICALLY
-    if (employees.length === 0 && adminSettings.adminUsers.length === 0) {
-        const firstAdmin = {
-            chatId: numericChatId,
-            name: protectTurkishChars(from.first_name || 'Admin'),
-            department: 'Yönetim',
-            role: 'admin',
+    async processQueue() {
+        if (this.processing || this.logQueue.length === 0) return;
+        
+        this.processing = true;
+        
+        try {
+            const activities = await dataManager.readFile(DATA_FILES.activityLog);
+            
+            // Add all queued logs
+            while (this.logQueue.length > 0) {
+                activities.push(this.logQueue.shift());
+            }
+            
+            // Keep only last N entries
+            if (activities.length > CONFIG.MAX_ACTIVITY_ENTRIES) {
+                activities.splice(0, activities.length - CONFIG.MAX_ACTIVITY_ENTRIES);
+            }
+            
+            await dataManager.writeFile(DATA_FILES.activityLog, activities);
+        } catch (error) {
+            console.error('❌ Activity logging failed:', error);
+        }
+        
+        this.processing = false;
+    }
+    
+    startProcessor() {
+        // Process logs every 5 seconds
+        setInterval(() => {
+            this.processQueue();
+        }, 5000);
+    }
+}
+
+const activityLogger = new ActivityLogger();
+
+// 👤 User Management System
+class UserManager {
+    constructor() {
+        this.activeSessions = new Map();
+        this.userStates = new Map();
+    }
+    
+    async findUser(chatId) {
+        const employees = await dataManager.readFile(DATA_FILES.employees);
+        return employees.find(emp => Number(emp.chatId) === Number(chatId));
+    }
+    
+    async isAdmin(chatId) {
+        const adminSettings = await dataManager.readFile(DATA_FILES.adminSettings);
+        return adminSettings.adminUsers.includes(Number(chatId));
+    }
+    
+    async addUser(userData) {
+        const employees = await dataManager.readFile(DATA_FILES.employees);
+        
+        const newUser = {
+            chatId: Number(userData.chatId),
+            name: turkishHandler.protect(userData.name),
+            username: userData.username || 'kullanici_' + Date.now(),
+            department: userData.department || 'Yeni Çalışan',
+            role: userData.role || 'employee',
             addedAt: new Date().toISOString(),
-            status: 'active'
+            addedBy: userData.addedBy || null,
+            status: 'active',
+            lastActivity: new Date().toISOString(),
+            totalTasks: 0,
+            completedTasks: 0,
+            permissions: userData.permissions || ['basic_access']
         };
         
-        employees.push(firstAdmin);
-        writeJsonFile(DATA_FILES.employees, employees);
+        employees.push(newUser);
+        await dataManager.writeFile(DATA_FILES.employees, employees);
         
-        adminSettings.adminUsers.push(numericChatId);
-        writeJsonFile(DATA_FILES.adminSettings, adminSettings);
+        await activityLogger.log(`Yeni kullanıcı eklendi: ${newUser.name}`, userData.addedBy, null, 'info');
         
-        sendTelegramMessage(chatId, 
-            `👑 <b>Hoşgeldin İlk Admin!</b>\n\n` +
-            `🎉 Sen bu sistemin ilk kullanıcısısın ve otomatik olarak <b>Admin</b> oldun!\n\n` +
-            `👑 Admin yetkilerin:\n` +
-            `• Yeni kullanıcıları onaylama\n` +
-            `• Çalışan bilgilerini düzenleme\n` +
-            `• Sistem ayarları\n\n` +
-            `✅ Artık sistemi tam yetkilerle kullanabilirsin!`,
+        return newUser;
+    }
+    
+    async updateUserActivity(chatId) {
+        const employees = await dataManager.readFile(DATA_FILES.employees);
+        const userIndex = employees.findIndex(emp => Number(emp.chatId) === Number(chatId));
+        
+        if (userIndex !== -1) {
+            employees[userIndex].lastActivity = new Date().toISOString();
+            await dataManager.writeFile(DATA_FILES.employees, employees);
+        }
+    }
+    
+    async deleteUser(chatId, deletedBy) {
+        const employees = await dataManager.readFile(DATA_FILES.employees);
+        const userIndex = employees.findIndex(emp => Number(emp.chatId) === Number(chatId));
+        
+        if (userIndex === -1) {
+            throw new Error('Kullanıcı bulunamadı');
+        }
+        
+        const deletedUser = employees[userIndex];
+        employees.splice(userIndex, 1);
+        
+        // Move to deleted employees
+        const deletedEmployees = await dataManager.readFile(DATA_FILES.deletedEmployees);
+        deletedEmployees.push({
+            ...deletedUser,
+            deletedAt: new Date().toISOString(),
+            deletedBy
+        });
+        
+        await dataManager.writeFile(DATA_FILES.employees, employees);
+        await dataManager.writeFile(DATA_FILES.deletedEmployees, deletedEmployees);
+        
+        await activityLogger.log(`Kullanıcı silindi: ${deletedUser.name}`, deletedBy, null, 'warning');
+        
+        return deletedUser;
+    }
+    
+    async setPendingApproval(userData) {
+        const pendingUsers = await dataManager.readFile(DATA_FILES.pendingUsers);
+        
+        const existingPending = pendingUsers.find(u => Number(u.chatId) === Number(userData.chatId));
+        if (existingPending) {
+            throw new Error('Bu kullanıcı zaten onay bekliyor');
+        }
+        
+        const pendingUser = {
+            chatId: Number(userData.chatId),
+            firstName: turkishHandler.protect(userData.firstName),
+            lastName: turkishHandler.protect(userData.lastName || ''),
+            username: userData.username || 'kullanici_' + Date.now(),
+            timestamp: new Date().toISOString(),
+            status: 'pending',
+            requestIP: userData.ip || null
+        };
+        
+        pendingUsers.push(pendingUser);
+        await dataManager.writeFile(DATA_FILES.pendingUsers, pendingUsers);
+        
+        await activityLogger.log(`Yeni kullanıcı onay bekliyor: ${pendingUser.firstName}`, userData.chatId, pendingUser.firstName, 'info');
+        
+        return pendingUser;
+    }
+    
+    async approveUser(chatId, approvedBy) {
+        const pendingUsers = await dataManager.readFile(DATA_FILES.pendingUsers);
+        const userIndex = pendingUsers.findIndex(u => Number(u.chatId) === Number(chatId));
+        
+        if (userIndex === -1) {
+            throw new Error('Bekleyen kullanıcı bulunamadı');
+        }
+        
+        const pendingUser = pendingUsers[userIndex];
+        pendingUsers.splice(userIndex, 1);
+        
+        // Create new employee
+        const newUser = await this.addUser({
+            chatId: pendingUser.chatId,
+            name: `${pendingUser.firstName} ${pendingUser.lastName}`.trim(),
+            username: pendingUser.username,
+            department: 'Yeni Çalışan',
+            role: 'employee',
+            addedBy: approvedBy
+        });
+        
+        await dataManager.writeFile(DATA_FILES.pendingUsers, pendingUsers);
+        
+        await activityLogger.log(`Kullanıcı onaylandı: ${newUser.name}`, approvedBy, null, 'success');
+        
+        return newUser;
+    }
+    
+    async rejectUser(chatId, rejectedBy, reason = null) {
+        const pendingUsers = await dataManager.readFile(DATA_FILES.pendingUsers);
+        const userIndex = pendingUsers.findIndex(u => Number(u.chatId) === Number(chatId));
+        
+        if (userIndex === -1) {
+            throw new Error('Bekleyen kullanıcı bulunamadı');
+        }
+        
+        const rejectedUser = pendingUsers[userIndex];
+        pendingUsers.splice(userIndex, 1);
+        
+        await dataManager.writeFile(DATA_FILES.pendingUsers, pendingUsers);
+        
+        await activityLogger.log(`Kullanıcı reddedildi: ${rejectedUser.firstName}${reason ? ` (Sebep: ${reason})` : ''}`, rejectedBy, null, 'warning');
+        
+        return rejectedUser;
+    }
+    
+    getUserState(chatId) {
+        return this.userStates.get(Number(chatId)) || {};
+    }
+    
+    setUserState(chatId, state) {
+        this.userStates.set(Number(chatId), { ...this.getUserState(chatId), ...state });
+    }
+    
+    clearUserState(chatId) {
+        this.userStates.delete(Number(chatId));
+    }
+}
+
+const userManager = new UserManager();
+
+// 📋 Task Management System
+class TaskManager {
+    constructor() {
+        this.taskQueue = [];
+        this.processing = false;
+    }
+    
+    async createTask(taskData) {
+        const tasks = await dataManager.readFile(DATA_FILES.tasks);
+        
+        const newTask = {
+            id: Date.now() + Math.random(),
+            title: turkishHandler.protect(taskData.title),
+            description: turkishHandler.protect(taskData.description),
+            assignedTo: Number(taskData.assignedTo),
+            assignedToName: turkishHandler.protect(taskData.assignedToName),
+            assignedBy: Number(taskData.assignedBy),
+            assignedByName: turkishHandler.protect(taskData.assignedByName),
+            createdAt: new Date().toISOString(),
+            updatedAt: new Date().toISOString(),
+            status: 'pending',
+            priority: taskData.priority || 'normal',
+            type: taskData.type || 'individual',
+            bulkId: taskData.bulkId || null,
+            dueDate: taskData.dueDate || null,
+            category: taskData.category || 'general',
+            tags: taskData.tags || [],
+            completedAt: null,
+            completedBy: null,
+            estimatedTime: taskData.estimatedTime || null,
+            actualTime: null
+        };
+        
+        tasks.push(newTask);
+        await dataManager.writeFile(DATA_FILES.tasks, tasks);
+        
+        // Update user task count
+        await this.updateUserTaskStats(newTask.assignedTo);
+        
+        await activityLogger.log(
+            `Yeni görev atandı: "${newTask.title}" → ${newTask.assignedToName}`,
+            taskData.assignedBy,
+            taskData.assignedByName,
+            'info'
+        );
+        
+        return newTask;
+    }
+    
+    async createBulkTasks(taskData, targetUsers) {
+        const tasks = await dataManager.readFile(DATA_FILES.tasks);
+        const bulkId = Date.now();
+        const createdTasks = [];
+        
+        for (const user of targetUsers) {
+            const newTask = {
+                id: Date.now() + Math.random() + Math.random(),
+                title: turkishHandler.protect(taskData.title),
+                description: turkishHandler.protect(taskData.description),
+                assignedTo: Number(user.chatId),
+                assignedToName: turkishHandler.protect(user.name),
+                assignedBy: Number(taskData.assignedBy),
+                assignedByName: turkishHandler.protect(taskData.assignedByName),
+                createdAt: new Date().toISOString(),
+                updatedAt: new Date().toISOString(),
+                status: 'pending',
+                priority: taskData.priority || 'normal',
+                type: 'bulk',
+                bulkId: bulkId,
+                dueDate: taskData.dueDate || null,
+                category: taskData.category || 'general',
+                tags: taskData.tags || [],
+                completedAt: null,
+                completedBy: null,
+                estimatedTime: taskData.estimatedTime || null,
+                actualTime: null
+            };
+            
+            tasks.push(newTask);
+            createdTasks.push(newTask);
+            
+            // Update user task count
+            await this.updateUserTaskStats(newTask.assignedTo);
+        }
+        
+        await dataManager.writeFile(DATA_FILES.tasks, tasks);
+        
+        await activityLogger.log(
+            `Toplu görev atandı: "${taskData.title}" → ${targetUsers.length} kişi`,
+            taskData.assignedBy,
+            taskData.assignedByName,
+            'info'
+        );
+        
+        return createdTasks;
+    }
+    
+    async completeTask(taskId, completedBy, completionNotes = null) {
+        const tasks = await dataManager.readFile(DATA_FILES.tasks);
+        const taskIndex = tasks.findIndex(t => t.id == taskId);
+        
+        if (taskIndex === -1) {
+            throw new Error('Görev bulunamadı');
+        }
+        
+        const task = tasks[taskIndex];
+        
+        if (Number(task.assignedTo) !== Number(completedBy)) {
+            throw new Error('Bu görev size ait değil');
+        }
+        
+        if (task.status === 'completed') {
+            throw new Error('Bu görev zaten tamamlanmış');
+        }
+        
+        const completionTime = new Date().toISOString();
+        const startTime = new Date(task.createdAt);
+        const endTime = new Date(completionTime);
+        const actualTime = Math.round((endTime - startTime) / (1000 * 60)); // minutes
+        
+        tasks[taskIndex] = {
+            ...task,
+            status: 'completed',
+            completedAt: completionTime,
+            completedBy: Number(completedBy),
+            actualTime: actualTime,
+            completionNotes: completionNotes ? turkishHandler.protect(completionNotes) : null,
+            updatedAt: completionTime
+        };
+        
+        await dataManager.writeFile(DATA_FILES.tasks, tasks);
+        
+        // Update user task stats
+        await this.updateUserTaskStats(task.assignedTo);
+        
+        const user = await userManager.findUser(completedBy);
+        const userName = user ? user.name : 'Bilinmeyen Kullanıcı';
+        
+        await activityLogger.log(
+            `Görev tamamlandı: "${task.title}" - ${userName}`,
+            completedBy,
+            userName,
+            'success'
+        );
+        
+        return tasks[taskIndex];
+    }
+    
+    async getUserTasks(chatId, status = null) {
+        const tasks = await dataManager.readFile(DATA_FILES.tasks);
+        let userTasks = tasks.filter(task => Number(task.assignedTo) === Number(chatId));
+        
+        if (status) {
+            userTasks = userTasks.filter(task => task.status === status);
+        }
+        
+        // Sort by creation date (newest first)
+        userTasks.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+        
+        return userTasks;
+    }
+    
+    async getAllTasks(status = null, limit = null) {
+        const tasks = await dataManager.readFile(DATA_FILES.tasks);
+        let filteredTasks = status ? tasks.filter(task => task.status === status) : tasks;
+        
+        // Sort by creation date (newest first)
+        filteredTasks.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+        
+        if (limit) {
+            filteredTasks = filteredTasks.slice(0, limit);
+        }
+        
+        return filteredTasks;
+    }
+    
+    async updateUserTaskStats(chatId) {
+        try {
+            const employees = await dataManager.readFile(DATA_FILES.employees);
+            const userIndex = employees.findIndex(emp => Number(emp.chatId) === Number(chatId));
+            
+            if (userIndex !== -1) {
+                const userTasks = await this.getUserTasks(chatId);
+                const completedTasks = userTasks.filter(task => task.status === 'completed');
+                
+                employees[userIndex].totalTasks = userTasks.length;
+                employees[userIndex].completedTasks = completedTasks.length;
+                employees[userIndex].taskCompletionRate = userTasks.length > 0 
+                    ? Math.round((completedTasks.length / userTasks.length) * 100) 
+                    : 0;
+                
+                await dataManager.writeFile(DATA_FILES.employees, employees);
+            }
+        } catch (error) {
+            console.error('❌ Error updating user task stats:', error);
+        }
+    }
+    
+    async deleteTask(taskId, deletedBy) {
+        const tasks = await dataManager.readFile(DATA_FILES.tasks);
+        const taskIndex = tasks.findIndex(t => t.id == taskId);
+        
+        if (taskIndex === -1) {
+            throw new Error('Görev bulunamadı');
+        }
+        
+        const deletedTask = tasks[taskIndex];
+        tasks.splice(taskIndex, 1);
+        
+        await dataManager.writeFile(DATA_FILES.tasks, tasks);
+        
+        // Update user task stats
+        await this.updateUserTaskStats(deletedTask.assignedTo);
+        
+        await activityLogger.log(
+            `Görev silindi: "${deletedTask.title}"`,
+            deletedBy,
+            null,
+            'warning'
+        );
+        
+        return deletedTask;
+    }
+}
+
+const taskManager = new TaskManager();
+
+// 📦 Product Management System
+class ProductManager {
+    constructor() {
+        this.productQueue = [];
+        this.processing = false;
+    }
+    
+    async reportMissingProduct(productData) {
+        const products = await dataManager.readFile(DATA_FILES.missingProducts);
+        
+        const newProduct = {
+            id: Date.now() + Math.random(),
+            product: turkishHandler.protect(productData.product),
+            category: turkishHandler.protect(productData.category),
+            reportedBy: turkishHandler.protect(productData.reportedBy),
+            reportedByChatId: Number(productData.reportedByChatId),
+            reportedAt: new Date().toISOString(),
+            status: 'pending',
+            priority: productData.priority || 'normal',
+            description: productData.description ? turkishHandler.protect(productData.description) : null,
+            quantity: productData.quantity || 1,
+            urgency: productData.urgency || 'normal',
+            location: productData.location ? turkishHandler.protect(productData.location) : null,
+            supplier: productData.supplier ? turkishHandler.protect(productData.supplier) : null,
+            estimatedCost: productData.estimatedCost || null,
+            notes: productData.notes ? turkishHandler.protect(productData.notes) : null,
+            completedAt: null,
+            completedBy: null
+        };
+        
+        products.push(newProduct);
+        await dataManager.writeFile(DATA_FILES.missingProducts, products);
+        
+        await activityLogger.log(
+            `Eksik ürün bildirildi: "${newProduct.product}" (${newProduct.category}) - ${newProduct.reportedBy}`,
+            productData.reportedByChatId,
+            productData.reportedBy,
+            'info'
+        );
+        
+        return newProduct;
+    }
+    
+    async completeProduct(productId, completedBy) {
+        const products = await dataManager.readFile(DATA_FILES.missingProducts);
+        const productIndex = products.findIndex(p => p.id == productId);
+        
+        if (productIndex === -1) {
+            throw new Error('Ürün bulunamadı');
+        }
+        
+        const completedProduct = products[productIndex];
+        products.splice(productIndex, 1);
+        
+        await dataManager.writeFile(DATA_FILES.missingProducts, products);
+        
+        const user = await userManager.findUser(completedBy);
+        const userName = user ? user.name : 'Bilinmeyen Kullanıcı';
+        
+        await activityLogger.log(
+            `Eksik ürün tamamlandı: "${completedProduct.product}" - ${userName}`,
+            completedBy,
+            userName,
+            'success'
+        );
+        
+        return completedProduct;
+    }
+    
+    async deleteProduct(productId, deletedBy) {
+        const products = await dataManager.readFile(DATA_FILES.missingProducts);
+        const productIndex = products.findIndex(p => p.id == productId);
+        
+        if (productIndex === -1) {
+            throw new Error('Ürün bulunamadı');
+        }
+        
+        const deletedProduct = products[productIndex];
+        products.splice(productIndex, 1);
+        
+        await dataManager.writeFile(DATA_FILES.missingProducts, products);
+        
+        const user = await userManager.findUser(deletedBy);
+        const userName = user ? user.name : 'Bilinmeyen Kullanıcı';
+        
+        await activityLogger.log(
+            `Eksik ürün silindi: "${deletedProduct.product}" - ${userName}`,
+            deletedBy,
+            userName,
+            'warning'
+        );
+        
+        return deletedProduct;
+    }
+    
+    async clearAllProducts(clearedBy) {
+        const products = await dataManager.readFile(DATA_FILES.missingProducts);
+        const productCount = products.length;
+        
+        await dataManager.writeFile(DATA_FILES.missingProducts, []);
+        
+        const user = await userManager.findUser(clearedBy);
+        const userName = user ? user.name : 'Bilinmeyen Kullanıcı';
+        
+        await activityLogger.log(
+            `Tüm eksik ürün listesi temizlendi (${productCount} ürün) - ${userName}`,
+            clearedBy,
+            userName,
+            'warning'
+        );
+        
+        return productCount;
+    }
+    
+    async getAllProducts(status = null) {
+        const products = await dataManager.readFile(DATA_FILES.missingProducts);
+        let filteredProducts = status ? products.filter(product => product.status === status) : products;
+        
+        // Sort by report date (newest first)
+        filteredProducts.sort((a, b) => new Date(b.reportedAt) - new Date(a.reportedAt));
+        
+        return filteredProducts;
+    }
+    
+    async getProductsByCategory(category) {
+        const products = await dataManager.readFile(DATA_FILES.missingProducts);
+        return products.filter(product => product.category === category);
+    }
+    
+    async getProductsByUser(chatId) {
+        const products = await dataManager.readFile(DATA_FILES.missingProducts);
+        return products.filter(product => Number(product.reportedByChatId) === Number(chatId));
+    }
+}
+
+const productManager = new ProductManager();
+
+// 🎮 Command Handler System
+class CommandHandler {
+    constructor() {
+        this.commands = new Map();
+        this.keyboards = new Map();
+        
+        this.initializeCommands();
+        this.initializeKeyboards();
+    }
+    
+    initializeCommands() {
+        // System Commands
+        this.commands.set('/start', this.handleStart.bind(this));
+        this.commands.set('/help', this.handleHelp.bind(this));
+        this.commands.set('/debug', this.handleDebug.bind(this));
+        this.commands.set('/durum', this.handleDebug.bind(this));
+        
+        // Task Commands
+        this.commands.set('/task', this.handleTaskCommand.bind(this));
+        this.commands.set('/taskall', this.handleTaskAllCommand.bind(this));
+        this.commands.set('/gorevata', this.handleTaskCommand.bind(this));
+        this.commands.set('/addtask', this.handleTaskCommand.bind(this));
+        
+        // User Management Commands
+        this.commands.set('/calisanekle', this.handleAddUserCommand.bind(this));
+        this.commands.set('/adduser', this.handleAddUserCommand.bind(this));
+        this.commands.set('/calisansil', this.handleRemoveUserCommand.bind(this));
+        this.commands.set('/removeuser', this.handleRemoveUserCommand.bind(this));
+        this.commands.set('/listusers', this.handleListUsers.bind(this));
+        
+        // Product Commands
+        this.commands.set('/products', this.handleProductList.bind(this));
+        this.commands.set('/eksiklist', this.handleProductList.bind(this));
+        
+        // Statistics Commands
+        this.commands.set('/stats', this.handleStats.bind(this));
+        this.commands.set('/istatistik', this.handleStats.bind(this));
+        this.commands.set('/activity', this.handleActivity.bind(this));
+        this.commands.set('/aktivite', this.handleActivity.bind(this));
+        
+        // Admin Commands
+        this.commands.set('/pending', this.handlePendingUsers.bind(this));
+        this.commands.set('/bekleyenler', this.handlePendingUsers.bind(this));
+        this.commands.set('/broadcast', this.handleBroadcast.bind(this));
+        this.commands.set('/duyuru', this.handleBroadcast.bind(this));
+        this.commands.set('/backup', this.handleBackup.bind(this));
+    }
+    
+    initializeKeyboards() {
+        // Main Menu Keyboards
+        this.keyboards.set('admin_main', [
+            [{ text: "📦 Eksik Ürün Bildir" }, { text: "👑 Admin Panel" }],
+            [{ text: "📊 İstatistikler" }, { text: "ℹ️ Yardım" }]
+        ]);
+        
+        this.keyboards.set('employee_main', [
+            [{ text: "📦 Eksik Ürün Bildir" }, { text: "📋 Görevlerim" }],
+            [{ text: "📊 İstatistikler" }, { text: "ℹ️ Yardım" }]
+        ]);
+        
+        this.keyboards.set('admin_panel', [
+            [{ text: "👥 Çalışanları Listele" }, { text: "📦 Eksik Ürünler" }],
+            [{ text: "⏳ Bekleyen Onaylar" }, { text: "📊 Detaylı Raporlar" }],
+            [{ text: "🗑️ Listeyi Temizle" }, { text: "📢 Duyuru Gönder" }],
+            [{ text: "🔙 Ana Menü" }]
+        ]);
+        
+        this.keyboards.set('back_menu', [
+            [{ text: "🔙 Ana Menü" }]
+        ]);
+    }
+    
+    getKeyboard(type, isAdmin = false) {
+        if (type === 'main') {
+            return isAdmin ? this.keyboards.get('admin_main') : this.keyboards.get('employee_main');
+        }
+        return this.keyboards.get(type) || this.keyboards.get('back_menu');
+    }
+    
+    async handleMessage(chatId, text, from) {
+        try {
+            // Rate limiting check
+            if (!rateLimiter.isAllowed(chatId)) {
+                await telegramAPI.sendMessage(chatId, 
+                    "⚠️ <b>Çok fazla istek!</b>\n\nLütfen biraz bekleyip tekrar deneyin."
+                );
+                return;
+            }
+            
+            // Update user activity
+            await userManager.updateUserActivity(chatId);
+            
+            // Check if user exists and is authorized
+            const user = await userManager.findUser(chatId);
+            const isAdmin = await userManager.isAdmin(chatId);
+            
+            // Handle commands
+            if (text.startsWith('/')) {
+                const command = text.split(' ')[0];
+                if (this.commands.has(command)) {
+                    await this.commands.get(command)(chatId, text, from, user, isAdmin);
+                    return;
+                }
+            }
+            
+            // Handle button clicks
+            await this.handleButtonClick(chatId, text, from, user, isAdmin);
+            
+        } catch (error) {
+            console.error(`❌ Command handling error for ${chatId}:`, error);
+            await telegramAPI.sendMessage(chatId, 
+                "❌ <b>Bir hata oluştu!</b>\n\nLütfen daha sonra tekrar deneyin veya /help komutu ile yardım alın."
+            );
+        }
+    }
+    
+    async handleStart(chatId, text, from, user, isAdmin) {
+        console.log(`🔍 User login attempt: ${from.first_name} (${chatId})`);
+        
+        // Check if this is the first user (becomes admin automatically)
+        const employees = await dataManager.readFile(DATA_FILES.employees);
+        const adminSettings = await dataManager.readFile(DATA_FILES.adminSettings);
+        
+        if (employees.length === 0 && adminSettings.adminUsers.length === 0) {
+            // First user becomes admin
+            const firstAdmin = await userManager.addUser({
+                chatId,
+                name: turkishHandler.protect(from.first_name || 'Admin'),
+                username: from.username,
+                department: 'Yönetim',
+                role: 'admin',
+                permissions: ['all_access']
+            });
+            
+            // Add to admin list
+            adminSettings.adminUsers.push(Number(chatId));
+            await dataManager.writeFile(DATA_FILES.adminSettings, adminSettings);
+            
+            await telegramAPI.sendMessage(chatId,
+                `👑 <b>Hoşgeldin İlk Admin!</b>\n\n` +
+                `🎉 Sen bu sistemin ilk kullanıcısısın ve otomatik olarak <b>Admin</b> oldun!\n\n` +
+                `👑 <b>Admin Yetkilerin:</b>\n` +
+                `• Yeni kullanıcıları onaylama\n` +
+                `• Çalışan bilgilerini düzenleme\n` +
+                `• Görev atama ve yönetimi\n` +
+                `• Sistem istatistikleri\n` +
+                `• Toplu duyuru gönderme\n\n` +
+                `✅ Artık sistemi tam yetkilerle kullanabilirsin!`,
+                {
+                    keyboard: this.getKeyboard('main', true),
+                    resize_keyboard: true
+                }
+            );
+            
+            await activityLogger.log(`İlk admin otomatik olarak eklendi: ${firstAdmin.name}`, chatId, firstAdmin.name);
+            return;
+        }
+        
+        // Existing user login
+        if (user) {
+            const welcomeText = `🎉 <b>Tekrar Hoşgeldin ${user.name}!</b>\n\n` +
+                               `🏢 Departman: ${user.department}\n` +
+                               `${isAdmin ? '👑 Yetki: Admin\n' : ''}` +
+                               `⏰ Son Aktivite: ${new Date(user.lastActivity).toLocaleString('tr-TR')}\n\n` +
+                               `✅ Giriş başarılı - Sistemi kullanmaya devam edebilirsin.`;
+            
+            await telegramAPI.sendMessage(chatId, welcomeText, {
+                keyboard: this.getKeyboard('main', isAdmin),
+                resize_keyboard: true
+            });
+            
+            await activityLogger.log(`${user.name} sisteme tekrar giriş yaptı`, chatId, user.name);
+            return;
+        }
+        
+        // New user - check if already pending
+        const pendingUsers = await dataManager.readFile(DATA_FILES.pendingUsers);
+        const existingPending = pendingUsers.find(u => Number(u.chatId) === Number(chatId));
+        
+        if (existingPending) {
+            await telegramAPI.sendMessage(chatId,
+                `⏳ <b>Onay Bekleniyor</b>\n\n` +
+                `Kayıt talebiniz daha önce admin onayına gönderildi.\n` +
+                `📅 İstek tarihi: ${new Date(existingPending.timestamp).toLocaleString('tr-TR')}\n\n` +
+                `⌛ Lütfen admin onayını bekleyiniz.\n` +
+                `🔔 Onaylandığınızda otomatik bildirim alacaksınız.`
+            );
+            return;
+        }
+        
+        // Create new pending user
+        try {
+            const pendingUser = await userManager.setPendingApproval({
+                chatId,
+                firstName: from.first_name,
+                lastName: from.last_name,
+                username: from.username
+            });
+            
+            // Notify user
+            await telegramAPI.sendMessage(chatId,
+                `👋 <b>Hoşgeldin ${pendingUser.firstName}!</b>\n\n` +
+                `📝 SivalTeam sistemine kayıt talebiniz alındı.\n` +
+                `🔄 Kayıt talebiniz admin onayına gönderildi.\n` +
+                `⏳ Admin onayı sonrası sistemi kullanabileceksiniz.\n\n` +
+                `🔔 Onaylandığınızda otomatik bildirim alacaksınız.\n` +
+                `⌛ Lütfen sabırla bekleyiniz...`
+            );
+            
+            // Notify all admins
+            for (const adminChatId of adminSettings.adminUsers) {
+                await telegramAPI.sendMessage(adminChatId,
+                    `🆕 <b>Yeni Kullanıcı Kayıt Talebi</b>\n\n` +
+                    `👤 <b>Ad:</b> ${pendingUser.firstName} ${pendingUser.lastName}\n` +
+                    `🆔 <b>Username:</b> @${pendingUser.username || 'yok'}\n` +
+                    `💬 <b>Chat ID:</b> <code>${pendingUser.chatId}</code>\n` +
+                    `📅 <b>Tarih:</b> ${new Date().toLocaleString('tr-TR')}\n\n` +
+                    `⬇️ Bu kullanıcıyı onaylamak için butonları kullanın:`,
+                    {
+                        inline_keyboard: [[
+                            { text: "✅ Onayla", callback_data: `approve_${pendingUser.chatId}` },
+                            { text: "❌ Reddet", callback_data: `reject_${pendingUser.chatId}` }
+                        ]]
+                    }
+                );
+            }
+            
+        } catch (error) {
+            console.error('❌ Error creating pending user:', error);
+            await telegramAPI.sendMessage(chatId,
+                `❌ <b>Kayıt Hatası</b>\n\n` +
+                `Kayıt sırasında bir hata oluştu. Lütfen daha sonra tekrar deneyin.\n\n` +
+                `Sorun devam ederse sistem yöneticisi ile iletişime geçin.`
+            );
+        }
+    }
+    
+    async handleButtonClick(chatId, text, from, user, isAdmin) {
+        if (!user) {
+            await telegramAPI.sendMessage(chatId, 
+                "❌ <b>Yetki Hatası</b>\n\nBu özelliği kullanmak için önce sisteme kayıt olmalısınız.\n\n/start komutu ile başlayın."
+            );
+            return;
+        }
+        
+        // Clear user state for fresh start
+        userManager.clearUserState(chatId);
+        
+        switch (text) {
+            case "📦 Eksik Ürün Bildir":
+                await this.handleMissingProductReport(chatId, user);
+                break;
+                
+            case "📋 Görevlerim":
+                await this.handleMyTasks(chatId, user);
+                break;
+                
+            case "📊 İstatistikler":
+                await this.handleStats(chatId, text, from, user, isAdmin);
+                break;
+                
+            case "👑 Admin Panel":
+                if (!isAdmin) {
+                    await telegramAPI.sendMessage(chatId, "❌ Bu özellik sadece adminler tarafından kullanılabilir.");
+                    return;
+                }
+                await this.handleAdminPanel(chatId, user);
+                break;
+                
+            case "ℹ️ Yardım":
+                await this.handleHelp(chatId, text, from, user, isAdmin);
+                break;
+                
+            case "🔙 Ana Menü":
+                await this.handleMainMenu(chatId, user, isAdmin);
+                break;
+                
+            case "👥 Çalışanları Listele":
+                if (!isAdmin) return;
+                await this.handleListUsers(chatId, text, from, user, isAdmin);
+                break;
+                
+            case "📦 Eksik Ürünler":
+                if (!isAdmin) return;
+                await this.handleProductList(chatId, text, from, user, isAdmin);
+                break;
+                
+            case "⏳ Bekleyen Onaylar":
+                if (!isAdmin) return;
+                await this.handlePendingUsers(chatId, text, from, user, isAdmin);
+                break;
+                
+            case "🗑️ Listeyi Temizle":
+                if (!isAdmin) return;
+                await this.handleClearProducts(chatId, user);
+                break;
+                
+            case "📢 Duyuru Gönder":
+                if (!isAdmin) return;
+                await this.handleBroadcastStart(chatId, user);
+                break;
+                
+            case "📊 Detaylı Raporlar":
+                if (!isAdmin) return;
+                await this.handleDetailedReports(chatId, user);
+                break;
+                
+            default:
+                // Check if this is part of a workflow (category selection, product input, etc.)
+                await this.handleWorkflowInput(chatId, text, user);
+                break;
+        }
+    }
+    
+    async handleMissingProductReport(chatId, user) {
+        const categories = await dataManager.readFile(DATA_FILES.categories);
+        
+        // Create category keyboard
+        const categoryKeyboard = [];
+        for (let i = 0; i < categories.length; i += 2) {
+            const row = [{ text: categories[i] }];
+            if (categories[i + 1]) {
+                row.push({ text: categories[i + 1] });
+            }
+            categoryKeyboard.push(row);
+        }
+        categoryKeyboard.push([{ text: "🔙 Ana Menü" }]);
+        
+        await telegramAPI.sendMessage(chatId,
+            `📦 <b>Eksik Ürün Bildirimi</b>\n\n` +
+            `Hangi kategoride eksik ürün bildirmek istiyorsun?\n\n` +
+            `⬇️ Aşağıdaki kategorilerden birini seç:`,
             {
-                keyboard: [
-                    [{ text: "📦 Eksik Ürün Bildir" }, { text: "📋 Görevlerim" }],
-                    [{ text: "📊 İstatistikler" }, { text: "👑 Admin Panel" }],
-                    [{ text: "ℹ️ Yardım" }]
-                ],
+                keyboard: categoryKeyboard,
                 resize_keyboard: true
             }
         );
         
-        logActivity(`İlk admin otomatik olarak eklendi: ${firstAdmin.name}`, chatId, firstAdmin.name);
-        return;
-    }
-    
-    // Find existing employee by numeric chatId comparison
-    let employee = employees.find(e => Number(e.chatId) === numericChatId);
-    
-    // DEBUG: Log employee search result
-    console.log(`🔍 Employee search for ${numericChatId}:`, employee ? `FOUND: ${employee.name}` : 'NOT FOUND');
-    if (employees.length > 0) {
-        console.log(`📝 Existing employees:`, employees.map(e => `${e.name} (${e.chatId})`));
-    }
-    
-    if (employee) {
-        // Employee exists - direct login without approval
-        const isAdmin = adminSettings.adminUsers.includes(numericChatId);
-        console.log(`✅ User ${employee.name} logging in. Admin status: ${isAdmin}`);
-        const welcomeText = `🎉 Hoşgeldin <b>${protectTurkishChars(employee.name)}</b>!\n\n` +
-                           `🏢 Departman: ${protectTurkishChars(employee.department)}\n` +
-                           `${isAdmin ? '👑 Yetki: Admin\n' : ''}` +
-                           `✅ Giriş başarılı - Artık sistemi kullanabilirsin.`;
-        
-        let keyboard;
-        
-        if (isAdmin) {
-            // Admin menüsü - Görevlerim yok, admin paneli var
-            keyboard = [
-                [{ text: "📦 Eksik Ürün Bildir" }, { text: "👑 Admin Panel" }],
-                [{ text: "📊 İstatistikler" }, { text: "ℹ️ Yardım" }]
-            ];
-        } else {
-            // Çalışan menüsü - Görevlerim var, admin panel yok
-            keyboard = [
-                [{ text: "📦 Eksik Ürün Bildir" }, { text: "📋 Görevlerim" }],
-                [{ text: "📊 İstatistikler" }, { text: "ℹ️ Yardım" }]
-            ];
-        }
-        
-        sendTelegramMessage(chatId, welcomeText, {
-            keyboard,
-            resize_keyboard: true
+        // Set user state
+        userManager.setUserState(chatId, { 
+            action: 'selecting_category',
+            step: 1
         });
+    }
+    
+    async handleMyTasks(chatId, user) {
+        const userTasks = await taskManager.getUserTasks(chatId);
+        const pendingTasks = userTasks.filter(task => task.status === 'pending');
+        const completedTasks = userTasks.filter(task => task.status === 'completed');
         
-        logActivity(`${employee.name} sisteme giriş yaptı`, chatId, employee.name);
-        return;
-    }
-    
-    // New user - admin approval required
-    if (adminSettings.adminUsers.length === 0) {
-        sendTelegramMessage(chatId, 
-            `❌ <b>Sistem Hatası</b>\n\n` +
-            `Hiç admin kullanıcı bulunamadı. Bu durumda sistem çalışamaz.\n` +
-            `Lütfen sistem yöneticisiyle iletişime geçin.`
-        );
-        return;
-    }
-    
-    // CHECK IF USER IS ALREADY PENDING - CRITICAL FIX!
-    const pendingUsers = readJsonFile(DATA_FILES.pendingUsers);
-    const existingPendingUser = pendingUsers.find(u => Number(u.chatId) === numericChatId);
-    
-    if (existingPendingUser) {
-        // User already requested approval
-        sendTelegramMessage(chatId, 
-            `⏳ <b>Onay Bekleniyor</b>\n\n` +
-            `Kayıt talebiniz daha önce admin onayına gönderildi.\n` +
-            `📅 İstek tarihi: ${new Date(existingPendingUser.timestamp).toLocaleString('tr-TR')}\n\n` +
-            `⌛ Lütfen admin onayını bekleyiniz. Tekrar başvuru yapmanıza gerek yoktur.`
-        );
-        return;
-    }
-    
-    const pendingUser = {
-        chatId: numericChatId,
-        firstName: protectTurkishChars(from.first_name || 'Bilinmiyor'),
-        lastName: protectTurkishChars(from.last_name || ''),
-        username: from.username || 'username_yok',
-        timestamp: new Date().toISOString(),
-        status: 'pending'
-    };
-    
-    // Add to pending users file
-    pendingUsers.push(pendingUser);
-    writeJsonFile(DATA_FILES.pendingUsers, pendingUsers);
-    
-    // Notify user
-    sendTelegramMessage(chatId, 
-        `👋 <b>Hoşgeldin ${pendingUser.firstName}!</b>\n\n` +
-        `📝 SivalTeam sistemine kayıt talebiniz alındı.\n` +
-        `🔄 Kayıt talebiniz admin onayına gönderildi.\n` +
-        `⏳ Admin onayı sonrası sistemi kullanabileceksiniz.\n\n` +
-        `⌛ Lütfen bekleyiniz...`
-    );
-    
-    // Notify all admins
-    adminSettings.adminUsers.forEach(adminChatId => {
-        sendTelegramMessage(adminChatId,
-            `🆕 <b>Yeni Kullanıcı Kayıt Talebi</b>\n\n` +
-            `👤 Ad: <b>${pendingUser.firstName} ${pendingUser.lastName}</b>\n` +
-            `🆔 Username: @${pendingUser.username}\n` +
-            `💬 Chat ID: <code>${pendingUser.chatId}</code>\n` +
-            `📅 Tarih: ${new Date().toLocaleString('tr-TR')}\n\n` +
-            `⬇️ Bu kullanıcıyı onaylamak için butonları kullanın:`,
-            {
-                inline_keyboard: [[
-                    { text: "✅ Onayla", callback_data: `approve_${pendingUser.chatId}` },
-                    { text: "❌ Reddet", callback_data: `reject_${pendingUser.chatId}` }
-                ]]
-            }
-        );
-    });
-    
-    logActivity(`Yeni kullanıcı kayıt talebi: ${pendingUser.firstName} ${pendingUser.lastName}`, chatId, pendingUser.firstName);
-}
-
-// Handle missing product report
-function handleMissingProductReport(chatId, from) {
-    const employees = readJsonFile(DATA_FILES.employees);
-    const numericChatId = Number(chatId);
-    const employee = employees.find(e => Number(e.chatId) === numericChatId);
-    
-    if (!employee) {
-        sendTelegramMessage(chatId, "❌ Bu özelliği kullanmak için önce kayıt olmalısınız.");
-        return;
-    }
-    
-    const categories = readJsonFile(DATA_FILES.categories);
-    const keyboard = categories.map(cat => [{ text: protectTurkishChars(cat) }]);
-    keyboard.push([{ text: "🔙 Ana Menü" }]);
-    
-    sendTelegramMessage(chatId, 
-        "📦 <b>Eksik Ürün Bildirimi</b>\n\n" +
-        "Hangi kategoriden ürün eksik? Aşağıdaki kategorilerden birini seçin:",
-        { keyboard, resize_keyboard: true, one_time_keyboard: true }
-    );
-    
-    // Set user state for category selection
-    employees.forEach(emp => {
-        if (Number(emp.chatId) === numericChatId) {
-            emp.currentAction = 'selecting_category';
-        }
-    });
-    writeJsonFile(DATA_FILES.employees, employees);
-}
-
-// Handle category selection for missing products
-function handleCategorySelection(chatId, categoryText, from) {
-    const employees = readJsonFile(DATA_FILES.employees);
-    const numericChatId = Number(chatId);
-    const employee = employees.find(e => Number(e.chatId) === numericChatId);
-    
-    if (!employee || employee.currentAction !== 'selecting_category') {
-        return false;
-    }
-    
-    const protectedCategory = protectTurkishChars(categoryText);
-    
-    // Update employee state
-    employees.forEach(emp => {
-        if (Number(emp.chatId) === numericChatId) {
-            emp.currentAction = 'entering_product';
-            emp.selectedCategory = protectedCategory;
-        }
-    });
-    writeJsonFile(DATA_FILES.employees, employees);
-    
-    sendTelegramMessage(chatId,
-        `📦 <b>${protectedCategory}</b> kategorisi seçildi.\n\n` +
-        `Eksik olan ürünün adını yazın (örnek: Beyaz Tişört, Mavi Gömlek):`
-    );
-    
-    return true;
-}
-
-// Handle product name input
-function handleProductNameInput(chatId, productName, from) {
-    const employees = readJsonFile(DATA_FILES.employees);
-    const numericChatId = Number(chatId);
-    const employee = employees.find(e => Number(e.chatId) === numericChatId);
-    
-    if (!employee || employee.currentAction !== 'entering_product') {
-        return false;
-    }
-    
-    const protectedProductName = protectTurkishChars(productName);
-    const protectedCategory = protectTurkishChars(employee.selectedCategory);
-    const protectedEmployeeName = protectTurkishChars(employee.name);
-    
-    // Save missing product
-    const missingProducts = readJsonFile(DATA_FILES.missingProducts);
-    const newProduct = {
-        id: Date.now(),
-        category: protectedCategory,
-        product: protectedProductName,
-        reportedBy: protectedEmployeeName,
-        reportedByChatId: numericChatId,
-        timestamp: new Date().toISOString(),
-        status: 'reported'
-    };
-    
-    missingProducts.push(newProduct);
-    writeJsonFile(DATA_FILES.missingProducts, missingProducts);
-    
-    // Reset employee state
-    employees.forEach(emp => {
-        if (Number(emp.chatId) === numericChatId) {
-            emp.currentAction = null;
-            emp.selectedCategory = null;
-        }
-    });
-    writeJsonFile(DATA_FILES.employees, employees);
-    
-    // Success message
-    sendTelegramMessage(chatId,
-        `✅ <b>Eksik Ürün Bildirildi</b>\n\n` +
-        `📦 Kategori: ${protectedCategory}\n` +
-        `🏷️ Ürün: ${protectedProductName}\n` +
-        `👤 Bildiren: ${protectedEmployeeName}\n\n` +
-        `Bildiriminiz kaydedildi ve yöneticilere iletildi.`,
-        {
-            keyboard: [
-                [{ text: "📦 Eksik Ürün Bildir" }, { text: "📋 Görevlerim" }],
-                [{ text: "📊 İstatistikler" }, { text: "ℹ️ Yardım" }]
-            ],
-            resize_keyboard: true
-        }
-    );
-    
-    logActivity(`Eksik ürün bildirimi: ${protectedCategory} - ${protectedProductName}`, chatId, protectedEmployeeName);
-    
-    // Notify admins
-    const adminSettings = readJsonFile(DATA_FILES.adminSettings);
-    adminSettings.adminUsers.forEach(adminChatId => {
-        sendTelegramMessage(adminChatId,
-            `🚨 <b>Yeni Eksik Ürün Bildirimi</b>\n\n` +
-            `📦 Kategori: ${protectedCategory}\n` +
-            `🏷️ Ürün: ${protectedProductName}\n` +
-            `👤 Bildiren: ${protectedEmployeeName}\n` +
-            `⏰ Tarih: ${new Date().toLocaleString('tr-TR')}`
-        );
-    });
-    
-    return true;
-}
-
-// Webhook endpoint - Main bot handler
-app.post('/webhook', async (req, res) => {
-    // IMMEDIATELY respond to Telegram to prevent timeout
-    res.status(200).json({ status: 'ok' });
-    
-    try {
-        const { message, callback_query } = req.body;
-        
-        // Handle callback queries (inline buttons)
-        if (callback_query) {
-            const { data, from, message: callbackMessage } = callback_query;
-            const chatId = from.id;
-            
-            // Answer callback query to stop loading animation - FAST
-            axios.post(`https://api.telegram.org/bot${BOT_TOKEN}/answerCallbackQuery`, {
-                callback_query_id: callback_query.id,
-                text: "İşlem alındı..."
-            }, { timeout: 2000 }).catch(error => {
-                // Ignore all callback query errors for speed
-                if (!error.message.includes('Bad Request: query is too old')) {
-                    console.error('Callback query timeout - ignored for speed');
+        if (userTasks.length === 0) {
+            await telegramAPI.sendMessage(chatId,
+                `📋 <b>Görevleriniz</b>\n\n` +
+                `📝 Şu anda size atanmış görev bulunmuyor.\n\n` +
+                `✅ Yeni görevler atandığında size bildirim gelecektir.`,
+                {
+                    keyboard: this.getKeyboard('main', await userManager.isAdmin(chatId)),
+                    resize_keyboard: true
                 }
-            });
-            
-            // Handle admin approval/rejection
-            if (data.startsWith('approve_') || data.startsWith('reject_')) {
-                const [action, targetChatId] = data.split('_');
-                const numericTargetChatId = Number(targetChatId);
-                
-                // Get pending user info
-                const pendingUsers = readJsonFile(DATA_FILES.pendingUsers);
-                const pendingUser = pendingUsers.find(u => Number(u.chatId) === numericTargetChatId);
-                
-                if (!pendingUser) {
-                    sendTelegramMessage(chatId, `❌ Bu kullanıcı için bekleyen kayıt bulunamadı.`);
-                    return;
-                }
-                
-                if (action === 'approve') {
-                    // Add user as employee
-                    const employees = readJsonFile(DATA_FILES.employees);
-                    const newEmployee = {
-                        chatId: numericTargetChatId,
-                        name: pendingUser.firstName + (pendingUser.lastName ? ' ' + pendingUser.lastName : ''),
-                        department: "Yeni Çalışan",
-                        role: "employee",
-                        username: pendingUser.username,
-                        addedBy: from.id,
-                        addedAt: new Date().toISOString(),
-                        status: "active"
-                    };
-                    
-                    console.log(`✅ APPROVING USER: ${newEmployee.name} with chatId ${numericTargetChatId} (type: ${typeof numericTargetChatId})`);
-                    
-                    employees.push(newEmployee);
-                    writeJsonFile(DATA_FILES.employees, employees);
-                    
-                    console.log(`💾 User added to employees. Total count now: ${employees.length}`);
-                    
-                    // Remove from pending users
-                    const updatedPendingUsers = pendingUsers.filter(u => Number(u.chatId) !== numericTargetChatId);
-                    writeJsonFile(DATA_FILES.pendingUsers, updatedPendingUsers);
-                    
-                    // Notify approved user
-                    sendTelegramMessage(numericTargetChatId,
-                        `🎉 <b>Hoşgeldin SivalTeam'e!</b>\n\n` +
-                        `✅ Kaydınız onaylandı ve sisteme eklendiniz.\n` +
-                        `👤 Adınız: ${newEmployee.name}\n` +
-                        `🏢 Departman: ${newEmployee.department}\n\n` +
-                        `🚀 Artık sistemi kullanabilirsiniz! /start komutuyla başlayın.`
-                    );
-                    
-                    // Notify admin
-                    sendTelegramMessage(chatId, 
-                        `✅ <b>Kullanıcı Onaylandı</b>\n\n` +
-                        `👤 ${newEmployee.name} başarıyla sisteme eklendi.\n` +
-                        `💬 Chat ID: ${targetChatId}`
-                    );
-                    logActivity(`Kullanıcı onaylandı: ${newEmployee.name}`, chatId, from.first_name);
-                    
-                } else if (action === 'reject') {
-                    // Remove from pending users
-                    const updatedPendingUsers = pendingUsers.filter(u => Number(u.chatId) !== numericTargetChatId);
-                    writeJsonFile(DATA_FILES.pendingUsers, updatedPendingUsers);
-                    
-                    // Notify rejected user
-                    sendTelegramMessage(numericTargetChatId,
-                        `❌ <b>Kayıt Talebi Reddedildi</b>\n\n` +
-                        `Üzgünüz, SivalTeam sistemine kayıt talebiniz reddedildi.\n` +
-                        `📞 Daha fazla bilgi için sistem yöneticisiyle iletişime geçebilirsiniz.`
-                    );
-                    
-                    // Notify admin
-                    sendTelegramMessage(chatId, 
-                        `❌ <b>Kullanıcı Reddedildi</b>\n\n` +
-                        `👤 ${pendingUser.firstName} kayıt talebi reddedildi.\n` +
-                        `💬 Chat ID: ${targetChatId}`
-                    );
-                    logActivity(`Kullanıcı reddedildi: ${pendingUser.firstName}`, chatId, from.first_name);
-                }
-            }
-            
-            // Handle product completion
-            if (data.startsWith('complete_product_')) {
-                const adminSettings = readJsonFile(DATA_FILES.adminSettings);
-                const numericChatId = Number(chatId);
-                
-                if (!adminSettings.adminUsers.includes(numericChatId)) {
-                    sendTelegramMessage(chatId, "❌ Bu işlem sadece adminler tarafından yapılabilir.");
-                    return;
-                }
-                
-                const productId = data.replace('complete_product_', '');
-                const products = readJsonFile(DATA_FILES.missingProducts);
-                const productIndex = products.findIndex(p => p.id == productId);
-                
-                if (productIndex === -1) {
-                    sendTelegramMessage(chatId, "❌ Ürün bulunamadı veya zaten silinmiş.");
-                    return;
-                }
-                
-                const completedProduct = products[productIndex];
-                products.splice(productIndex, 1);
-                writeJsonFile(DATA_FILES.missingProducts, products);
-                
-                sendTelegramMessage(chatId, 
-                    `✅ <b>Ürün Tamamlandı</b>\n\n` +
-                    `📦 <b>${protectTurkishChars(completedProduct.product)}</b>\n` +
-                    `🏷️ Kategori: ${protectTurkishChars(completedProduct.category)}\n` +
-                    `👤 Bildiren: ${protectTurkishChars(completedProduct.reportedBy)}\n\n` +
-                    `🗑️ Ürün eksik ürün listesinden kaldırıldı.`
-                );
-                
-                logActivity(`Eksik ürün tamamlandı: ${completedProduct.product}`, chatId, from.first_name);
-            }
-            
-            // Handle clear all products
-            if (data === 'clear_all_products') {
-                const adminSettings = readJsonFile(DATA_FILES.adminSettings);
-                const numericChatId = Number(chatId);
-                
-                if (!adminSettings.adminUsers.includes(numericChatId)) {
-                    sendTelegramMessage(chatId, "❌ Bu işlem sadece adminler tarafından yapılabilir.");
-                    return;
-                }
-                
-                const products = readJsonFile(DATA_FILES.missingProducts);
-                const productCount = products.length;
-                
-                writeJsonFile(DATA_FILES.missingProducts, []);
-                
-                sendTelegramMessage(chatId, 
-                    `🗑️ <b>Tüm Eksik Ürün Listesi Temizlendi</b>\n\n` +
-                    `📊 ${productCount} ürün bildirimi silindi.\n` +
-                    `✅ Liste baştan başlıyor.`
-                );
-                
-                logActivity(`Tüm eksik ürün listesi temizlendi (${productCount} ürün)`, chatId, from.first_name);
-            }
-            
-            // Handle task completion
-            if (data.startsWith('complete_task_')) {
-                const taskId = data.replace('complete_task_', '');
-                const tasks = readJsonFile(DATA_FILES.tasks);
-                const numericChatId = Number(chatId);
-                
-                const taskIndex = tasks.findIndex(t => t.id == taskId && Number(t.assignedTo) === numericChatId);
-                
-                if (taskIndex === -1) {
-                    sendTelegramMessage(chatId, "❌ Görev bulunamadı veya size ait değil.");
-                    return;
-                }
-                
-                const completedTask = tasks[taskIndex];
-                
-                // Mark task as completed
-                tasks[taskIndex].status = 'completed';
-                tasks[taskIndex].completedAt = new Date().toISOString();
-                tasks[taskIndex].completedBy = numericChatId;
-                
-                writeJsonFile(DATA_FILES.tasks, tasks);
-                
-                // Send completion confirmation to employee
-                sendTelegramMessage(chatId, 
-                    `✅ <b>Görev Tamamlandı!</b>\n\n` +
-                    `🎯 <b>${protectTurkishChars(completedTask.title)}</b>\n` +
-                    `📝 ${protectTurkishChars(completedTask.description)}\n\n` +
-                    `🎉 Tebrikler! Görev başarıyla tamamlandı.`,
-                    {
-                        keyboard: [
-                            [{ text: "📦 Eksik Ürün Bildir" }, { text: "📋 Görevlerim" }],
-                            [{ text: "📊 İstatistikler" }, { text: "ℹ️ Yardım" }]
-                        ],
-                        resize_keyboard: true
-                    }
-                );
-                
-                // Notify admin about task completion
-                const adminSettings = readJsonFile(DATA_FILES.adminSettings);
-                const employees = readJsonFile(DATA_FILES.employees);
-                const employee = employees.find(e => Number(e.chatId) === numericChatId);
-                const employeeName = employee ? employee.name : 'Bilinmeyen Çalışan';
-                
-                adminSettings.adminUsers.forEach(adminChatId => {
-                    sendTelegramMessage(adminChatId, 
-                        `✅ <b>Görev Tamamlandı!</b>\n\n` +
-                        `👤 <b>Çalışan:</b> ${protectTurkishChars(employeeName)}\n` +
-                        `🎯 <b>Görev:</b> ${protectTurkishChars(completedTask.title)}\n` +
-                        `📝 <b>Açıklama:</b> ${protectTurkishChars(completedTask.description)}\n` +
-                        `📅 <b>Tamamlanma:</b> ${new Date().toLocaleString('tr-TR')}\n\n` +
-                        `🎉 Görev başarıyla tamamlandı!`
-                    );
-                });
-                
-                logActivity(`Görev tamamlandı: ${completedTask.title}`, chatId, employeeName);
-            }
-            
-            // Handle refresh my tasks
-            if (data === 'refresh_my_tasks') {
-                const employees = readJsonFile(DATA_FILES.employees);
-                const tasks = readJsonFile(DATA_FILES.tasks);
-                const numericChatId = Number(chatId);
-                const employee = employees.find(e => Number(e.chatId) === numericChatId);
-                
-                if (!employee) {
-                    sendTelegramMessage(chatId, "❌ Bu özelliği kullanmak için önce kayıt olmalısınız.");
-                    return;
-                }
-                
-                const userTasks = tasks.filter(task => Number(task.assignedTo) === numericChatId);
-                const pendingTasks = userTasks.filter(task => task.status === 'pending');
-                const completedTasks = userTasks.filter(task => task.status === 'completed');
-                
-                if (userTasks.length === 0) {
-                    sendTelegramMessage(chatId, 
-                        `📋 <b>Görevleriniz</b>\n\n` +
-                        `📝 Şu anda size atanmış görev bulunmuyor.\n\n` +
-                        `✅ Yeni görevler atandığında size bildirim gelecektir.`,
-                        {
-                            keyboard: [
-                                [{ text: "📦 Eksik Ürün Bildir" }, { text: "📊 İstatistikler" }],
-                                [{ text: "ℹ️ Yardım" }]
-                            ],
-                            resize_keyboard: true
-                        }
-                    );
-                    return;
-                }
-                
-                // Create task list with detailed info
-                let taskText = `📋 <b>${employee.name} - Görevleriniz</b>\n\n`;
-                taskText += `📊 <b>Özet:</b>\n`;
-                taskText += `⏳ Bekleyen: ${pendingTasks.length}\n`;
-                taskText += `✅ Tamamlanan: ${completedTasks.length}\n`;
-                taskText += `📈 Toplam: ${userTasks.length}\n\n`;
-                
-                if (pendingTasks.length > 0) {
-                    taskText += `⏳ <b>Bekleyen Görevler:</b>\n\n`;
-                    
-                    pendingTasks.forEach((task, index) => {
-                        taskText += `${index + 1}. 🎯 <b>${protectTurkishChars(task.title)}</b>\n`;
-                        taskText += `   📝 ${protectTurkishChars(task.description)}\n`;
-                        taskText += `   👤 Atayan: ${protectTurkishChars(task.assignedByName)}\n`;
-                        taskText += `   📅 ${new Date(task.createdAt).toLocaleString('tr-TR')}\n`;
-                        taskText += `   ${task.type === 'bulk' ? '📢 Toplu Görev' : '👤 Kişisel Görev'}\n\n`;
-                    });
-                }
-                
-                if (completedTasks.length > 0) {
-                    taskText += `✅ <b>Son Tamamlanan Görevler:</b>\n\n`;
-                    
-                    completedTasks.slice(-3).forEach((task, index) => { // Show last 3 completed
-                        taskText += `${index + 1}. ✅ <b>${protectTurkishChars(task.title)}</b>\n`;
-                        taskText += `   📅 ${new Date(task.completedAt || task.createdAt).toLocaleDateString('tr-TR')}\n\n`;
-                    });
-                    
-                    if (completedTasks.length > 3) {
-                        taskText += `... ve ${completedTasks.length - 3} görev daha\n\n`;
-                    }
-                }
-                
-                // Create inline keyboard with complete buttons for pending tasks
-                const inlineKeyboard = [];
-                
-                pendingTasks.slice(0, 10).forEach(task => { // Limit to 10 tasks
-                    inlineKeyboard.push([{
-                        text: `✅ "${protectTurkishChars(task.title)}" Tamamlandı`,
-                        callback_data: `complete_task_${task.id}`
-                    }]);
-                });
-                
-                if (pendingTasks.length === 0) {
-                    inlineKeyboard.push([{
-                        text: "🔄 Görevleri Yenile",
-                        callback_data: "refresh_my_tasks"
-                    }]);
-                }
-                
-                sendTelegramMessage(chatId, taskText, {
-                    inline_keyboard: inlineKeyboard
-                });
-            }
-            
-            // All callback_query cases handled above
+            );
             return;
         }
         
-        // Handle regular messages
-        if (message) {
-            const { chat, from, text } = message;
-            const chatId = chat.id;
+        // Create task summary
+        let taskText = `📋 <b>${user.name} - Görevleriniz</b>\n\n`;
+        taskText += `📊 <b>Özet:</b>\n`;
+        taskText += `⏳ Bekleyen: ${pendingTasks.length}\n`;
+        taskText += `✅ Tamamlanan: ${completedTasks.length}\n`;
+        taskText += `📈 Toplam: ${userTasks.length}\n`;
+        taskText += `🎯 Başarı Oranı: ${user.taskCompletionRate || 0}%\n\n`;
+        
+        if (pendingTasks.length > 0) {
+            taskText += `⏳ <b>Bekleyen Görevler:</b>\n\n`;
             
-            if (!text) return;
+            pendingTasks.slice(0, 10).forEach((task, index) => {
+                const daysPassed = Math.floor((Date.now() - new Date(task.createdAt)) / (1000 * 60 * 60 * 24));
+                taskText += `${index + 1}. 🎯 <b>${task.title}</b>\n`;
+                taskText += `   📝 ${task.description}\n`;
+                taskText += `   👤 Atayan: ${task.assignedByName}\n`;
+                taskText += `   📅 ${daysPassed} gün önce\n`;
+                taskText += `   ${task.type === 'bulk' ? '📢 Toplu Görev' : '👤 Kişisel Görev'}\n\n`;
+            });
             
-            // Handle /task command
-            if (text.startsWith('/task ')) {
-                const adminSettings = readJsonFile(DATA_FILES.adminSettings);
-                const numericChatId = Number(chatId);
-                
-                if (!adminSettings.adminUsers.includes(numericChatId)) {
-                    sendTelegramMessage(chatId, "❌ Görev atama sadece adminler tarafından yapılabilir.");
-                    return;
-                }
-                
-                // Parse: /task @username veya chatId Görev başlığı | Açıklama
-                const taskText = text.replace('/task ', '').trim();
-                const parts = taskText.split(' ');
-                
-                if (parts.length < 2 || !taskText.includes('|')) {
-                    sendTelegramMessage(chatId, 
-                        "❌ <b>Kullanım:</b>\n" +
-                        "/task @username Görev başlığı | Açıklama\n" +
-                        "veya\n" +
-                        "/task &lt;chatId&gt; Görev başlığı | Açıklama"
-                    );
-                    return;
-                }
-                
-                let targetIdentifier = parts[0];
-                let taskContent = parts.slice(1).join(' ');
-                let [title, description] = taskContent.split('|').map(s => protectTurkishChars(s.trim()));
-                
-                if (!title || !description) {
-                    sendTelegramMessage(chatId, "❌ Görev başlığı ve açıklaması gereklidir.");
-                    return;
-                }
-                
-                const employees = readJsonFile(DATA_FILES.employees);
-                let targetEmployee = null;
-                
-                // Find employee by username or chatId
-                if (targetIdentifier.startsWith('@')) {
-                    const username = targetIdentifier.replace('@', '');
-                    targetEmployee = employees.find(e => e.username === username);
-                } else if (!isNaN(Number(targetIdentifier))) {
-                    const targetChatId = Number(targetIdentifier);
-                    targetEmployee = employees.find(e => Number(e.chatId) === targetChatId);
-                }
-                
-                if (!targetEmployee) {
-                    sendTelegramMessage(chatId, "❌ Çalışan bulunamadı. @username veya chat ID kontrolünü yapın.");
-                    return;
-                }
-                
-                const tasks = readJsonFile(DATA_FILES.tasks);
-                const newTask = {
-                    id: Date.now(),
-                    title: title,
-                    description: description,
-                    assignedTo: Number(targetEmployee.chatId),
-                    assignedToName: protectTurkishChars(targetEmployee.name),
-                    assignedBy: numericChatId,
-                    assignedByName: from.first_name || 'Admin',
-                    createdAt: new Date().toISOString(),
-                    status: 'pending',
-                    type: 'individual'
-                };
-                
-                tasks.push(newTask);
-                writeJsonFile(DATA_FILES.tasks, tasks);
-                
-                // Notify admin
-                sendTelegramMessage(chatId, 
-                    `✅ <b>Görev Atandı</b>\n\n` +
-                    `📋 <b>${title}</b>\n` +
-                    `📄 ${description}\n\n` +
-                    `👤 Atanan: ${targetEmployee.name}\n` +
-                    `💬 Chat ID: ${targetEmployee.chatId}\n` +
-                    `📅 Tarih: ${new Date().toLocaleDateString('tr-TR')}`
-                );
-                
-                // Notify employee
-                sendTelegramMessage(targetEmployee.chatId,
-                    `📋 <b>Yeni Görev Atandı!</b>\n\n` +
-                    `🎯 <b>${title}</b>\n` +
-                    `📝 ${description}\n\n` +
-                    `👤 Atayan: ${from.first_name || 'Admin'}\n` +
-                    `📅 Tarih: ${new Date().toLocaleDateString('tr-TR')}\n\n` +
-                    `📋 Görevlerinizi görmek için: "📋 Görevlerim" butonunu kullanın.`,
-                    {
-                        keyboard: [
-                            [{ text: "📋 Görevlerim" }, { text: "📦 Eksik Ürün Bildir" }],
-                            [{ text: "📊 İstatistikler" }, { text: "ℹ️ Yardım" }]
-                        ],
-                        resize_keyboard: true
-                    }
-                );
-                
-                logActivity(`Tekil görev atandı: "${title}" → ${targetEmployee.name}`, chatId, from.first_name);
+            if (pendingTasks.length > 10) {
+                taskText += `... ve ${pendingTasks.length - 10} görev daha\n\n`;
             }
-            else if (text.startsWith('/taskall ')) {
-                const adminSettings = readJsonFile(DATA_FILES.adminSettings);
-                const numericChatId = Number(chatId);
-                
-                if (!adminSettings.adminUsers.includes(numericChatId)) {
-                    sendTelegramMessage(chatId, "❌ Toplu görev atama sadece adminler tarafından yapılabilir.");
-                    return;
-                }
-                
-                // Parse: /taskall Görev başlığı | Açıklama
-                const taskText = text.replace('/taskall ', '').trim();
-                
-                if (!taskText.includes('|')) {
-                    sendTelegramMessage(chatId, 
-                        "❌ <b>Kullanım:</b>\n" +
-                        "/taskall Görev başlığı | Açıklama\n\n" +
-                        "Bu komut tüm çalışanlara aynı görevi atar."
-                    );
-                    return;
-                }
-                
-                let [title, description] = taskText.split('|').map(s => protectTurkishChars(s.trim()));
-                
-                if (!title || !description) {
-                    sendTelegramMessage(chatId, "❌ Görev başlığı ve açıklaması gereklidir.");
-                    return;
-                }
-                
-                const employees = readJsonFile(DATA_FILES.employees);
-                const regularEmployees = employees.filter(emp => emp.role !== 'admin');
-                
-                if (regularEmployees.length === 0) {
-                    sendTelegramMessage(chatId, "❌ Görev atanacak çalışan bulunamadı.");
-                    return;
-                }
-                
-                const tasks = readJsonFile(DATA_FILES.tasks);
-                const baseTaskId = Date.now();
-                
-                let assignedCount = 0;
-                
-                // Create individual task for each employee
-                regularEmployees.forEach((employee, index) => {
-                    const newTask = {
-                        id: baseTaskId + index,
-                        title: title,
-                        description: description,
-                        assignedTo: Number(employee.chatId),
-                        assignedToName: protectTurkishChars(employee.name),
-                        assignedBy: numericChatId,
-                        assignedByName: from.first_name || 'Admin',
-                        createdAt: new Date().toISOString(),
-                        status: 'pending',
-                        type: 'bulk',
-                        bulkId: baseTaskId // Group bulk tasks
-                    };
-                    
-                    tasks.push(newTask);
-                    
-                    // Notify employee
-                    sendTelegramMessage(employee.chatId,
-                        `📢 <b>Toplu Görev Atandı!</b>\n\n` +
-                        `🎯 <b>${title}</b>\n` +
-                        `📝 ${description}\n\n` +
-                        `👤 Atayan: ${from.first_name || 'Admin'}\n` +
-                        `📅 Tarih: ${new Date().toLocaleDateString('tr-TR')}\n\n` +
-                        `📋 Bu görev tüm çalışanlara atanmıştır.\n` +
-                        `🔍 Görevlerinizi görmek için: "📋 Görevlerim"`,
-                        {
-                            keyboard: [
-                                [{ text: "📋 Görevlerim" }, { text: "📦 Eksik Ürün Bildir" }],
-                                [{ text: "📊 İstatistikler" }, { text: "ℹ️ Yardım" }]
-                            ],
-                            resize_keyboard: true
-                        }
-                    );
-                    
-                    assignedCount++;
-                });
-                
-                writeJsonFile(DATA_FILES.tasks, tasks);
-                
-                // Notify admin
-                sendTelegramMessage(chatId,
-                    `✅ <b>Toplu Görev Atandı</b>\n\n` +
-                    `📋 <b>${title}</b>\n` +
-                    `📄 ${description}\n\n` +
-                    `👥 Atanan Çalışan Sayısı: ${assignedCount}\n` +
-                    `📅 Tarih: ${new Date().toLocaleDateString('tr-TR')}\n\n` +
-                    `📊 Tüm çalışanlara başarıyla gönderildi.`
-                );
-                
-                logActivity(`Toplu görev atandı: "${title}" → ${assignedCount} çalışan`, chatId, from.first_name);
-            }
-            
-            // Handle refresh products
-            if (data === 'refresh_products') {
-                // Simulate refresh by resending the products list
-                const adminSettings = readJsonFile(DATA_FILES.adminSettings);
-                const numericChatId = Number(chatId);
-                
-                if (!adminSettings.adminUsers.includes(numericChatId)) {
-                    sendTelegramMessage(chatId, "❌ Bu işlem sadece adminler tarafından yapılabilir.");
-                    return;
-                }
-                
-                sendTelegramMessage(chatId, "🔄 Eksik ürün listesi yenileniyor...");
-                
-                // Trigger products list again
-                setTimeout(() => {
-                    // Re-call the products handler
-                    const products = readJsonFile(DATA_FILES.missingProducts);
-                    
-                    if (products.length === 0) {
-                        sendTelegramMessage(chatId, "📦 <b>Eksik Ürün Listesi</b>\n\n✅ Şu anda eksik ürün bildirimi bulunmuyor.");
-                        return;
-                    }
-                    
-                    // Regenerate product list (same code as above)
-                    // This could be refactored into a separate function
-                    sendTelegramMessage(chatId, `✅ Liste yenilendi. Toplam ${products.length} ürün bildirimi.`);
-                }, 1000);
-            }
-            
-            // Handle task completion by employee
-            if (data.startsWith('complete_task_')) {
-                const taskId = data.replace('complete_task_', '');
-                const tasks = readJsonFile(DATA_FILES.tasks);
-                const taskIndex = tasks.findIndex(t => t.id == taskId);
-                
-                if (taskIndex === -1) {
-                    sendTelegramMessage(chatId, "❌ Görev bulunamadı veya zaten tamamlanmış.");
-                    return;
-                }
-                
-                const task = tasks[taskIndex];
-                const numericChatId = Number(chatId);
-                
-                // Check if user owns this task
-                if (Number(task.assignedTo) !== numericChatId) {
-                    sendTelegramMessage(chatId, "❌ Bu görev size ait değil.");
-                    return;
-                }
-                
-                // Mark task as completed
-                tasks[taskIndex].status = 'completed';
-                tasks[taskIndex].completedAt = new Date().toISOString();
-                tasks[taskIndex].completedBy = numericChatId;
-                
-                writeJsonFile(DATA_FILES.tasks, tasks);
-                
-                const employees = readJsonFile(DATA_FILES.employees);
-                const employee = employees.find(e => Number(e.chatId) === numericChatId);
-                const employeeName = employee ? employee.name : 'Bilinmeyen Çalışan';
-                
-                // Notify employee
-                sendTelegramMessage(chatId,
-                    `✅ <b>Görev Tamamlandı!</b>\n\n` +
-                    `🎯 <b>${protectTurkishChars(task.title)}</b>\n` +
-                    `📝 ${protectTurkishChars(task.description)}\n\n` +
-                    `📅 Tamamlama Tarihi: ${new Date().toLocaleString('tr-TR')}\n` +
-                    `⏱️ Süre: ${Math.ceil((new Date() - new Date(task.createdAt)) / (1000 * 60 * 60 * 24))} gün\n\n` +
-                    `🎉 Tebrikler! Göreviniz başarıyla tamamlandı ve listeden kaldırıldı.`
-                );
-                
-                // Notify admin who assigned the task
-                const adminSettings = readJsonFile(DATA_FILES.adminSettings);
-                if (adminSettings.adminUsers.includes(Number(task.assignedBy))) {
-                    sendTelegramMessage(task.assignedBy,
-                        `✅ <b>Görev Tamamlandı</b>\n\n` +
-                        `🎯 <b>${protectTurkishChars(task.title)}</b>\n` +
-                        `👤 Tamamlayan: ${protectTurkishChars(employeeName)}\n` +
-                        `📅 Tamamlama: ${new Date().toLocaleString('tr-TR')}\n\n` +
-                        `🎉 ${task.type === 'bulk' ? 'Toplu görev' : 'Kişisel görev'} başarıyla tamamlandı.`
-                    );
-                }
-                
-                logActivity(`Görev tamamlandı: "${task.title}" - ${employeeName}`, numericChatId, employeeName);
-            }
-            
-            // Handle refresh my tasks
-            if (data === 'refresh_my_tasks') {
-                sendTelegramMessage(chatId, "🔄 Görevleriniz yenileniyor...");
-                
-                setTimeout(() => {
-                    const tasks = readJsonFile(DATA_FILES.tasks);
-                    const numericChatId = Number(chatId);
-                    const userTasks = tasks.filter(task => Number(task.assignedTo) === numericChatId);
-                    const pendingTasks = userTasks.filter(task => task.status === 'pending');
-                    
-                    if (pendingTasks.length === 0) {
-                        sendTelegramMessage(chatId, "✅ Görevler yenilendi. Bekleyen göreviniz bulunmuyor.");
-                    } else {
-                        sendTelegramMessage(chatId, `✅ Görevler yenilendi. ${pendingTasks.length} bekleyen göreviniz var.`);
-                    }
-                }, 1000);
-            }
-            
-            return res.status(200).json({ status: 'ok' });
         }
         
-        // Handle regular messages
-        if (message) {
-            const { chat, from, text } = message;
-            const chatId = chat.id;
+        // Create inline keyboard for task completion
+        const inlineKeyboard = [];
+        pendingTasks.slice(0, 5).forEach(task => {
+            inlineKeyboard.push([{
+                text: `✅ "${task.title.substring(0, 30)}${task.title.length > 30 ? '...' : ''}" Tamamla`,
+                callback_data: `complete_task_${task.id}`
+            }]);
+        });
+        
+        if (pendingTasks.length === 0) {
+            inlineKeyboard.push([{
+                text: "🔄 Görevleri Yenile",
+                callback_data: "refresh_my_tasks"
+            }]);
+        } else if (pendingTasks.length > 5) {
+            inlineKeyboard.push([{
+                text: `📋 Tüm ${pendingTasks.length} Görevi Göster`,
+                callback_data: "show_all_tasks"
+            }]);
+        }
+        
+        await telegramAPI.sendMessage(chatId, taskText, {
+            inline_keyboard: inlineKeyboard
+        });
+    }
+    
+    // Remaining command handlers will be continued...
+    async handleWorkflowInput(chatId, text, user) {
+        const userState = userManager.getUserState(chatId);
+        
+        if (userState.action === 'selecting_category') {
+            // User selected a category
+            const categories = await dataManager.readFile(DATA_FILES.categories);
             
-            if (!text) return res.status(200).json({ status: 'ok' });
-            
-            // Handle commands
-            if (text.startsWith('/start')) {
-                handleStartCommand(chatId, from);
-            }
-            else if (text === "📦 Eksik Ürün Bildir") {
-                handleMissingProductReport(chatId, from);
-            }
-            else if (text === "🔙 Ana Menü") {
-                const employees = readJsonFile(DATA_FILES.employees);
-                const adminSettings = readJsonFile(DATA_FILES.adminSettings);
-                const numericChatId = Number(chatId);
-                
-                // Reset user state
-                employees.forEach(emp => {
-                    if (Number(emp.chatId) === numericChatId) {
-                        emp.currentAction = null;
-                        emp.selectedCategory = null;
-                    }
-                });
-                writeJsonFile(DATA_FILES.employees, employees);
-                
-                // Check if user is admin
-                const isAdmin = adminSettings.adminUsers.includes(numericChatId);
-                
-                let keyboard;
-                
-                if (isAdmin) {
-                    // Admin menüsü - Görevlerim yok, admin paneli var
-                    keyboard = [
-                        [{ text: "📦 Eksik Ürün Bildir" }, { text: "👑 Admin Panel" }],
-                        [{ text: "📊 İstatistikler" }, { text: "ℹ️ Yardım" }]
-                    ];
-                } else {
-                    // Çalışan menüsü - Görevlerim var, admin panel yok
-                    keyboard = [
-                        [{ text: "📦 Eksik Ürün Bildir" }, { text: "📋 Görevlerim" }],
-                        [{ text: "📊 İstatistikler" }, { text: "ℹ️ Yardım" }]
-                    ];
-                }
-                
-                sendTelegramMessage(chatId, "🏠 Ana menüye dönüldü.", {
-                    keyboard,
-                    resize_keyboard: true
-                });
-            }
-            else if (text === "📊 İstatistikler") {
-                const employees = readJsonFile(DATA_FILES.employees);
-                const products = readJsonFile(DATA_FILES.missingProducts);
-                const tasks = readJsonFile(DATA_FILES.tasks);
-                
-                const statsText = `📊 <b>Sistem İstatistikleri</b>\n\n` +
-                    `👥 Toplam Çalışan: ${employees.length}\n` +
-                    `📦 Eksik Ürün Bildirimi: ${products.length}\n` +
-                    `📋 Aktif Görev: ${tasks.filter(t => t.status !== 'completed').length}\n` +
-                    `✅ Tamamlanan Görev: ${tasks.filter(t => t.status === 'completed').length}`;
-                
-                sendTelegramMessage(chatId, statsText);
-            }
-            else if (text === "📋 Görevlerim") {
-                const employees = readJsonFile(DATA_FILES.employees);
-                const tasks = readJsonFile(DATA_FILES.tasks);
-                const numericChatId = Number(chatId);
-                const employee = employees.find(e => Number(e.chatId) === numericChatId);
-                
-                if (!employee) {
-                    sendTelegramMessage(chatId, "❌ Bu özelliği kullanmak için önce kayıt olmalısınız.");
-                    return;
-                }
-                
-                const userTasks = tasks.filter(task => Number(task.assignedTo) === numericChatId);
-                const pendingTasks = userTasks.filter(task => task.status === 'pending');
-                const completedTasks = userTasks.filter(task => task.status === 'completed');
-                
-                if (userTasks.length === 0) {
-                    sendTelegramMessage(chatId, 
-                        `📋 <b>Görevleriniz</b>\n\n` +
-                        `📝 Şu anda size atanmış görev bulunmuyor.\n\n` +
-                        `✅ Yeni görevler atandığında size bildirim gelecektir.`,
-                        {
-                            keyboard: [
-                                [{ text: "📦 Eksik Ürün Bildir" }, { text: "📊 İstatistikler" }],
-                                [{ text: "ℹ️ Yardım" }]
-                            ],
-                            resize_keyboard: true
-                        }
-                    );
-                    return;
-                }
-                
-                // Create task list with detailed info
-                let taskText = `📋 <b>${employee.name} - Görevleriniz</b>\n\n`;
-                taskText += `📊 <b>Özet:</b>\n`;
-                taskText += `⏳ Bekleyen: ${pendingTasks.length}\n`;
-                taskText += `✅ Tamamlanan: ${completedTasks.length}\n`;
-                taskText += `📈 Toplam: ${userTasks.length}\n\n`;
-                
-                if (pendingTasks.length > 0) {
-                    taskText += `⏳ <b>Bekleyen Görevler:</b>\n\n`;
-                    
-                    pendingTasks.forEach((task, index) => {
-                        taskText += `${index + 1}. 🎯 <b>${protectTurkishChars(task.title)}</b>\n`;
-                        taskText += `   📝 ${protectTurkishChars(task.description)}\n`;
-                        taskText += `   👤 Atayan: ${protectTurkishChars(task.assignedByName)}\n`;
-                        taskText += `   📅 ${new Date(task.createdAt).toLocaleString('tr-TR')}\n`;
-                        taskText += `   ${task.type === 'bulk' ? '📢 Toplu Görev' : '👤 Kişisel Görev'}\n\n`;
-                    });
-                }
-                
-                if (completedTasks.length > 0) {
-                    taskText += `✅ <b>Tamamlanan Görevler:</b>\n\n`;
-                    
-                    completedTasks.slice(-3).forEach((task, index) => { // Show last 3 completed
-                        taskText += `${index + 1}. ✅ <b>${protectTurkishChars(task.title)}</b>\n`;
-                        taskText += `   📅 ${new Date(task.completedAt || task.createdAt).toLocaleDateString('tr-TR')}\n\n`;
-                    });
-                    
-                    if (completedTasks.length > 3) {
-                        taskText += `... ve ${completedTasks.length - 3} görev daha\n\n`;
-                    }
-                }
-                
-                // Create inline keyboard with complete buttons for pending tasks
-                const inlineKeyboard = [];
-                
-                pendingTasks.slice(0, 10).forEach(task => { // Limit to 10 tasks
-                    inlineKeyboard.push([{
-                        text: `✅ "${protectTurkishChars(task.title)}" Tamamlandı`,
-                        callback_data: `complete_task_${task.id}`
-                    }]);
+            if (categories.includes(text)) {
+                userManager.setUserState(chatId, {
+                    action: 'entering_product_name',
+                    selectedCategory: text,
+                    step: 2
                 });
                 
-                if (pendingTasks.length === 0) {
-                    inlineKeyboard.push([{
-                        text: "🔄 Görevleri Yenile",
-                        callback_data: "refresh_my_tasks"
-                    }]);
-                }
-                
-                sendTelegramMessage(chatId, taskText, {
-                    inline_keyboard: inlineKeyboard.length > 0 ? inlineKeyboard : undefined
-                });
-            }
-            else if (text === "👑 Admin Panel") {
-                const adminSettings = readJsonFile(DATA_FILES.adminSettings);
-                const numericChatId = Number(chatId);
-                
-                if (!adminSettings.adminUsers.includes(numericChatId)) {
-                    sendTelegramMessage(chatId, "❌ Bu özellik sadece adminler için erişilebilir.");
-                    return;
-                }
-                
-                const employees = readJsonFile(DATA_FILES.employees);
-                const products = readJsonFile(DATA_FILES.missingProducts);
-                const activities = readJsonFile(DATA_FILES.activityLog);
-                
-                const pendingUsers = readJsonFile(DATA_FILES.pendingUsers);
-                
-                const adminText = `👑 <b>SivalTeam Admin Panel</b>\n\n` +
-                    `📊 <b>Sistem İstatistikleri:</b>\n` +
-                    `👥 Kayıtlı Çalışan: ${employees.length}\n` +
-                    `⏳ Onay Bekleyen: ${pendingUsers.length}\n` +
-                    `📦 Eksik Ürün Bildirimi: ${products.length}\n` +
-                    `📈 Toplam Aktivite: ${activities.length}\n\n` +
-                    `🔧 <b>Kullanıcı Yönetimi:</b>\n` +
-                    `/calisanekle &lt;chatId&gt; &lt;ad&gt; &lt;departman&gt; - Manuel çalışan ekleme\n` +
-                    `/calisansil &lt;chatId&gt; - Çalışan silme\n` +
-                    `/calisanlar - Tüm çalışanları listeleme\n` +
-                    `/bekleyenler - Onay bekleyen kullanıcılar\n\n` +
-                    `📦 <b>Ürün Yönetimi:</b>\n` +
-                    `/eksiklist - Eksik ürün listesi (sadece admin)\n` +
-                    `/listetemizle - Tüm eksik ürün listesini temizleme\n\n` +
-                    `📢 <b>İletişim:</b>\n` +
-                    `/duyuru &lt;mesaj&gt; - Tüm çalışanlara duyuru\n` +
-                    `/gorevata &lt;chatId&gt; &lt;başlık&gt; | &lt;açıklama&gt; - Görev atama\n\n` +
-                    `📊 <b>Raporlama:</b>\n` +
-                    `/istatistik - Detaylı sistem istatistikleri\n` +
-                    `/aktivite - Son aktivite raporu`;
-                
-                sendTelegramMessage(chatId, adminText, {
-                    keyboard: [
-                        [{ text: "👥 Çalışanları Listele" }, { text: "📦 Eksik Ürünler" }],
-                        [{ text: "⏳ Bekleyen Onaylar" }, { text: "📊 İstatistikler" }],
-                        [{ text: "📢 Duyuru Gönder" }, { text: "🔙 Ana Menü" }]
-                    ],
-                    resize_keyboard: true,
-                    one_time_keyboard: false
-                });
-            }
-            else if (text === "ℹ️ Yardım") {
-                const helpText = `ℹ️ <b>SivalTeam Yardım</b>\n\n` +
-                    `📦 <b>Eksik Ürün Bildir:</b> Mağazada eksik olan ürünleri bildirin\n` +
-                    `📋 <b>Görevlerim:</b> Size atanan görevleri görün\n` +
-                    `📊 <b>İstatistikler:</b> Sistem istatistiklerini görün\n` +
-                    `👑 <b>Admin Panel:</b> Admin yetkilerine sahipseniz yönetim paneli\n\n` +
-                    `❓ Sorun yaşıyorsanız sistem yöneticisiyle iletişime geçin.`;
-                
-                sendTelegramMessage(chatId, helpText);
-            }
-            else if (text.startsWith('/calisanekle') || text.startsWith('/adduser')) {
-                const adminSettings = readJsonFile(DATA_FILES.adminSettings);
-                const numericChatId = Number(chatId);
-                
-                if (!adminSettings.adminUsers.includes(numericChatId)) {
-                    sendTelegramMessage(chatId, "❌ Bu komut sadece adminler tarafından kullanılabilir.");
-                    return;
-                }
-                
-                const parts = text.split(' ');
-                if (parts.length < 4) {
-                    sendTelegramMessage(chatId, "❌ Kullanım: /calisanekle &lt;chatId&gt; &lt;ad&gt; &lt;departman&gt;");
-                    return;
-                }
-                
-                const targetChatId = Number(parts[1]);
-                const name = protectTurkishChars(parts[2]);
-                const department = protectTurkishChars(parts.slice(3).join(' '));
-                
-                const employees = readJsonFile(DATA_FILES.employees);
-                const existingEmployee = employees.find(e => Number(e.chatId) === targetChatId);
-                
-                if (existingEmployee) {
-                    sendTelegramMessage(chatId, "❌ Bu chatId zaten kayıtlı.");
-                    return;
-                }
-                
-                const newEmployee = {
-                    chatId: targetChatId,
-                    name: name,
-                    department: department,
-                    role: 'employee',
-                    addedBy: numericChatId,
-                    addedAt: new Date().toISOString(),
-                    status: 'active'
-                };
-                
-                employees.push(newEmployee);
-                writeJsonFile(DATA_FILES.employees, employees);
-                
-                sendTelegramMessage(chatId, `✅ Kullanıcı eklendi: ${name} (${department})`);
-                sendTelegramMessage(targetChatId, 
-                    `🎉 <b>SivalTeam'e Hoşgeldin!</b>\n\n` +
-                    `👤 Adınız: ${name}\n` +
-                    `🏢 Departman: ${department}\n\n` +
-                    `✅ Artık sistemi kullanabilirsiniz! /start ile başlayın.`
-                );
-                
-                logActivity(`Yeni kullanıcı eklendi: ${name}`, chatId, from.first_name);
-            }
-            else if (text === '/calisanlar' || text === '/listusers') {
-                const adminSettings = readJsonFile(DATA_FILES.adminSettings);
-                const numericChatId = Number(chatId);
-                
-                if (!adminSettings.adminUsers.includes(numericChatId)) {
-                    sendTelegramMessage(chatId, "❌ Bu komut sadece adminler tarafından kullanılabilir.");
-                    return;
-                }
-                
-                const employees = readJsonFile(DATA_FILES.employees);
-                
-                if (employees.length === 0) {
-                    sendTelegramMessage(chatId, "📋 Henüz kayıtlı kullanıcı bulunmuyor.");
-                    return;
-                }
-                
-                const userList = employees.map((emp, index) => 
-                    `${index + 1}. <b>${protectTurkishChars(emp.name)}</b>\n` +
-                    `   🏢 ${protectTurkishChars(emp.department)}\n` +
-                    `   🆔 ${emp.chatId}\n` +
-                    `   ${adminSettings.adminUsers.includes(Number(emp.chatId)) ? '👑 Admin' : '👤 Çalışan'}`
-                ).join('\n\n');
-                
-                sendTelegramMessage(chatId, `👥 <b>Kayıtlı Kullanıcılar (${employees.length})</b>\n\n${userList}`);
-            }
-            else if (text.startsWith('/calisansil') || text.startsWith('/removeuser')) {
-                const adminSettings = readJsonFile(DATA_FILES.adminSettings);
-                const numericChatId = Number(chatId);
-                
-                if (!adminSettings.adminUsers.includes(numericChatId)) {
-                    sendTelegramMessage(chatId, "❌ Bu komut sadece adminler tarafından kullanılabilir.");
-                    return;
-                }
-                
-                const parts = text.split(' ');
-                if (parts.length !== 2) {
-                    sendTelegramMessage(chatId, "❌ Kullanım: /calisansil &lt;chatId&gt;");
-                    return;
-                }
-                
-                const targetChatId = Number(parts[1]);
-                const employees = readJsonFile(DATA_FILES.employees);
-                const employeeIndex = employees.findIndex(e => Number(e.chatId) === targetChatId);
-                
-                if (employeeIndex === -1) {
-                    sendTelegramMessage(chatId, "❌ Bu chatId'ye sahip kullanıcı bulunamadı.");
-                    return;
-                }
-                
-                const removedEmployee = employees[employeeIndex];
-                employees.splice(employeeIndex, 1);
-                writeJsonFile(DATA_FILES.employees, employees);
-                
-                // Add to deleted employees
-                const deletedEmployees = readJsonFile(DATA_FILES.deletedEmployees);
-                deletedEmployees.push({
-                    ...removedEmployee,
-                    deletedAt: new Date().toISOString(),
-                    deletedBy: numericChatId
-                });
-                writeJsonFile(DATA_FILES.deletedEmployees, deletedEmployees);
-                
-                sendTelegramMessage(chatId, `✅ Kullanıcı silindi: ${removedEmployee.name}`);
-                sendTelegramMessage(targetChatId, 
-                    `❌ <b>SivalTeam Erişiminiz İptal Edildi</b>\n\n` +
-                    `Üzgünüz, sistem erişiminiz admin tarafından iptal edildi.\n` +
-                    `Daha fazla bilgi için sistem yöneticisiyle iletişime geçin.`
-                );
-                
-                logActivity(`Kullanıcı silindi: ${removedEmployee.name}`, chatId, from.first_name);
-            }
-            else if (text === '/listetemizle' || text === '/clearproducts') {
-                const adminSettings = readJsonFile(DATA_FILES.adminSettings);
-                const numericChatId = Number(chatId);
-                
-                if (!adminSettings.adminUsers.includes(numericChatId)) {
-                    sendTelegramMessage(chatId, "❌ Bu komut sadece adminler tarafından kullanılabilir.");
-                    return;
-                }
-                
-                const products = readJsonFile(DATA_FILES.missingProducts);
-                const productCount = products.length;
-                
-                writeJsonFile(DATA_FILES.missingProducts, []);
-                
-                sendTelegramMessage(chatId, `✅ Eksik ürün listesi temizlendi. ${productCount} ürün silindi.`);
-                logActivity(`Eksik ürün listesi temizlendi (${productCount} ürün)`, chatId, from.first_name);
-            }
-            else if (text.startsWith('/duyuru ') || text.startsWith('/broadcast ')) {
-                const adminSettings = readJsonFile(DATA_FILES.adminSettings);
-                const numericChatId = Number(chatId);
-                
-                if (!adminSettings.adminUsers.includes(numericChatId)) {
-                    sendTelegramMessage(chatId, "❌ Bu komut sadece adminler tarafından kullanılabilir.");
-                    return;
-                }
-                
-                const message = protectTurkishChars(text.replace(text.startsWith('/duyuru ') ? '/duyuru ' : '/broadcast ', ''));
-                const employees = readJsonFile(DATA_FILES.employees);
-                
-                if (!message.trim()) {
-                    sendTelegramMessage(chatId, "❌ Kullanım: /duyuru &lt;mesaj&gt;");
-                    return;
-                }
-                
-                let sentCount = 0;
-                const broadcastMessage = `📢 <b>Genel Duyuru</b>\n\n${message}`;
-                
-                for (const employee of employees) {
-                    try {
-                        await sendTelegramMessage(employee.chatId, broadcastMessage);
-                        sentCount++;
-                        await new Promise(resolve => setTimeout(resolve, 100)); // Rate limiting
-                    } catch (error) {
-                        console.error(`Broadcast error for ${employee.chatId}:`, error);
-                    }
-                }
-                
-                sendTelegramMessage(chatId, `✅ Duyuru ${sentCount}/${employees.length} kullanıcıya gönderildi.`);
-                logActivity(`Genel duyuru gönderildi: ${sentCount} kullanıcı`, chatId, from.first_name);
-            }
-            else if (text.startsWith('/gorevata ') || text.startsWith('/addtask ')) {
-                const adminSettings = readJsonFile(DATA_FILES.adminSettings);
-                const numericChatId = Number(chatId);
-                
-                if (!adminSettings.adminUsers.includes(numericChatId)) {
-                    sendTelegramMessage(chatId, "❌ Bu komut sadece adminler tarafından kullanılabilir.");
-                    return;
-                }
-                
-                // /addtask &lt;chatId&gt; &lt;başlık&gt; | &lt;açıklama&gt;
-                const taskText = text.replace(text.startsWith('/gorevata ') ? '/gorevata ' : '/addtask ', '');
-                const parts = taskText.split(' ');
-                
-                if (parts.length < 2 || !taskText.includes('|')) {
-                    sendTelegramMessage(chatId, "❌ Kullanım: /gorevata &lt;chatId&gt; &lt;başlık&gt; | &lt;açıklama&gt;");
-                    return;
-                }
-                
-                const targetChatId = Number(parts[0]);
-                const taskContent = parts.slice(1).join(' ');
-                const [title, description] = taskContent.split('|').map(s => protectTurkishChars(s.trim()));
-                
-                const employees = readJsonFile(DATA_FILES.employees);
-                const targetEmployee = employees.find(e => Number(e.chatId) === targetChatId);
-                
-                if (!targetEmployee) {
-                    sendTelegramMessage(chatId, "❌ Bu chatId'ye sahip çalışan bulunamadı.");
-                    return;
-                }
-                
-                const tasks = readJsonFile(DATA_FILES.tasks);
-                const newTask = {
-                    id: Date.now(),
-                    title: title,
-                    description: description || 'Açıklama belirtilmedi',
-                    assignedTo: targetChatId,
-                    assignedToName: targetEmployee.name,
-                    assignedBy: numericChatId,
-                    createdAt: new Date().toISOString(),
-                    status: 'pending'
-                };
-                
-                tasks.push(newTask);
-                writeJsonFile(DATA_FILES.tasks, tasks);
-                
-                sendTelegramMessage(chatId, `✅ Görev atandı: "${title}" → ${targetEmployee.name}`);
-                sendTelegramMessage(targetChatId, 
-                    `📋 <b>Yeni Görev Atandı</b>\n\n` +
-                    `📝 <b>${title}</b>\n` +
-                    `📄 ${description}\n\n` +
-                    `👤 Atayan: Admin\n` +
-                    `📅 Tarih: ${new Date().toLocaleDateString('tr-TR')}\n\n` +
-                    `✅ Tamamladığınızda bildirin.`
-                );
-                
-                logActivity(`Görev atandı: "${title}" → ${targetEmployee.name}`, chatId, from.first_name);
-            }
-            else if (text === "👥 Çalışanları Listele" || text === "/listusers") {
-                const adminSettings = readJsonFile(DATA_FILES.adminSettings);
-                const numericChatId = Number(chatId);
-                
-                if (!adminSettings.adminUsers.includes(numericChatId)) {
-                    sendTelegramMessage(chatId, "❌ Bu özellik sadece adminler için erişilebilir.");
-                    return;
-                }
-                
-                const employees = readJsonFile(DATA_FILES.employees);
-                
-                if (employees.length === 0) {
-                    sendTelegramMessage(chatId, "👥 <b>Çalışan Listesi</b>\n\nHenüz kayıtlı çalışan bulunmuyor.");
-                    return;
-                }
-                
-                const userList = employees.map((emp, index) => 
-                    `${index + 1}. <b>${protectTurkishChars(emp.name)}</b>\n` +
-                    `   🏢 ${protectTurkishChars(emp.department)}\n` +
-                    `   💬 Chat ID: <code>${emp.chatId}</code>\n` +
-                    `   ${adminSettings.adminUsers.includes(Number(emp.chatId)) ? '👑 Admin' : '👤 Çalışan'}\n` +
-                    `   📅 ${new Date(emp.addedAt).toLocaleDateString('tr-TR')}`
-                ).join('\n\n');
-                
-                sendTelegramMessage(chatId, `👥 <b>Kayıtlı Çalışanlar (${employees.length})</b>\n\n${userList}`);
-            }
-            else if (text === "📦 Eksik Ürünler" || text === "/eksiklist" || text === "/products") {
-                const adminSettings = readJsonFile(DATA_FILES.adminSettings);
-                const numericChatId = Number(chatId);
-                
-                if (!adminSettings.adminUsers.includes(numericChatId)) {
-                    sendTelegramMessage(chatId, "❌ Eksik ürün listesi sadece adminler tarafından görülebilir.");
-                    return;
-                }
-                
-                const products = readJsonFile(DATA_FILES.missingProducts);
-                
-                if (products.length === 0) {
-                    sendTelegramMessage(chatId, "📦 <b>Eksik Ürün Listesi</b>\n\n✅ Şu anda eksik ürün bildirimi bulunmuyor.");
-                    return;
-                }
-                
-                // Group by category
-                const productsByCategory = {};
-                products.forEach(product => {
-                    const category = product.category || 'Kategori Belirtilmemiş';
-                    if (!productsByCategory[category]) {
-                        productsByCategory[category] = [];
-                    }
-                    productsByCategory[category].push(product);
-                });
-                
-                let productText = `📦 <b>Eksik Ürün Raporu</b>\n\n`;
-                productText += `📊 Toplam: ${products.length} ürün bildirimi\n\n`;
-                
-                Object.keys(productsByCategory).forEach(category => {
-                    const categoryProducts = productsByCategory[category];
-                    productText += `🏷️ <b>${protectTurkishChars(category)}</b> (${categoryProducts.length})\n`;
-                    
-                    categoryProducts.slice(0, 10).forEach((product, index) => {
-                        productText += `   ${index + 1}. ${protectTurkishChars(product.product)}\n`;
-                        productText += `      👤 ${protectTurkishChars(product.reportedBy)} - ${new Date(product.timestamp).toLocaleDateString('tr-TR')}\n`;
-                    });
-                    
-                    if (categoryProducts.length > 10) {
-                        productText += `   ... ve ${categoryProducts.length - 10} ürün daha\n`;
-                    }
-                    productText += `\n`;
-                });
-                
-                // Create inline keyboard for each product with complete buttons
-                const inlineKeyboard = [];
-                let buttonCount = 0;
-                
-                products.slice(0, 20).forEach(product => { // Limit to first 20 products
-                    if (buttonCount < 20) { // Telegram limit
-                        inlineKeyboard.push([{
-                            text: `✅ ${protectTurkishChars(product.product)} - Tamamlandı`,
-                            callback_data: `complete_product_${product.id}`
-                        }]);
-                        buttonCount++;
-                    }
-                });
-                
-                // Add management buttons
-                inlineKeyboard.push([
-                    { text: "🗑️ Tümünü Temizle", callback_data: "clear_all_products" },
-                    { text: "🔄 Listeyi Yenile", callback_data: "refresh_products" }
-                ]);
-                
-                sendTelegramMessage(chatId, productText, {
-                    inline_keyboard: inlineKeyboard
-                });
-            }
-            else if (text === "⏳ Bekleyen Onaylar" || text === "/bekleyenler" || text === "/pending") {
-                const adminSettings = readJsonFile(DATA_FILES.adminSettings);
-                const numericChatId = Number(chatId);
-                
-                if (!adminSettings.adminUsers.includes(numericChatId)) {
-                    sendTelegramMessage(chatId, "❌ Bu özellik sadece adminler için erişilebilir.");
-                    return;
-                }
-                
-                const pendingUsers = readJsonFile(DATA_FILES.pendingUsers);
-                
-                if (pendingUsers.length === 0) {
-                    sendTelegramMessage(chatId, "⏳ <b>Bekleyen Onaylar</b>\n\n✅ Şu anda onay bekleyen kullanıcı bulunmuyor.");
-                    return;
-                }
-                
-                const pendingText = pendingUsers.map((user, index) => 
-                    `${index + 1}. <b>${protectTurkishChars(user.firstName)} ${protectTurkishChars(user.lastName)}</b>\n` +
-                    `   🆔 Username: @${user.username}\n` +
-                    `   💬 Chat ID: <code>${user.chatId}</code>\n` +
-                    `   📅 Tarih: ${new Date(user.timestamp).toLocaleString('tr-TR')}\n` +
-                    `   ⚡ Onaylamak için: /approve ${user.chatId}`
-                ).join('\n\n');
-                
-                sendTelegramMessage(chatId, 
-                    `⏳ <b>Onay Bekleyen Kullanıcılar (${pendingUsers.length})</b>\n\n${pendingText}`, {
-                        keyboard: [
-                            [{ text: "👑 Admin Panel" }, { text: "🔄 Yenile" }]
-                        ],
+                await telegramAPI.sendMessage(chatId,
+                    `📦 <b>Eksik Ürün Bildirimi</b>\n\n` +
+                    `✅ Kategori: <b>${text}</b>\n\n` +
+                    `📝 Şimdi eksik olan ürünün adını yazın:\n\n` +
+                    `💡 <i>Örnek: Beyaz Polo Tişört</i>`,
+                    {
+                        keyboard: [[{ text: "🔙 Ana Menü" }]],
                         resize_keyboard: true
-                    });
+                    }
+                );
             }
-            else if (text === "🗑️ Listeyi Temizle") {
-                const adminSettings = readJsonFile(DATA_FILES.adminSettings);
-                const numericChatId = Number(chatId);
-                
-                if (!adminSettings.adminUsers.includes(numericChatId)) {
-                    sendTelegramMessage(chatId, "❌ Bu işlem sadece adminler tarafından yapılabilir.");
-                    return;
-                }
-                
-                const products = readJsonFile(DATA_FILES.missingProducts);
-                const productCount = products.length;
-                
-                writeJsonFile(DATA_FILES.missingProducts, []);
-                
-                sendTelegramMessage(chatId, 
-                    `✅ <b>Eksik Ürün Listesi Temizlendi</b>\n\n` +
-                    `🗑️ ${productCount} ürün bildirimi silindi.\n` +
-                    `📊 Liste baştan başlıyor.`);
-                
-                logActivity(`Eksik ürün listesi temizlendi (${productCount} ürün)`, chatId, from.first_name);
+        } else if (userState.action === 'entering_product_name') {
+            // User entered product name
+            if (text.length < 2) {
+                await telegramAPI.sendMessage(chatId,
+                    "❌ Ürün adı çok kısa! En az 2 karakter olmalı."
+                );
+                return;
             }
-            else if (text === "/istatistik" || text === "/stats") {
-                const adminSettings = readJsonFile(DATA_FILES.adminSettings);
-                const numericChatId = Number(chatId);
+            
+            // Create missing product report
+            const productData = {
+                product: text,
+                category: userState.selectedCategory,
+                reportedBy: user.name,
+                reportedByChatId: chatId
+            };
+            
+            try {
+                const newProduct = await productManager.reportMissingProduct(productData);
                 
-                if (!adminSettings.adminUsers.includes(numericChatId)) {
-                    sendTelegramMessage(chatId, "❌ Bu komut sadece adminler tarafından kullanılabilir.");
-                    return;
-                }
+                await telegramAPI.sendMessage(chatId,
+                    `✅ <b>Eksik Ürün Kaydedildi!</b>\n\n` +
+                    `📦 <b>Ürün:</b> ${newProduct.product}\n` +
+                    `🏷️ <b>Kategori:</b> ${newProduct.category}\n` +
+                    `📅 <b>Tarih:</b> ${new Date().toLocaleString('tr-TR')}\n\n` +
+                    `🔔 Ürün bildirimi adminlere iletildi.\n` +
+                    `📊 Bu ürün eksik ürünler listesine eklendi.`,
+                    {
+                        keyboard: this.getKeyboard('main', await userManager.isAdmin(chatId)),
+                        resize_keyboard: true
+                    }
+                );
                 
-                const employees = readJsonFile(DATA_FILES.employees);
-                const products = readJsonFile(DATA_FILES.missingProducts);
-                const activities = readJsonFile(DATA_FILES.activityLog);
-                const tasks = readJsonFile(DATA_FILES.tasks);
-                const pendingUsers = readJsonFile(DATA_FILES.pendingUsers);
-                
-                const pendingTasks = tasks.filter(t => t.status === 'pending');
-                const completedTasks = tasks.filter(t => t.status === 'completed');
-                
-                const statsText = `📊 <b>SivalTeam Sistem İstatistikleri</b>\n\n` +
-                    `👥 <b>Kullanıcılar:</b>\n` +
-                    `   • Kayıtlı Çalışan: ${employees.length}\n` +
-                    `   • Onay Bekleyen: ${pendingUsers.length}\n` +
-                    `   • Toplam Admin: ${adminSettings.adminUsers.length}\n\n` +
-                    `📦 <b>Ürünler:</b>\n` +
-                    `   • Eksik Ürün Bildirimi: ${products.length}\n\n` +
-                    `📋 <b>Görevler:</b>\n` +
-                    `   • Bekleyen Görev: ${pendingTasks.length}\n` +
-                    `   • Tamamlanan Görev: ${completedTasks.length}\n` +
-                    `   • Toplam Görev: ${tasks.length}\n\n` +
-                    `📈 <b>Aktivite:</b>\n` +
-                    `   • Toplam Log: ${activities.length}\n` +
-                    `   • Son Aktivite: ${activities.length > 0 ? new Date(activities[activities.length - 1].timestamp).toLocaleString('tr-TR') : 'Yok'}`;
-                
-                sendTelegramMessage(chatId, statsText);
-                logActivity('Sistem istatistikleri görüntülendi', chatId, from.first_name);
-            }
-            else if (text === "/aktivite" || text === "/activity") {
-                const adminSettings = readJsonFile(DATA_FILES.adminSettings);
-                const numericChatId = Number(chatId);
-                
-                if (!adminSettings.adminUsers.includes(numericChatId)) {
-                    sendTelegramMessage(chatId, "❌ Bu komut sadece adminler tarafından kullanılabilir.");
-                    return;
-                }
-                
-                const activities = readJsonFile(DATA_FILES.activityLog);
-                
-                if (activities.length === 0) {
-                    sendTelegramMessage(chatId, "📈 <b>Aktivite Raporu</b>\n\n✅ Henüz aktivite kaydı bulunmuyor.");
-                    return;
-                }
-                
-                const recentActivities = activities.slice(-10).reverse();
-                let activityText = `📈 <b>Son 10 Aktivite</b>\n\n`;
-                
-                recentActivities.forEach((activity, index) => {
-                    activityText += `${index + 1}. <b>${protectTurkishChars(activity.message)}</b>\n`;
-                    activityText += `   👤 ${protectTurkishChars(activity.userName || 'Sistem')}\n`;
-                    activityText += `   📅 ${new Date(activity.timestamp).toLocaleString('tr-TR')}\n\n`;
-                });
-                
-                sendTelegramMessage(chatId, activityText);
-                logActivity('Aktivite raporu görüntülendi', chatId, from.first_name);
-            }
-            else if (text === "/debug" || text === "/durum") {
-                // Debug komutu - admin durumu kontrolü
-                const adminSettings = readJsonFile(DATA_FILES.adminSettings);
-                const employees = readJsonFile(DATA_FILES.employees);
-                const numericChatId = Number(chatId);
-                
-                const employee = employees.find(e => Number(e.chatId) === numericChatId);
-                const isAdmin = adminSettings.adminUsers.includes(numericChatId);
-                
-                const debugText = `🔍 <b>Debug Bilgileri</b>\n\n` +
-                    `👤 <b>Kullanıcı:</b> ${from.first_name || 'Bilinmeyen'}\n` +
-                    `💬 <b>Chat ID:</b> <code>${chatId}</code>\n` +
-                    `🔢 <b>Numeric ID:</b> <code>${numericChatId}</code>\n` +
-                    `📝 <b>Kayıtlı Çalışan:</b> ${employee ? '✅ Evet' : '❌ Hayır'}\n` +
-                    `👑 <b>Admin Durumu:</b> ${isAdmin ? '✅ Admin' : '❌ Normal Çalışan'}\n\n` +
-                    `📊 <b>Admin Settings:</b>\n` +
-                    `   • Admin Sayısı: ${adminSettings.adminUsers.length}\n` +
-                    `   • Admin Liste: [${adminSettings.adminUsers.join(', ')}]\n` +
-                    `   • Sizin ID Admin Listesinde: ${adminSettings.adminUsers.includes(numericChatId) ? '✅' : '❌'}\n\n` +
-                    `⚡ <b>Çözüm:</b> Admin değilseniz '/start' komutu ile yeniden giriş yapın.`;
-                
-                sendTelegramMessage(chatId, debugText);
-            }
-            else {
-                // Handle category selection or product name input
-                const categoryHandled = handleCategorySelection(chatId, text, from);
-                if (!categoryHandled) {
-                    const productHandled = handleProductNameInput(chatId, text, from);
-                    if (!productHandled) {
-                        // Unknown command
-                        sendTelegramMessage(chatId, 
-                            "❓ Anlaşılmadı. Lütfen menüdeki seçenekleri kullanın veya /start ile başlayın."
+                // Notify admins
+                const adminSettings = await dataManager.readFile(DATA_FILES.adminSettings);
+                for (const adminChatId of adminSettings.adminUsers) {
+                    if (Number(adminChatId) !== Number(chatId)) { // Don't notify if reporter is admin
+                        await telegramAPI.sendMessage(adminChatId,
+                            `📦 <b>Yeni Eksik Ürün Bildirimi</b>\n\n` +
+                            `🏷️ <b>Kategori:</b> ${newProduct.category}\n` +
+                            `📦 <b>Ürün:</b> ${newProduct.product}\n` +
+                            `👤 <b>Bildiren:</b> ${newProduct.reportedBy}\n` +
+                            `📅 <b>Tarih:</b> ${new Date().toLocaleString('tr-TR')}`,
+                            {
+                                inline_keyboard: [[
+                                    { text: "✅ Tamamlandı", callback_data: `complete_product_${newProduct.id}` },
+                                    { text: "🗑️ Sil", callback_data: `delete_product_${newProduct.id}` }
+                                ]]
+                            }
                         );
                     }
                 }
+                
+            } catch (error) {
+                console.error('❌ Error reporting product:', error);
+                await telegramAPI.sendMessage(chatId,
+                    "❌ <b>Hata!</b>\n\nÜrün bildirimi sırasında bir hata oluştu. Lütfen tekrar deneyin."
+                );
+            }
+            
+            // Clear user state
+            userManager.clearUserState(chatId);
+        }
+    }
+    
+    // Add other missing handler methods as stubs for now
+    async handleHelp(chatId, text, from, user, isAdmin) {
+        const helpText = `ℹ️ <b>SivalTeam Bot Yardım</b>\n\n` +
+            `🤖 <b>Mevcut Özellikler:</b>\n\n` +
+            `📦 <b>Eksik Ürün Bildirimi</b>\n` +
+            `• Kategoriler halinde ürün bildirimi\n` +
+            `• Otomatik admin bildirimi\n\n` +
+            `📋 <b>Görev Yönetimi</b>\n` +
+            `• Kişisel görev takibi\n` +
+            `• Görev tamamlama\n` +
+            `• İlerleme raporları\n\n` +
+            `📊 <b>İstatistikler</b>\n` +
+            `• Sistem geneli raporlar\n` +
+            `• Kişisel performans\n\n` +
+            (isAdmin ? `👑 <b>Admin Özellikleri</b>\n` +
+            `• Kullanıcı yönetimi\n` +
+            `• Görev atama\n` +
+            `• Toplu duyurular\n` +
+            `• Sistem raporları\n\n` : '') +
+            `🔧 <b>Komutlar:</b>\n` +
+            `/start - Sisteme giriş\n` +
+            `/help - Bu yardım menüsü\n` +
+            `/stats - İstatistikler\n` +
+            (isAdmin ? `/admin - Admin komutları\n` : '') +
+            `\n💡 Butonları kullanarak kolay erişim sağlayabilirsin!`;
+        
+        await telegramAPI.sendMessage(chatId, helpText, {
+            keyboard: this.getKeyboard('main', isAdmin),
+            resize_keyboard: true
+        });
+    }
+    
+    async handleStats(chatId, text, from, user, isAdmin) {
+        const employees = await dataManager.readFile(DATA_FILES.employees);
+        const tasks = await dataManager.readFile(DATA_FILES.tasks);
+        const products = await dataManager.readFile(DATA_FILES.missingProducts);
+        const activities = await dataManager.readFile(DATA_FILES.activityLog);
+        
+        const totalTasks = tasks.length;
+        const completedTasks = tasks.filter(t => t.status === 'completed').length;
+        const pendingTasks = tasks.filter(t => t.status === 'pending').length;
+        
+        let statsText = `📊 <b>Sistem İstatistikleri</b>\n\n`;
+        statsText += `👥 <b>Kullanıcılar:</b> ${employees.length}\n`;
+        statsText += `📋 <b>Toplam Görev:</b> ${totalTasks}\n`;
+        statsText += `✅ <b>Tamamlanan:</b> ${completedTasks}\n`;
+        statsText += `⏳ <b>Bekleyen:</b> ${pendingTasks}\n`;
+        statsText += `📦 <b>Eksik Ürün:</b> ${products.length}\n`;
+        statsText += `📝 <b>Aktivite:</b> ${activities.length}\n\n`;
+        
+        if (totalTasks > 0) {
+            const completionRate = Math.round((completedTasks / totalTasks) * 100);
+            statsText += `🎯 <b>Başarı Oranı:</b> ${completionRate}%\n\n`;
+        }
+        
+        if (user) {
+            const userTasks = await taskManager.getUserTasks(chatId);
+            const userCompleted = userTasks.filter(t => t.status === 'completed').length;
+            
+            statsText += `👤 <b>Kişisel İstatistikleriniz:</b>\n`;
+            statsText += `📋 Toplam Görevim: ${userTasks.length}\n`;
+            statsText += `✅ Tamamladığım: ${userCompleted}\n`;
+            
+            if (userTasks.length > 0) {
+                const personalRate = Math.round((userCompleted / userTasks.length) * 100);
+                statsText += `🏆 Başarı Oranım: ${personalRate}%\n`;
             }
         }
+        
+        await telegramAPI.sendMessage(chatId, statsText, {
+            keyboard: this.getKeyboard('main', isAdmin),
+            resize_keyboard: true
+        });
+    }
+    
+    async handleDebug(chatId, text, from, user, isAdmin) {
+        const debugText = `🔍 <b>Debug Bilgileri</b>\n\n` +
+            `👤 <b>Kullanıcı:</b> ${from.first_name || 'Bilinmeyen'}\n` +
+            `💬 <b>Chat ID:</b> <code>${chatId}</code>\n` +
+            `👑 <b>Admin:</b> ${isAdmin ? 'Evet' : 'Hayır'}\n` +
+            `📝 <b>Kayıtlı:</b> ${user ? 'Evet' : 'Hayır'}\n` +
+            `🏢 <b>Departman:</b> ${user?.department || 'Yok'}\n` +
+            `⏰ <b>Son Aktivite:</b> ${user?.lastActivity ? new Date(user.lastActivity).toLocaleString('tr-TR') : 'Yok'}\n\n` +
+            `🔧 <b>Sistem:</b>\n` +
+            `📱 Bot Version: ${CONFIG.VERSION}\n` +
+            `🖥️ Environment: ${CONFIG.ENVIRONMENT}\n` +
+            `💾 Cache Size: ${cache.size()}\n` +
+            `📊 Uptime: ${Math.round((Date.now() - CONFIG.BUILD_DATE) / 1000)}s`;
+        
+        await telegramAPI.sendMessage(chatId, debugText);
+    }
+    
+    async handleMainMenu(chatId, user, isAdmin) {
+        await telegramAPI.sendMessage(chatId,
+            `🏠 <b>Ana Menü</b>\n\n` +
+            `Hoşgeldin ${user.name}!\n` +
+            `Aşağıdaki seçeneklerden birini seçebilirsin:`,
+            {
+                keyboard: this.getKeyboard('main', isAdmin),
+                resize_keyboard: true
+            }
+        );
+    }
+    
+    async handleAdminPanel(chatId, user) {
+        await telegramAPI.sendMessage(chatId,
+            `👑 <b>Admin Panel</b>\n\n` +
+            `Merhaba ${user.name}!\n` +
+            `Admin yetkilerinle şunları yapabilirsin:`,
+            {
+                keyboard: this.getKeyboard('admin_panel'),
+                resize_keyboard: true
+            }
+        );
+    }
+    
+    // Placeholder methods for remaining handlers
+    async handleTaskCommand(chatId, text, from, user, isAdmin) {
+        if (!isAdmin) {
+            await telegramAPI.sendMessage(chatId, "❌ Bu komut sadece adminler tarafından kullanılabilir.");
+            return;
+        }
+        
+        await telegramAPI.sendMessage(chatId, 
+            "🚧 Bu özellik geliştiriliyor...\n\n" +
+            "Şimdilik butonları kullanabilirsin.");
+    }
+    
+    async handleTaskAllCommand(chatId, text, from, user, isAdmin) {
+        if (!isAdmin) {
+            await telegramAPI.sendMessage(chatId, "❌ Bu komut sadece adminler tarafından kullanılabilir.");
+            return;
+        }
+        
+        await telegramAPI.sendMessage(chatId, 
+            "🚧 Bu özellik geliştiriliyor...\n\n" +
+            "Şimdilik butonları kullanabilirsin.");
+    }
+    
+    async handleAddUserCommand(chatId, text, from, user, isAdmin) {
+        if (!isAdmin) {
+            await telegramAPI.sendMessage(chatId, "❌ Bu komut sadece adminler tarafından kullanılabilir.");
+            return;
+        }
+        
+        await telegramAPI.sendMessage(chatId, 
+            "🚧 Bu özellik geliştiriliyor...\n\n" +
+            "Şimdilik admin panelini kullanabilirsin.");
+    }
+    
+    async handleRemoveUserCommand(chatId, text, from, user, isAdmin) {
+        if (!isAdmin) {
+            await telegramAPI.sendMessage(chatId, "❌ Bu komut sadece adminler tarafından kullanılabilir.");
+            return;
+        }
+        
+        await telegramAPI.sendMessage(chatId, 
+            "🚧 Bu özellik geliştiriliyor...\n\n" +
+            "Şimdilik admin panelini kullanabilirsin.");
+    }
+    
+    async handleListUsers(chatId, text, from, user, isAdmin) {
+        if (!isAdmin) return;
+        
+        const employees = await dataManager.readFile(DATA_FILES.employees);
+        
+        if (employees.length === 0) {
+            await telegramAPI.sendMessage(chatId, "👥 Henüz kayıtlı kullanıcı bulunmuyor.");
+            return;
+        }
+        
+        let userList = `👥 <b>Kayıtlı Kullanıcılar (${employees.length})</b>\n\n`;
+        
+        employees.forEach((emp, index) => {
+            const daysSince = Math.floor((Date.now() - new Date(emp.addedAt)) / (1000 * 60 * 60 * 24));
+            userList += `${index + 1}. ${emp.role === 'admin' ? '👑' : '👤'} <b>${emp.name}</b>\n`;
+            userList += `   🏢 ${emp.department}\n`;
+            userList += `   📅 ${daysSince} gün önce katıldı\n`;
+            userList += `   📋 ${emp.totalTasks || 0} görev (${emp.completedTasks || 0} tamamlandı)\n\n`;
+        });
+        
+        await telegramAPI.sendMessage(chatId, userList, {
+            keyboard: this.getKeyboard('admin_panel'),
+            resize_keyboard: true
+        });
+    }
+    
+    async handleProductList(chatId, text, from, user, isAdmin) {
+        const products = await dataManager.readFile(DATA_FILES.missingProducts);
+        
+        if (products.length === 0) {
+            await telegramAPI.sendMessage(chatId,
+                "📦 <b>Eksik Ürün Listesi</b>\n\n" +
+                "✅ Şu anda eksik ürün bildirimi bulunmuyor.",
+                {
+                    keyboard: isAdmin ? this.getKeyboard('admin_panel') : this.getKeyboard('main', isAdmin),
+                    resize_keyboard: true
+                }
+            );
+            return;
+        }
+        
+        let productText = `📦 <b>Eksik Ürün Listesi (${products.length})</b>\n\n`;
+        
+        products.slice(0, 20).forEach((product, index) => {
+            const daysSince = Math.floor((Date.now() - new Date(product.reportedAt)) / (1000 * 60 * 60 * 24));
+            productText += `${index + 1}. 📦 <b>${product.product}</b>\n`;
+            productText += `   🏷️ ${product.category}\n`;
+            productText += `   👤 ${product.reportedBy}\n`;
+            productText += `   📅 ${daysSince} gün önce\n\n`;
+        });
+        
+        if (products.length > 20) {
+            productText += `... ve ${products.length - 20} ürün daha`;
+        }
+        
+        const inlineKeyboard = [];
+        if (isAdmin) {
+            inlineKeyboard.push([
+                { text: "🗑️ Tümünü Temizle", callback_data: "clear_all_products" },
+                { text: "🔄 Listeyi Yenile", callback_data: "refresh_products" }
+            ]);
+        }
+        
+        await telegramAPI.sendMessage(chatId, productText, {
+            inline_keyboard: inlineKeyboard
+        });
+    }
+    
+    async handlePendingUsers(chatId, text, from, user, isAdmin) {
+        if (!isAdmin) return;
+        
+        const pendingUsers = await dataManager.readFile(DATA_FILES.pendingUsers);
+        
+        if (pendingUsers.length === 0) {
+            await telegramAPI.sendMessage(chatId,
+                "⏳ <b>Bekleyen Onaylar</b>\n\n" +
+                "✅ Şu anda onay bekleyen kullanıcı bulunmuyor.",
+                {
+                    keyboard: this.getKeyboard('admin_panel'),
+                    resize_keyboard: true
+                }
+            );
+            return;
+        }
+        
+        let pendingText = `⏳ <b>Bekleyen Onaylar (${pendingUsers.length})</b>\n\n`;
+        
+        pendingUsers.forEach((pending, index) => {
+            const daysSince = Math.floor((Date.now() - new Date(pending.timestamp)) / (1000 * 60 * 60 * 24));
+            pendingText += `${index + 1}. 👤 <b>${pending.firstName} ${pending.lastName}</b>\n`;
+            pendingText += `   @${pending.username || 'username_yok'}\n`;
+            pendingText += `   💬 <code>${pending.chatId}</code>\n`;
+            pendingText += `   📅 ${daysSince} gün önce başvurdu\n\n`;
+        });
+        
+        await telegramAPI.sendMessage(chatId, pendingText, {
+            keyboard: this.getKeyboard('admin_panel'),
+            resize_keyboard: true
+        });
+    }
+    
+    // Add remaining placeholder methods
+    async handleActivity(chatId, text, from, user, isAdmin) {
+        const activities = await dataManager.readFile(DATA_FILES.activityLog);
+        const recentActivities = activities.slice(-10).reverse();
+        
+        let activityText = `📝 <b>Son Aktiviteler</b>\n\n`;
+        
+        if (recentActivities.length === 0) {
+            activityText += "Henüz aktivite kaydı bulunmuyor.";
+        } else {
+            recentActivities.forEach((activity, index) => {
+                const timeAgo = Math.floor((Date.now() - new Date(activity.timestamp)) / (1000 * 60));
+                activityText += `${index + 1}. ${activity.message}\n`;
+                activityText += `   ⏰ ${timeAgo < 60 ? timeAgo + ' dakika' : Math.floor(timeAgo / 60) + ' saat'} önce\n\n`;
+            });
+        }
+        
+        await telegramAPI.sendMessage(chatId, activityText, {
+            keyboard: this.getKeyboard('main', isAdmin),
+            resize_keyboard: true
+        });
+    }
+    
+    async handleBroadcast(chatId, text, from, user, isAdmin) {
+        await telegramAPI.sendMessage(chatId, "🚧 Toplu duyuru özelliği geliştiriliyor...");
+    }
+    
+    async handleBackup(chatId, text, from, user, isAdmin) {
+        if (!isAdmin) return;
+        
+        try {
+            const backupPath = await dataManager.createBackup();
+            await telegramAPI.sendMessage(chatId, 
+                `💾 <b>Yedekleme Tamamlandı!</b>\n\n` +
+                `📁 Yedek konumu: ${backupPath}\n` +
+                `📅 Tarih: ${new Date().toLocaleString('tr-TR')}`
+            );
+        } catch (error) {
+            await telegramAPI.sendMessage(chatId, "❌ Yedekleme sırasında hata oluştu.");
+        }
+    }
+    
+    async handleClearProducts(chatId, user) {
+        await telegramAPI.sendMessage(chatId,
+            "🗑️ <b>Listeyi Temizle</b>\n\n" +
+            "Tüm eksik ürün listesini temizlemek istediğinize emin misiniz?",
+            {
+                inline_keyboard: [[
+                    { text: "✅ Evet, Temizle", callback_data: "confirm_clear_products" },
+                    { text: "❌ İptal", callback_data: "cancel_clear_products" }
+                ]]
+            }
+        );
+    }
+    
+    async handleBroadcastStart(chatId, user) {
+        await telegramAPI.sendMessage(chatId, "🚧 Duyuru gönderme özelliği geliştiriliyor...");
+    }
+    
+    async handleDetailedReports(chatId, user) {
+        await telegramAPI.sendMessage(chatId, "🚧 Detaylı raporlar özelliği geliştiriliyor...");
+    }
+}
+
+const commandHandler = new CommandHandler();
+
+// 📞 Callback Query Handler System
+class CallbackQueryHandler {
+    constructor() {
+        this.handlers = new Map();
+        this.initializeHandlers();
+    }
+    
+    initializeHandlers() {
+        // User approval/rejection handlers
+        this.handlers.set('approve_', this.handleUserApproval.bind(this));
+        this.handlers.set('reject_', this.handleUserRejection.bind(this));
+        
+        // Task handlers
+        this.handlers.set('complete_task_', this.handleTaskCompletion.bind(this));
+        this.handlers.set('refresh_my_tasks', this.handleTaskRefresh.bind(this));
+        this.handlers.set('show_all_tasks', this.handleShowAllTasks.bind(this));
+        
+        // Product handlers
+        this.handlers.set('complete_product_', this.handleProductCompletion.bind(this));
+        this.handlers.set('delete_product_', this.handleProductDeletion.bind(this));
+        this.handlers.set('clear_all_products', this.handleClearAllProducts.bind(this));
+        this.handlers.set('confirm_clear_products', this.handleConfirmClearProducts.bind(this));
+        this.handlers.set('cancel_clear_products', this.handleCancelClearProducts.bind(this));
+        this.handlers.set('refresh_products', this.handleRefreshProducts.bind(this));
+        
+        // Admin handlers
+        this.handlers.set('admin_', this.handleAdminAction.bind(this));
+        this.handlers.set('user_', this.handleUserAction.bind(this));
+    }
+    
+    async handleCallback(callbackQuery) {
+        const { id, data, from, message } = callbackQuery;
+        const chatId = from.id;
+        
+        try {
+            // Answer callback query immediately
+            await telegramAPI.answerCallbackQuery(id, "İşlem alındı...");
+            
+            // Rate limiting check
+            if (!rateLimiter.isAllowed(chatId)) {
+                await telegramAPI.sendMessage(chatId, 
+                    "⚠️ <b>Çok fazla istek!</b>\n\nLütfen biraz bekleyip tekrar deneyin."
+                );
+                return;
+            }
+            
+            // Check user authorization
+            const user = await userManager.findUser(chatId);
+            const isAdmin = await userManager.isAdmin(chatId);
+            
+            // Find appropriate handler
+            let handled = false;
+            for (const [prefix, handler] of this.handlers.entries()) {
+                if (data.startsWith(prefix) || data === prefix) {
+                    await handler(data, chatId, from, message, user, isAdmin);
+                    handled = true;
+                    break;
+                }
+            }
+            
+            if (!handled) {
+                console.warn(`⚠️ Unhandled callback query: ${data}`);
+                await telegramAPI.sendMessage(chatId, 
+                    "❌ <b>Bilinmeyen işlem!</b>\n\nBu işlem tanınmıyor. Lütfen tekrar deneyin."
+                );
+            }
+            
+        } catch (error) {
+            console.error(`❌ Callback query error for ${chatId}:`, error);
+            await telegramAPI.sendMessage(chatId, 
+                "❌ <b>İşlem hatası!</b>\n\nBir hata oluştu. Lütfen daha sonra tekrar deneyin."
+            );
+        }
+    }
+    
+    async handleUserApproval(data, chatId, from, message, user, isAdmin) {
+        if (!isAdmin) {
+            await telegramAPI.sendMessage(chatId, "❌ Bu işlem sadece adminler tarafından yapılabilir.");
+            return;
+        }
+        
+        const targetChatId = data.replace('approve_', '');
+        
+        try {
+            const approvedUser = await userManager.approveUser(Number(targetChatId), chatId);
+            
+            // Notify admin
+            await telegramAPI.sendMessage(chatId,
+                `✅ <b>Kullanıcı Onaylandı!</b>\n\n` +
+                `👤 ${approvedUser.name} başarıyla sisteme eklendi.\n` +
+                `🏢 Departman: ${approvedUser.department}\n` +
+                `📅 Tarih: ${new Date().toLocaleString('tr-TR')}`
+            );
+            
+            // Notify approved user
+            await telegramAPI.sendMessage(Number(targetChatId),
+                `🎉 <b>Hoşgeldin SivalTeam'e!</b>\n\n` +
+                `✅ Kaydınız onaylandı ve sisteme eklendiniz.\n` +
+                `👤 <b>Adınız:</b> ${approvedUser.name}\n` +
+                `🏢 <b>Departman:</b> ${approvedUser.department}\n\n` +
+                `🚀 Artık sistemi kullanabilirsiniz!\n` +
+                `💡 /start komutu ile başlayın.`,
+                {
+                    keyboard: commandHandler.getKeyboard('main', false),
+                    resize_keyboard: true
+                }
+            );
+            
+        } catch (error) {
+            console.error('❌ User approval error:', error);
+            await telegramAPI.sendMessage(chatId,
+                `❌ <b>Onaylama Hatası!</b>\n\n${error.message}`
+            );
+        }
+    }
+    
+    async handleUserRejection(data, chatId, from, message, user, isAdmin) {
+        if (!isAdmin) {
+            await telegramAPI.sendMessage(chatId, "❌ Bu işlem sadece adminler tarafından yapılabilir.");
+            return;
+        }
+        
+        const targetChatId = data.replace('reject_', '');
+        
+        try {
+            const rejectedUser = await userManager.rejectUser(Number(targetChatId), chatId, 'Admin tarafından reddedildi');
+            
+            // Notify admin
+            await telegramAPI.sendMessage(chatId,
+                `❌ <b>Kullanıcı Reddedildi!</b>\n\n` +
+                `👤 ${rejectedUser.firstName} ${rejectedUser.lastName} kayıt talebi reddedildi.\n` +
+                `📅 Tarih: ${new Date().toLocaleString('tr-TR')}`
+            );
+            
+            // Notify rejected user
+            await telegramAPI.sendMessage(Number(targetChatId),
+                `❌ <b>Kayıt Talebi Reddedildi</b>\n\n` +
+                `Üzgünüz, SivalTeam sistemine kayıt talebiniz reddedildi.\n\n` +
+                `📞 Daha fazla bilgi için sistem yöneticisiyle iletişime geçebilirsiniz.\n` +
+                `🔄 İsterseniz daha sonra tekrar başvuru yapabilirsiniz.`
+            );
+            
+        } catch (error) {
+            console.error('❌ User rejection error:', error);
+            await telegramAPI.sendMessage(chatId,
+                `❌ <b>Reddetme Hatası!</b>\n\n${error.message}`
+            );
+        }
+    }
+    
+    async handleTaskCompletion(data, chatId, from, message, user, isAdmin) {
+        if (!user) {
+            await telegramAPI.sendMessage(chatId, "❌ Bu özelliği kullanmak için kayıt olmalısınız.");
+            return;
+        }
+        
+        const taskId = data.replace('complete_task_', '');
+        
+        try {
+            const completedTask = await taskManager.completeTask(taskId, chatId);
+            
+            // Calculate completion time
+            const startTime = new Date(completedTask.createdAt);
+            const endTime = new Date(completedTask.completedAt);
+            const timeTaken = Math.round((endTime - startTime) / (1000 * 60 * 60)); // hours
+            
+            // Notify user
+            await telegramAPI.sendMessage(chatId,
+                `✅ <b>Görev Tamamlandı!</b>\n\n` +
+                `🎯 <b>${completedTask.title}</b>\n` +
+                `📝 ${completedTask.description}\n\n` +
+                `⏱️ <b>Tamamlanma Süresi:</b> ${timeTaken < 1 ? 'Aynı gün' : timeTaken + ' saat'}\n` +
+                `📅 <b>Tamamlanma:</b> ${new Date(completedTask.completedAt).toLocaleString('tr-TR')}\n\n` +
+                `🎉 Tebrikler! Göreviniz başarıyla tamamlandı ve listeden kaldırıldı.`,
+                {
+                    keyboard: commandHandler.getKeyboard('main', isAdmin),
+                    resize_keyboard: true
+                }
+            );
+            
+            // Notify admin who assigned the task
+            const adminSettings = await dataManager.readFile(DATA_FILES.adminSettings);
+            if (adminSettings.adminUsers.includes(completedTask.assignedBy)) {
+                await telegramAPI.sendMessage(completedTask.assignedBy,
+                    `✅ <b>Görev Tamamlandı!</b>\n\n` +
+                    `🎯 <b>${completedTask.title}</b>\n` +
+                    `👤 <b>Tamamlayan:</b> ${user.name}\n` +
+                    `⏱️ <b>Süre:</b> ${timeTaken < 1 ? 'Aynı gün' : timeTaken + ' saat'}\n` +
+                    `📅 <b>Tamamlanma:</b> ${new Date(completedTask.completedAt).toLocaleString('tr-TR')}\n\n` +
+                    `🎉 ${completedTask.type === 'bulk' ? 'Toplu görev' : 'Kişisel görev'} başarıyla tamamlandı!`
+                );
+            }
+            
+        } catch (error) {
+            console.error('❌ Task completion error:', error);
+            await telegramAPI.sendMessage(chatId,
+                `❌ <b>Görev Tamamlama Hatası!</b>\n\n${error.message}`
+            );
+        }
+    }
+    
+    async handleTaskRefresh(data, chatId, from, message, user, isAdmin) {
+        if (!user) return;
+        
+        // Trigger task list refresh
+        await commandHandler.handleMyTasks(chatId, user);
+    }
+    
+    async handleShowAllTasks(data, chatId, from, message, user, isAdmin) {
+        if (!user) return;
+        
+        const userTasks = await taskManager.getUserTasks(chatId);
+        const pendingTasks = userTasks.filter(task => task.status === 'pending');
+        
+        if (pendingTasks.length === 0) {
+            await telegramAPI.sendMessage(chatId, "✅ Bekleyen göreviniz bulunmuyor!");
+            return;
+        }
+        
+        let taskText = `📋 <b>Tüm Bekleyen Görevleriniz (${pendingTasks.length})</b>\n\n`;
+        
+        pendingTasks.forEach((task, index) => {
+            const daysPassed = Math.floor((Date.now() - new Date(task.createdAt)) / (1000 * 60 * 60 * 24));
+            taskText += `${index + 1}. 🎯 <b>${task.title}</b>\n`;
+            taskText += `   📝 ${task.description}\n`;
+            taskText += `   👤 Atayan: ${task.assignedByName}\n`;
+            taskText += `   📅 ${daysPassed} gün önce\n`;
+            taskText += `   ${task.priority !== 'normal' ? `⚡ ${task.priority.toUpperCase()}\n` : ''}`;
+            taskText += `   ${task.type === 'bulk' ? '📢 Toplu Görev' : '👤 Kişisel Görev'}\n\n`;
+        });
+        
+        // Create completion buttons for tasks
+        const inlineKeyboard = [];
+        pendingTasks.slice(0, 10).forEach(task => {
+            inlineKeyboard.push([{
+                text: `✅ "${task.title.substring(0, 25)}${task.title.length > 25 ? '...' : ''}" Tamamla`,
+                callback_data: `complete_task_${task.id}`
+            }]);
+        });
+        
+        await telegramAPI.sendMessage(chatId, taskText, {
+            inline_keyboard: inlineKeyboard
+        });
+    }
+    
+    async handleProductCompletion(data, chatId, from, message, user, isAdmin) {
+        if (!isAdmin) {
+            await telegramAPI.sendMessage(chatId, "❌ Bu işlem sadece adminler tarafından yapılabilir.");
+            return;
+        }
+        
+        const productId = data.replace('complete_product_', '');
+        
+        try {
+            const completedProduct = await productManager.completeProduct(productId, chatId);
+            
+            await telegramAPI.sendMessage(chatId,
+                `✅ <b>Ürün Tamamlandı!</b>\n\n` +
+                `📦 <b>${completedProduct.product}</b>\n` +
+                `🏷️ Kategori: ${completedProduct.category}\n` +
+                `👤 Bildiren: ${completedProduct.reportedBy}\n\n` +
+                `🗑️ Ürün eksik ürün listesinden kaldırıldı.\n` +
+                `📅 Tamamlanma: ${new Date().toLocaleString('tr-TR')}`
+            );
+            
+            // Notify the person who reported the product
+            if (Number(completedProduct.reportedByChatId) !== Number(chatId)) {
+                await telegramAPI.sendMessage(completedProduct.reportedByChatId,
+                    `✅ <b>Bildirdiğiniz Ürün Tamamlandı!</b>\n\n` +
+                    `📦 <b>${completedProduct.product}</b>\n` +
+                    `🏷️ Kategori: ${completedProduct.category}\n\n` +
+                    `🎉 Temin edildi ve eksik ürün listesinden kaldırıldı.\n` +
+                    `📅 Tamamlanma: ${new Date().toLocaleString('tr-TR')}`
+                );
+            }
+            
+        } catch (error) {
+            console.error('❌ Product completion error:', error);
+            await telegramAPI.sendMessage(chatId,
+                `❌ <b>Ürün Tamamlama Hatası!</b>\n\n${error.message}`
+            );
+        }
+    }
+    
+    async handleProductDeletion(data, chatId, from, message, user, isAdmin) {
+        if (!isAdmin) {
+            await telegramAPI.sendMessage(chatId, "❌ Bu işlem sadece adminler tarafından yapılabilir.");
+            return;
+        }
+        
+        const productId = data.replace('delete_product_', '');
+        
+        try {
+            const deletedProduct = await productManager.deleteProduct(productId, chatId);
+            
+            await telegramAPI.sendMessage(chatId,
+                `🗑️ <b>Ürün Silindi!</b>\n\n` +
+                `📦 <b>${deletedProduct.product}</b>\n` +
+                `🏷️ Kategori: ${deletedProduct.category}\n` +
+                `👤 Bildiren: ${deletedProduct.reportedBy}\n\n` +
+                `Ürün listeden kaldırıldı.`
+            );
+            
+        } catch (error) {
+            console.error('❌ Product deletion error:', error);
+            await telegramAPI.sendMessage(chatId,
+                `❌ <b>Ürün Silme Hatası!</b>\n\n${error.message}`
+            );
+        }
+    }
+    
+    async handleConfirmClearProducts(data, chatId, from, message, user, isAdmin) {
+        if (!isAdmin) return;
+        
+        try {
+            const clearedCount = await productManager.clearAllProducts(chatId);
+            
+            await telegramAPI.sendMessage(chatId,
+                `🗑️ <b>Tüm Liste Temizlendi!</b>\n\n` +
+                `📊 ${clearedCount} ürün bildirimi silindi.\n` +
+                `✅ Eksik ürün listesi baştan başlıyor.\n` +
+                `📅 Temizlenme: ${new Date().toLocaleString('tr-TR')}`,
+                {
+                    keyboard: commandHandler.getKeyboard('admin_panel'),
+                    resize_keyboard: true
+                }
+            );
+            
+        } catch (error) {
+            await telegramAPI.sendMessage(chatId, "❌ Liste temizleme sırasında hata oluştu.");
+        }
+    }
+    
+    async handleCancelClearProducts(data, chatId, from, message, user, isAdmin) {
+        await telegramAPI.sendMessage(chatId,
+            "❌ <b>İşlem İptal Edildi</b>\n\n" +
+            "Eksik ürün listesi temizlenmedi.",
+            {
+                keyboard: commandHandler.getKeyboard('admin_panel'),
+                resize_keyboard: true
+            }
+        );
+    }
+    
+    async handleRefreshProducts(data, chatId, from, message, user, isAdmin) {
+        if (!isAdmin) return;
+        
+        await telegramAPI.sendMessage(chatId, "🔄 Eksik ürün listesi yenileniyor...");
+        
+        setTimeout(async () => {
+            await commandHandler.handleProductList(chatId, '', from, user, isAdmin);
+        }, 1000);
+    }
+    
+    async handleClearAllProducts(data, chatId, from, message, user, isAdmin) {
+        if (!isAdmin) return;
+        
+        await commandHandler.handleClearProducts(chatId, user);
+    }
+    
+    async handleAdminAction(data, chatId, from, message, user, isAdmin) {
+        if (!isAdmin) return;
+        
+        await telegramAPI.sendMessage(chatId, "🚧 Admin işlemleri geliştiriliyor...");
+    }
+    
+    async handleUserAction(data, chatId, from, message, user, isAdmin) {
+        await telegramAPI.sendMessage(chatId, "🚧 Kullanıcı işlemleri geliştiriliyor...");
+    }
+}
+
+const callbackQueryHandler = new CallbackQueryHandler();
+
+// 🌐 Webhook Handler
+app.post('/webhook', async (req, res) => {
+    try {
+        // Respond immediately to Telegram
+        res.status(200).json({ status: 'ok' });
+        
+        const { message, callback_query } = req.body;
+        
+        if (callback_query) {
+            // Handle callback query (inline button clicks)
+            await callbackQueryHandler.handleCallback(callback_query);
+        } else if (message) {
+            // Handle regular text messages
+            const { chat, from, text } = message;
+            
+            if (text && from) {
+                await commandHandler.handleMessage(chat.id, text, from);
+            }
+        }
+        
     } catch (error) {
-        console.error('Webhook Error:', error);
-        // Don't send response again, already sent at the beginning
+        console.error('❌ Webhook Error:', error);
+        // Don't send error response, already responded with 200
     }
 });
 
-// API Endpoints for Desktop App Integration
+// 📊 API Routes for Dashboard Integration
 app.get('/api/employees', (req, res) => {
-    const employees = readJsonFile(DATA_FILES.employees);
-    res.json(employees);
+    dataManager.readFile(DATA_FILES.employees)
+        .then(employees => res.json(employees))
+        .catch(error => {
+            console.error('❌ API Error - employees:', error);
+            res.status(500).json({ error: 'Internal server error' });
+        });
 });
 
 app.get('/api/missing-products', (req, res) => {
-    const products = readJsonFile(DATA_FILES.missingProducts);
-    res.json(products);
+    dataManager.readFile(DATA_FILES.missingProducts)
+        .then(products => res.json(products))
+        .catch(error => {
+            console.error('❌ API Error - missing-products:', error);
+            res.status(500).json({ error: 'Internal server error' });
+        });
 });
 
 app.get('/api/activity-log', (req, res) => {
-    const activities = readJsonFile(DATA_FILES.activityLog);
-    res.json(activities);
+    dataManager.readFile(DATA_FILES.activityLog)
+        .then(activities => {
+            // Return last 100 activities
+            const recentActivities = activities.slice(-100).reverse();
+            res.json(recentActivities);
+        })
+        .catch(error => {
+            console.error('❌ API Error - activity-log:', error);
+            res.status(500).json({ error: 'Internal server error' });
+        });
 });
 
 app.get('/api/tasks', (req, res) => {
-    const tasks = readJsonFile(DATA_FILES.tasks);
-    res.json(tasks);
+    dataManager.readFile(DATA_FILES.tasks)
+        .then(tasks => res.json(tasks))
+        .catch(error => {
+            console.error('❌ API Error - tasks:', error);
+            res.status(500).json({ error: 'Internal server error' });
+        });
 });
 
-// Health check
+app.get('/api/pending-users', (req, res) => {
+    dataManager.readFile(DATA_FILES.pendingUsers)
+        .then(pendingUsers => res.json(pendingUsers))
+        .catch(error => {
+            console.error('❌ API Error - pending-users:', error);
+            res.status(500).json({ error: 'Internal server error' });
+        });
+});
+
+app.get('/api/categories', (req, res) => {
+    dataManager.readFile(DATA_FILES.categories)
+        .then(categories => res.json(categories))
+        .catch(error => {
+            console.error('❌ API Error - categories:', error);
+            res.status(500).json({ error: 'Internal server error' });
+        });
+});
+
+app.get('/api/admin-settings', (req, res) => {
+    dataManager.readFile(DATA_FILES.adminSettings)
+        .then(settings => {
+            // Remove sensitive data
+            const publicSettings = {
+                approvalRequired: settings.approvalRequired,
+                maintenanceMode: settings.maintenanceMode,
+                welcomeMessage: settings.welcomeMessage,
+                maxTasksPerUser: settings.maxTasksPerUser,
+                allowGuestAccess: settings.allowGuestAccess,
+                adminCount: settings.adminUsers.length
+            };
+            res.json(publicSettings);
+        })
+        .catch(error => {
+            console.error('❌ API Error - admin-settings:', error);
+            res.status(500).json({ error: 'Internal server error' });
+        });
+});
+
+app.get('/api/system-stats', (req, res) => {
+    dataManager.readFile(DATA_FILES.systemStats)
+        .then(stats => res.json(stats))
+        .catch(error => {
+            console.error('❌ API Error - system-stats:', error);
+            res.status(500).json({ error: 'Internal server error' });
+        });
+});
+
+// 🏠 Health Check Routes
 app.get('/', (req, res) => {
-    res.json({ 
-        status: 'SivalTeam Bot v2.0.0 Running',
+    res.json({
+        status: 'SivalTeam Professional Bot v' + CONFIG.VERSION + ' Running',
         timestamp: new Date().toISOString(),
+        uptime: process.uptime(),
+        version: CONFIG.VERSION,
+        build: CONFIG.BUILD_DATE,
+        environment: CONFIG.ENVIRONMENT,
         features: {
             'Turkish Character Protection': 'ACTIVE',
-            'Persistent Login': 'FIXED',
-            'UTF-8 Encoding': 'ACTIVE'
+            'Enterprise Security': 'ENABLED',
+            'High Performance Mode': 'ON',
+            'Dashboard Integration': 'READY',
+            'Desktop Sync': 'ACTIVE',
+            'Auto Backup': 'ENABLED',
+            'Rate Limiting': 'ACTIVE'
+        },
+        endpoints: {
+            webhook: '/webhook',
+            api: {
+                employees: '/api/employees',
+                products: '/api/missing-products',
+                activities: '/api/activity-log',
+                tasks: '/api/tasks',
+                pending: '/api/pending-users',
+                categories: '/api/categories',
+                settings: '/api/admin-settings',
+                stats: '/api/system-stats'
+            }
         }
     });
 });
 
 app.get('/health', (req, res) => {
-    res.json({ status: 'healthy', timestamp: new Date().toISOString() });
+    res.json({
+        status: 'healthy',
+        timestamp: new Date().toISOString(),
+        uptime: process.uptime(),
+        memory: process.memoryUsage(),
+        version: CONFIG.VERSION
+    });
 });
 
-// Set webhook
-async function setWebhook() {
+// 🚫 404 Handler
+app.use('*', (req, res) => {
+    res.status(404).json({
+        error: 'Not Found',
+        message: 'The requested endpoint does not exist',
+        availableEndpoints: [
+            '/',
+            '/health',
+            '/webhook',
+            '/api/employees',
+            '/api/missing-products',
+            '/api/activity-log',
+            '/api/tasks',
+            '/api/pending-users',
+            '/api/categories',
+            '/api/admin-settings',
+            '/api/system-stats'
+        ]
+    });
+});
+
+// 🚀 Server Initialization
+async function initializeServer() {
     try {
-        const response = await axios.post(`https://api.telegram.org/bot${BOT_TOKEN}/setWebhook`, {
-            url: WEBHOOK_URL,
-            max_connections: 40,
-            allowed_updates: ['message', 'callback_query']
-        });
+        // Set webhook
+        console.log('🔗 Setting up Telegram webhook...');
         
-        if (response.data.ok) {
+        const webhookResponse = await axios.post(
+            `https://api.telegram.org/bot${CONFIG.BOT_TOKEN}/setWebhook`,
+            {
+                url: CONFIG.WEBHOOK_URL,
+                max_connections: CONFIG.MAX_CONCURRENT_REQUESTS,
+                allowed_updates: ['message', 'callback_query']
+            }
+        );
+        
+        if (webhookResponse.data.ok) {
             console.log('✅ Webhook set successfully');
         } else {
-            console.error('❌ Failed to set webhook:', response.data);
+            console.error('❌ Failed to set webhook:', webhookResponse.data);
         }
+        
+        // Start server
+        app.listen(CONFIG.PORT, () => {
+            console.log(`
+🚀 SivalTeam Professional Bot v${CONFIG.VERSION} is LIVE!
+===============================================
+🌐 Server URL: ${CONFIG.WEBHOOK_URL}
+🔌 Port: ${CONFIG.PORT}
+🔧 Environment: ${CONFIG.ENVIRONMENT}
+📅 Started: ${new Date().toLocaleString('tr-TR')}
+
+🔗 Webhook URL: ${CONFIG.WEBHOOK_URL}/webhook
+📊 Dashboard API: ${CONFIG.WEBHOOK_URL}/api/*
+💾 Health Check: ${CONFIG.WEBHOOK_URL}/health
+
+🎯 All systems operational and ready for production!
+===============================================
+`);
+        });
+        
     } catch (error) {
-        console.error('❌ Webhook setup error:', error.message);
+        console.error('❌ Server initialization failed:', error);
+        process.exit(1);
     }
 }
 
-// Initialize and start server
-initializeDataFiles();
-
-app.listen(PORT, () => {
-    console.log(`🚀 SivalTeam Render Server v2.0.0 running on port ${PORT}`);
-    console.log(`🔗 Webhook URL: ${WEBHOOK_URL}`);
-    console.log('🛡️ Turkish Character Protection: ACTIVE');
-    console.log('✅ Persistent Login Fix: ACTIVE');
-    
-    // Set webhook after server starts
-    setTimeout(setWebhook, 2000);
-    
-    // Log startup
-    logActivity('SivalTeam Render Server v2.0.0 started', null, 'System');
+// 🛡️ Error Handlers
+process.on('uncaughtException', (error) => {
+    console.error('💥 Uncaught Exception:', error);
+    // Don't exit in production, log and continue
+    if (CONFIG.ENVIRONMENT !== 'production') {
+        process.exit(1);
+    }
 });
 
-// Graceful shutdown
-process.on('SIGTERM', () => {
-    console.log('⏹️ SivalTeam Server shutting down...');
-    logActivity('SivalTeam Render Server shutdown', null, 'System');
+process.on('unhandledRejection', (reason, promise) => {
+    console.error('💥 Unhandled Rejection at:', promise, 'reason:', reason);
+    // Don't exit in production, log and continue
+    if (CONFIG.ENVIRONMENT !== 'production') {
+        process.exit(1);
+    }
+});
+
+process.on('SIGTERM', async () => {
+    console.log('🛑 SIGTERM received, shutting down gracefully...');
+    
+    // Create final backup
+    try {
+        await dataManager.createBackup();
+        console.log('💾 Final backup created successfully');
+    } catch (error) {
+        console.error('❌ Final backup failed:', error);
+    }
+    
     process.exit(0);
 });
+
+process.on('SIGINT', async () => {
+    console.log('🛑 SIGINT received, shutting down gracefully...');
+    
+    // Create final backup
+    try {
+        await dataManager.createBackup();
+        console.log('💾 Final backup created successfully');
+    } catch (error) {
+        console.error('❌ Final backup failed:', error);
+    }
+    
+    process.exit(0);
+});
+
+// 🏁 Initialize and start the server
+initializeServer();

@@ -1,7 +1,7 @@
 {
   "name": "sivalteam-telegram-bot",
-  "version": "2.0.0",
-  "description": "SivalTeam - Complete Team Management Telegram Bot System",
+  "version": "3.0.0",
+  "description": "SivalTeam Professional - Enterprise-Grade Team Management Telegram Bot System",
   "main": "electron-main.js",
   "scripts": {
     "start": "node render-server.js",

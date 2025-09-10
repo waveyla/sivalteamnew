@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>SivalTeam Professional Management Dashboard</title>
+    <title>SivalTeam Professional v3.0.0 - Enterprise Management Dashboard</title>
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
     <style>
@@ -1607,46 +1607,96 @@
                 .catch(() => showToast('Reddetme başarısız', 'error'));
         }
 
-        // Real-time sync with Render
+        // Real-time sync with Render - Enhanced v3.0.0
         async function syncWithRender() {
             try {
                 const renderUrl = 'https://sivalteam-bot.onrender.com';
                 
-                // Sync employees
-                const employeesRes = await fetch(`${renderUrl}/api/employees`);
+                // Show syncing indicator
+                const syncIndicator = document.createElement('div');
+                syncIndicator.innerHTML = '🔄 Senkronizasyon...';
+                syncIndicator.style.position = 'fixed';
+                syncIndicator.style.top = '10px';
+                syncIndicator.style.right = '10px';
+                syncIndicator.style.background = '#667eea';
+                syncIndicator.style.color = 'white';
+                syncIndicator.style.padding = '8px 16px';
+                syncIndicator.style.borderRadius = '20px';
+                syncIndicator.style.fontSize = '12px';
+                syncIndicator.style.zIndex = '9999';
+                document.body.appendChild(syncIndicator);
+                
+                // Parallel API calls for better performance
+                const [employeesRes, productsRes, activityRes, tasksRes, pendingRes, categoriesRes, settingsRes, statsRes] = await Promise.all([
+                    fetch(`${renderUrl}/api/employees`),
+                    fetch(`${renderUrl}/api/missing-products`),
+                    fetch(`${renderUrl}/api/activity-log`),
+                    fetch(`${renderUrl}/api/tasks`),
+                    fetch(`${renderUrl}/api/pending-users`),
+                    fetch(`${renderUrl}/api/categories`),
+                    fetch(`${renderUrl}/api/admin-settings`),
+                    fetch(`${renderUrl}/api/system-stats`)
+                ]);
+                
+                // Process responses
                 if (employeesRes.ok) {
-                    const employees = await employeesRes.json();
-                    appState.data.employees = employees;
+                    appState.data.employees = await employeesRes.json();
                 }
                 
-                // Sync products
-                const productsRes = await fetch(`${renderUrl}/api/missing-products`);
                 if (productsRes.ok) {
-                    const products = await productsRes.json();
-                    appState.data.products = products;
+                    appState.data.products = await productsRes.json();
                 }
                 
-                // Sync activity
-                const activityRes = await fetch(`${renderUrl}/api/activity-log`);
                 if (activityRes.ok) {
-                    const activity = await activityRes.json();
-                    appState.data.activities = activity.slice(-50);
+                    appState.data.activities = (await activityRes.json()).slice(-100);
                 }
                 
-                // Sync tasks
-                const tasksRes = await fetch(`${renderUrl}/api/tasks`);
                 if (tasksRes.ok) {
-                    const tasks = await tasksRes.json();
-                    appState.data.tasks = tasks;
+                    appState.data.tasks = await tasksRes.json();
                 }
                 
+                if (pendingRes.ok) {
+                    appState.data.pendingUsers = await pendingRes.json();
+                }
+                
+                if (categoriesRes.ok) {
+                    appState.data.categories = await categoriesRes.json();
+                }
+                
+                if (settingsRes.ok) {
+                    appState.data.settings = await settingsRes.json();
+                }
+                
+                if (statsRes.ok) {
+                    appState.data.systemStats = await statsRes.json();
+                }
+                
+                // Update UI
                 updateStats();
                 updateDashboard();
-                showToast('Render ile senkronize edildi', 'success', 2000);
+                
+                // Remove sync indicator
+                document.body.removeChild(syncIndicator);
+                
+                // Show success notification
+                showToast(`✅ Render ile senkronize edildi (${new Date().toLocaleTimeString('tr-TR')})`, 'success', 3000);
+                
+                // Update last sync time
+                appState.lastSync = Date.now();
                 
             } catch (error) {
                 console.error('Sync failed:', error);
-                showToast('Senkronizasyon başarısız', 'warning', 2000);
+                
+                // Remove sync indicator if exists
+                const indicator = document.querySelector('[style*="Senkronizasyon"]');
+                if (indicator) document.body.removeChild(indicator);
+                
+                showToast('❌ Senkronizasyon başarısız - ' + error.message, 'error', 5000);
+                
+                // Try to load from local storage as fallback
+                if (loadLocalData()) {
+                    showToast('📱 Yerel veriler yüklendi', 'info', 3000);
+                }
             }
         }
         
