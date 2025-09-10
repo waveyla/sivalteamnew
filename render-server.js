@@ -2353,7 +2353,7 @@ class CommandHandler {
                 // Assign task to all employees
                 for (const employee of activeEmployees) {
                     try {
-                        await taskManager.createTask({
+                        const newTask = await taskManager.createTask({
                             title: turkishHandler.protect(title),
                             description: turkishHandler.protect(description),
                             assignedToChatId: employee.chatId,
