@@ -811,7 +811,8 @@ class UserManager {
         
         const existingPending = pendingUsers.find(u => Number(u.chatId) === Number(userData.chatId));
         if (existingPending) {
-            throw new Error('Bu kullanıcı zaten onay bekliyor');
+            // Return existing user instead of throwing error
+            return existingPending;
         }
         
         const pendingUser = {
@@ -1907,12 +1908,23 @@ class CommandHandler {
         
         // Create new pending user
         try {
-            const pendingUser = await userManager.setPendingApproval({
-                chatId,
-                firstName: from.first_name,
-                lastName: from.last_name,
-                username: from.username
-            });
+            // Add user to pending directly without throwing error
+            const newPendingUser = {
+                chatId: Number(chatId),
+                firstName: turkishHandler.protect(from.first_name),
+                lastName: turkishHandler.protect(from.last_name || ''),
+                username: from.username || 'kullanici_' + Date.now(),
+                timestamp: new Date().toISOString(),
+                status: 'pending',
+                requestIP: null
+            };
+            
+            const updatedPendingUsers = [...pendingUsers, newPendingUser];
+            await dataManager.writeFile(DATA_FILES.pendingUsers, updatedPendingUsers);
+            
+            await activityLogger.log(`Yeni kullanıcı onay bekliyor: ${newPendingUser.firstName}`, chatId, newPendingUser.firstName, 'info');
+            
+            const pendingUser = newPendingUser;
             
             // Notify user
             await telegramAPI.sendMessage(chatId,
@@ -1924,8 +1936,9 @@ class CommandHandler {
                 `⌛ Lütfen sabırla bekleyiniz...`
             );
             
-            // Notify all admins with security assessment
-            for (const adminChatId of adminSettings.adminUsers) {
+            // Notify all admins with security assessment  
+            const currentAdminSettings = await dataManager.readFile(DATA_FILES.adminSettings);
+            for (const adminChatId of currentAdminSettings.adminUsers) {
                 let securityWarning = '';
                 let warningEmoji = '🟢';
                 
