@@ -1607,6 +1607,70 @@
                 .catch(() => showToast('Reddetme başarısız', 'error'));
         }
 
+        // Real-time sync with Render
+        async function syncWithRender() {
+            try {
+                const renderUrl = 'https://sivalteam-bot.onrender.com';
+                
+                // Sync employees
+                const employeesRes = await fetch(`${renderUrl}/api/employees`);
+                if (employeesRes.ok) {
+                    const employees = await employeesRes.json();
+                    appState.data.employees = employees;
+                }
+                
+                // Sync products
+                const productsRes = await fetch(`${renderUrl}/api/missing-products`);
+                if (productsRes.ok) {
+                    const products = await productsRes.json();
+                    appState.data.products = products;
+                }
+                
+                // Sync activity
+                const activityRes = await fetch(`${renderUrl}/api/activity-log`);
+                if (activityRes.ok) {
+                    const activity = await activityRes.json();
+                    appState.data.activities = activity.slice(-50);
+                }
+                
+                // Sync tasks
+                const tasksRes = await fetch(`${renderUrl}/api/tasks`);
+                if (tasksRes.ok) {
+                    const tasks = await tasksRes.json();
+                    appState.data.tasks = tasks;
+                }
+                
+                updateStats();
+                updateDashboard();
+                showToast('Render ile senkronize edildi', 'success', 2000);
+                
+            } catch (error) {
+                console.error('Sync failed:', error);
+                showToast('Senkronizasyon başarısız', 'warning', 2000);
+            }
+        }
+        
+        // Save data locally
+        function saveDataLocally() {
+            localStorage.setItem('sivalteam-data', JSON.stringify(appState.data));
+            localStorage.setItem('sivalteam-data-timestamp', Date.now());
+        }
+        
+        // Load local data
+        function loadLocalData() {
+            const savedData = localStorage.getItem('sivalteam-data');
+            const timestamp = localStorage.getItem('sivalteam-data-timestamp');
+            
+            if (savedData && timestamp) {
+                const age = Date.now() - parseInt(timestamp);
+                if (age < 300000) { // 5 minutes
+                    appState.data = JSON.parse(savedData);
+                    return true;
+                }
+            }
+            return false;
+        }
+        
         // Initialize Application
         function initializeApp() {
             // Load saved theme
@@ -1618,21 +1682,42 @@
             // Set start time
             appState.stats.startTime = Date.now();
             
-            // Load initial data
-            loadData();
+            // Load local data first for fast startup
+            if (loadLocalData()) {
+                updateStats();
+                updateDashboard();
+            }
             
-            // Set up auto-refresh
+            // Then sync with render
+            syncWithRender();
+            
+            // Set up auto-refresh with Render
             setInterval(() => {
-                loadData();
-                if (appState.currentSection === 'dashboard') {
-                    updateDashboard();
-                }
+                syncWithRender();
             }, 30000);
+            
+            // Save data locally periodically
+            setInterval(() => {
+                saveDataLocally();
+            }, 60000);
             
             // Show welcome toast
             setTimeout(() => {
                 showToast('SivalTeam Professional Dashboard başlatıldı', 'success');
             }, 1000);
+            
+            // Add keyboard shortcuts
+            document.addEventListener('keydown', (e) => {
+                if (e.ctrlKey && e.key === 's') {
+                    e.preventDefault();
+                    saveDataLocally();
+                    showToast('Veriler kaydedildi', 'success', 2000);
+                }
+                if (e.ctrlKey && e.key === 'r') {
+                    e.preventDefault();
+                    syncWithRender();
+                }
+            });
             
             console.log('🚀 SivalTeam Professional Dashboard initialized');
         }
