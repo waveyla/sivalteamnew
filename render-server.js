@@ -212,6 +212,11 @@ function handleStartCommand(chatId, from) {
     const adminSettings = readJsonFile(DATA_FILES.adminSettings);
     const numericChatId = Number(chatId); // CRITICAL FIX: Ensure numeric comparison
     
+    // DEBUG: Log user check attempt
+    console.log(`🔍 User login attempt: ${from.first_name} (${chatId}) -> numeric: ${numericChatId}`);
+    console.log(`📊 Current employees count: ${employees.length}`);
+    console.log(`👑 Current admins count: ${adminSettings.adminUsers.length}`);
+    
     // FIRST USER BECOMES ADMIN AUTOMATICALLY
     if (employees.length === 0 && adminSettings.adminUsers.length === 0) {
         const firstAdmin = {
@@ -254,9 +259,16 @@ function handleStartCommand(chatId, from) {
     // Find existing employee by numeric chatId comparison
     let employee = employees.find(e => Number(e.chatId) === numericChatId);
     
+    // DEBUG: Log employee search result
+    console.log(`🔍 Employee search for ${numericChatId}:`, employee ? `FOUND: ${employee.name}` : 'NOT FOUND');
+    if (employees.length > 0) {
+        console.log(`📝 Existing employees:`, employees.map(e => `${e.name} (${e.chatId})`));
+    }
+    
     if (employee) {
         // Employee exists - direct login without approval
         const isAdmin = adminSettings.adminUsers.includes(numericChatId);
+        console.log(`✅ User ${employee.name} logging in. Admin status: ${isAdmin}`);
         const welcomeText = `🎉 Hoşgeldin <b>${protectTurkishChars(employee.name)}</b>!\n\n` +
                            `🏢 Departman: ${protectTurkishChars(employee.department)}\n` +
                            `${isAdmin ? '👑 Yetki: Admin\n' : ''}` +
@@ -537,8 +549,12 @@ app.post('/webhook', async (req, res) => {
                         status: "active"
                     };
                     
+                    console.log(`✅ APPROVING USER: ${newEmployee.name} with chatId ${numericTargetChatId} (type: ${typeof numericTargetChatId})`);
+                    
                     employees.push(newEmployee);
                     writeJsonFile(DATA_FILES.employees, employees);
+                    
+                    console.log(`💾 User added to employees. Total count now: ${employees.length}`);
                     
                     // Remove from pending users
                     const updatedPendingUsers = pendingUsers.filter(u => Number(u.chatId) !== numericTargetChatId);
