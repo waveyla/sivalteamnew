@@ -1434,9 +1434,11 @@ class CommandHandler {
                 );
                 
                 // Log spam attempt
-                await activityManager.logActivity(
+                await activityLogger.log(
                     `🛡️ Spam/reklam engellendi: ${user.name} - "${text.substring(0, 50)}..."`,
-                    'spam_blocked'
+                    chatId,
+                    user.name,
+                    'warning'
                 );
                 return;
             }
@@ -1486,10 +1488,12 @@ class CommandHandler {
         }
         
         // Log registration attempt with security details
-        await activityManager.logActivity(
+        await activityLogger.log(
             `🔍 Kayıt denemesi: ${from.first_name} (@${from.username || 'none'}) - ID: ${chatId}` +
             (securityIssues.length > 0 ? ` - Güvenlik: ${securityIssues.join(', ')}` : ''),
-            'registration_attempt'
+            chatId,
+            from.first_name || 'Unknown',
+            'info'
         );
         
         // Check if this is the first user (becomes admin automatically)
