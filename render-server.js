@@ -476,6 +476,38 @@ class TelegramAPI {
         });
     }
     
+    async sendPhoto(chatId, photo, caption = '', options = {}) {
+        return new Promise((resolve, reject) => {
+            this.messageQueue.push({
+                method: 'sendPhoto',
+                chatId,
+                photo,
+                caption: turkishHandler.protect(caption),
+                options,
+                resolve,
+                reject
+            });
+            
+            this.processQueue();
+        });
+    }
+    
+    async sendVoice(chatId, voice, caption = '', options = {}) {
+        return new Promise((resolve, reject) => {
+            this.messageQueue.push({
+                method: 'sendVoice',
+                chatId,
+                voice,
+                caption: turkishHandler.protect(caption),
+                options,
+                resolve,
+                reject
+            });
+            
+            this.processQueue();
+        });
+    }
+
     async answerCallbackQuery(callbackQueryId, text = "İşlem alındı...") {
         return new Promise((resolve, reject) => {
             this.messageQueue.push({
@@ -530,7 +562,7 @@ class TelegramAPI {
     }
     
     async executeTask(task) {
-        const { method, chatId, text, options, callbackQueryId, messageId } = task;
+        const { method, chatId, text, options, callbackQueryId, messageId, photo, voice, caption } = task;
         
         let payload = {};
         let endpoint = method;
@@ -553,6 +585,38 @@ class TelegramAPI {
                         one_time_keyboard: options.one_time_keyboard || false
                     };
                 }
+                
+                // Add inline keyboard if provided
+                if (options.inline_keyboard) {
+                    payload.reply_markup = {
+                        inline_keyboard: options.inline_keyboard
+                    };
+                }
+                break;
+                
+            case 'sendPhoto':
+                payload = {
+                    chat_id: chatId,
+                    photo: photo,
+                    caption: caption,
+                    parse_mode: 'HTML'
+                };
+                
+                // Add inline keyboard if provided
+                if (options.inline_keyboard) {
+                    payload.reply_markup = {
+                        inline_keyboard: options.inline_keyboard
+                    };
+                }
+                break;
+                
+            case 'sendVoice':
+                payload = {
+                    chat_id: chatId,
+                    voice: voice,
+                    caption: caption,
+                    parse_mode: 'HTML'
+                };
                 
                 // Add inline keyboard if provided
                 if (options.inline_keyboard) {
@@ -1397,6 +1461,215 @@ class CommandHandler {
         return false;
     }
     
+    async handleMediaMessage(chatId, message, from) {
+        try {
+            // Rate limiting check
+            if (!rateLimiter.isAllowed(chatId)) {
+                await telegramAPI.sendMessage(chatId, 
+                    "⚠️ <b>Çok fazla istek!</b>\n\nLütfen biraz bekleyip tekrar deneyin."
+                );
+                return;
+            }
+
+            // 🔒 STRICT ACCESS CONTROL - Only registered users allowed
+            const user = await userManager.findUser(chatId);
+            const isAdmin = await userManager.isAdmin(chatId);
+
+            // Block unauthorized users immediately
+            if (!user) {
+                await telegramAPI.sendMessage(chatId,
+                    "🔒 <b>Erişim Reddedildi</b>\n\n" +
+                    "❌ Bu bot sadece kayıtlı SivalTeam çalışanları içindir.\n\n" +
+                    "🚪 Kayıt olmak için: /start"
+                );
+                return;
+            }
+
+            // Update user activity
+            await userManager.updateUserActivity(chatId);
+
+            const { photo, voice, document, caption } = message;
+            let mediaType = '';
+            let fileId = '';
+
+            if (photo && photo.length > 0) {
+                mediaType = 'photo';
+                fileId = photo[photo.length - 1].file_id; // Get highest resolution
+            } else if (voice) {
+                mediaType = 'voice';
+                fileId = voice.file_id;
+            } else if (document) {
+                mediaType = 'document';
+                fileId = document.file_id;
+            }
+
+            // Check if user is in product reporting workflow
+            const userState = userManager.getUserState(chatId);
+            if (userState.action === 'entering_product_name') {
+                await this.handleProductMediaInput(chatId, message, user, userState);
+                return;
+            }
+
+            // For admins, allow media sharing anytime
+            if (isAdmin) {
+                await this.handleAdminMediaShare(chatId, message, user, mediaType);
+                return;
+            }
+
+            // For regular users, suggest product reporting
+            await telegramAPI.sendMessage(chatId,
+                `📷 <b>Medya Alındı!</b>\n\n` +
+                `${mediaType === 'photo' ? '📸 Fotoğraf' : mediaType === 'voice' ? '🎤 Ses kaydı' : '📄 Dosya'} başarıyla alındı.\n\n` +
+                `💡 <b>İpucu:</b> Eksik ürün bildirimi yaparken fotoğraf ve ses kaydı gönderebilirsin!\n\n` +
+                `📦 Eksik ürün bildirmek için "📦 Eksik Ürün Bildir" butonunu kullan.`,
+                {
+                    keyboard: this.getKeyboard('main', isAdmin),
+                    resize_keyboard: true
+                }
+            );
+
+        } catch (error) {
+            console.error(`❌ Media handling error for ${chatId}:`, error);
+            await telegramAPI.sendMessage(chatId, "❌ Medya işlenirken hata oluştu.");
+        }
+    }
+
+    async handleProductMediaInput(chatId, message, user, userState) {
+        const { photo, voice, document, caption } = message;
+        let productName = caption || 'Ürün adı belirtilmedi';
+
+        // Validate product name if provided in caption
+        if (caption && caption.length < 2) {
+            await telegramAPI.sendMessage(chatId,
+                "❌ Ürün adı çok kısa! Caption olarak en az 2 karakter yazın veya fotoğrafın altına ürün adını ekleyin."
+            );
+            return;
+        }
+
+        let mediaType = '';
+        let fileId = '';
+
+        if (photo && photo.length > 0) {
+            mediaType = 'photo';
+            fileId = photo[photo.length - 1].file_id;
+        } else if (voice) {
+            mediaType = 'voice'; 
+            fileId = voice.file_id;
+            productName = caption || 'Ses kaydında belirtilen ürün';
+        } else if (document) {
+            mediaType = 'document';
+            fileId = document.file_id;
+        }
+
+        // Create missing product report with media
+        const productData = {
+            product: productName,
+            category: userState.selectedCategory,
+            reportedBy: user.name,
+            reportedByChatId: chatId,
+            mediaType: mediaType,
+            mediaFileId: fileId,
+            hasMedia: true
+        };
+
+        try {
+            const newProduct = await productManager.reportMissingProduct(productData);
+            
+            // Clear user state
+            userManager.clearUserState(chatId);
+
+            await telegramAPI.sendMessage(chatId,
+                `✅ <b>Eksik Ürün Kaydedildi!</b>\n\n` +
+                `📦 <b>Ürün:</b> ${newProduct.product}\n` +
+                `🏷️ <b>Kategori:</b> ${newProduct.category}\n` +
+                `${mediaType === 'photo' ? '📸' : mediaType === 'voice' ? '🎤' : '📄'} <b>Medya:</b> ${mediaType === 'photo' ? 'Fotoğraf' : mediaType === 'voice' ? 'Ses kaydı' : 'Dosya'} eklendi\n` +
+                `📅 <b>Tarih:</b> ${new Date().toLocaleString('tr-TR')}\n\n` +
+                `🔔 Ürün bildirimi adminlere iletildi.\n` +
+                `📊 Bu ürün eksik ürünler listesine eklendi.`,
+                {
+                    keyboard: this.getKeyboard('main', await userManager.isAdmin(chatId)),
+                    resize_keyboard: true
+                }
+            );
+
+            // Notify admins with media
+            const adminSettings = await dataManager.readFile(DATA_FILES.adminSettings);
+            for (const adminChatId of adminSettings.adminUsers) {
+                if (Number(adminChatId) !== Number(chatId)) {
+                    // First send the media
+                    if (mediaType === 'photo') {
+                        await telegramAPI.sendPhoto(adminChatId, fileId,
+                            `📦 <b>Yeni Eksik Ürün Bildirimi</b>\n\n` +
+                            `📸 <b>Fotoğraflı Ürün Bildirimi</b>\n` +
+                            `📦 <b>Ürün:</b> ${newProduct.product}\n` +
+                            `🏷️ <b>Kategori:</b> ${newProduct.category}\n` +
+                            `👤 <b>Bildiren:</b> ${newProduct.reportedBy}\n` +
+                            `📅 <b>Tarih:</b> ${new Date().toLocaleString('tr-TR')}`,
+                            {
+                                inline_keyboard: [[
+                                    { text: "✅ Tamamlandı", callback_data: `complete_product_${newProduct.id}` },
+                                    { text: "🗑️ Sil", callback_data: `delete_product_${newProduct.id}` }
+                                ]]
+                            }
+                        );
+                    } else if (mediaType === 'voice') {
+                        await telegramAPI.sendVoice(adminChatId, fileId,
+                            `🎤 <b>Sesli Ürün Bildirimi</b>\n\n` +
+                            `📦 <b>Ürün:</b> ${newProduct.product}\n` +
+                            `🏷️ <b>Kategori:</b> ${newProduct.category}\n` +
+                            `👤 <b>Bildiren:</b> ${newProduct.reportedBy}\n` +
+                            `📅 <b>Tarih:</b> ${new Date().toLocaleString('tr-TR')}`,
+                            {
+                                inline_keyboard: [[
+                                    { text: "✅ Tamamlandı", callback_data: `complete_product_${newProduct.id}` },
+                                    { text: "🗑️ Sil", callback_data: `delete_product_${newProduct.id}` }
+                                ]]
+                            }
+                        );
+                    }
+                }
+            }
+
+        } catch (error) {
+            console.error('❌ Product media report error:', error);
+            await telegramAPI.sendMessage(chatId, "❌ Ürün bildirimi sırasında hata oluştu.");
+            userManager.clearUserState(chatId);
+        }
+    }
+
+    async handleAdminMediaShare(chatId, message, user, mediaType) {
+        const { photo, voice, document, caption } = message;
+        let fileId = '';
+
+        if (photo && photo.length > 0) {
+            fileId = photo[photo.length - 1].file_id;
+        } else if (voice) {
+            fileId = voice.file_id;
+        } else if (document) {
+            fileId = document.file_id;
+        }
+
+        // Log admin media activity
+        await activityLogger.log(
+            `📷 Admin medya paylaşımı: ${mediaType} - ${user.name}${caption ? ` (${caption.substring(0, 50)}...)` : ''}`,
+            chatId,
+            user.name,
+            'info'
+        );
+
+        await telegramAPI.sendMessage(chatId,
+            `✅ <b>Medya Alındı!</b>\n\n` +
+            `${mediaType === 'photo' ? '📸 Fotoğraf' : mediaType === 'voice' ? '🎤 Ses kaydı' : '📄 Dosya'} başarıyla kaydedildi.\n\n` +
+            `👑 <b>Admin özelliği:</b> Medyanız sistem loglarına kaydedildi.\n` +
+            `📝 Açıklama: ${caption || 'Açıklama yok'}\n\n` +
+            `💡 Çalışanlara duyuru yapmak için "📢 Duyuru Gönder" özelliğini kullanabilirsin.`,
+            {
+                keyboard: this.getKeyboard('main', true),
+                resize_keyboard: true
+            }
+        );
+    }
+
     async handleMessage(chatId, text, from) {
         try {
             // Rate limiting check
@@ -1744,7 +2017,8 @@ class CommandHandler {
         await telegramAPI.sendMessage(chatId,
             `📦 <b>Eksik Ürün Bildirimi</b>\n\n` +
             `Hangi kategoride eksik ürün bildirmek istiyorsun?\n\n` +
-            `⬇️ Aşağıdaki kategorilerden birini seç:`,
+            `⬇️ Aşağıdaki kategorilerden birini seç:\n\n` +
+            `💡 <b>Sonraki adımda:</b> Ürün adını yazabilir veya fotoğraf/ses kaydı gönderebilirsin!`,
             {
                 keyboard: categoryKeyboard,
                 resize_keyboard: true
@@ -1845,8 +2119,12 @@ class CommandHandler {
                 await telegramAPI.sendMessage(chatId,
                     `📦 <b>Eksik Ürün Bildirimi</b>\n\n` +
                     `✅ Kategori: <b>${text}</b>\n\n` +
-                    `📝 Şimdi eksik olan ürünün adını yazın:\n\n` +
-                    `💡 <i>Örnek: Beyaz Polo Tişört</i>`,
+                    `📝 Şimdi eksik olan ürünü tanımlayın:\n\n` +
+                    `✍️ <b>Seçenekleriniz:</b>\n` +
+                    `• Ürün adını yazın (Örnek: Beyaz Polo Tişört)\n` +
+                    `• 📸 Fotoğraf gönderin (ürün adını açıklama olarak yazın)\n` +
+                    `• 🎤 Ses kaydı gönderin (ürünü sesle tanımlayın)\n\n` +
+                    `💡 <b>İpucu:</b> Medya gönderirken ürün adını açıklama olarak ekleyebilirsiniz.`,
                     {
                         keyboard: [[{ text: "🔙 Ana Menü" }]],
                         resize_keyboard: true
@@ -3823,11 +4101,17 @@ app.post('/webhook', async (req, res) => {
             // Handle callback query (inline button clicks)
             await callbackQueryHandler.handleCallback(callback_query);
         } else if (message) {
-            // Handle regular text messages
-            const { chat, from, text } = message;
+            // Handle different message types
+            const { chat, from, text, photo, voice, document } = message;
             
-            if (text && from) {
-                await commandHandler.handleMessage(chat.id, text, from);
+            if (from) {
+                if (text) {
+                    // Handle text messages
+                    await commandHandler.handleMessage(chat.id, text, from);
+                } else if (photo || voice || document) {
+                    // Handle media messages (photo, voice, document)
+                    await commandHandler.handleMediaMessage(chat.id, message, from);
+                }
             }
         }
         
