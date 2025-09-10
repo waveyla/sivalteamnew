@@ -783,7 +783,20 @@ app.post('/webhook', async (req, res) => {
                     inline_keyboard: inlineKeyboard
                 });
             }
-            else if (text.startsWith('/task ')) {
+            
+            // All callback_query cases handled above
+            return;
+        }
+        
+        // Handle regular messages
+        if (message) {
+            const { chat, from, text } = message;
+            const chatId = chat.id;
+            
+            if (!text) return;
+            
+            // Handle /task command
+            if (text.startsWith('/task ')) {
                 const adminSettings = readJsonFile(DATA_FILES.adminSettings);
                 const numericChatId = Number(chatId);
                 
