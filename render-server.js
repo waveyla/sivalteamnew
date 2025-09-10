@@ -1048,7 +1048,8 @@ class TaskManager {
         
         const task = tasks[taskIndex];
         
-        if (Number(task.assignedToChatId) !== Number(completedBy)) {
+        // Toplu görevlerde herkes tamamlayabilir, kişisel görevlerde sadece atanan kişi
+        if (task.type !== 'bulk' && Number(task.assignedToChatId) !== Number(completedBy)) {
             throw new Error('Bu görev size ait değil');
         }
         
