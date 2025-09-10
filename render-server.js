@@ -1255,9 +1255,9 @@ class CommandHandler {
         
         this.keyboards.set('admin_panel', [
             [{ text: "👥 Çalışanları Listele" }, { text: "📦 Eksik Ürünler" }],
-            [{ text: "⏳ Bekleyen Onaylar" }, { text: "📊 Detaylı Raporlar" }],
-            [{ text: "🗑️ Listeyi Temizle" }, { text: "📢 Duyuru Gönder" }],
-            [{ text: "🔙 Ana Menü" }]
+            [{ text: "📋 Görev Yönetimi" }, { text: "⏳ Bekleyen Onaylar" }],
+            [{ text: "📊 Detaylı Raporlar" }, { text: "📢 Duyuru Gönder" }],
+            [{ text: "🗑️ Listeyi Temizle" }, { text: "🔙 Ana Menü" }]
         ]);
         
         this.keyboards.set('back_menu', [
@@ -1480,6 +1480,11 @@ class CommandHandler {
                 await this.handleProductList(chatId, text, from, user, isAdmin);
                 break;
                 
+            case "📋 Görev Yönetimi":
+                if (!isAdmin) return;
+                await this.handleTaskManagement(chatId, user);
+                break;
+                
             case "⏳ Bekleyen Onaylar":
                 if (!isAdmin) return;
                 await this.handlePendingUsers(chatId, text, from, user, isAdmin);
@@ -1502,7 +1507,20 @@ class CommandHandler {
                 
             default:
                 // Check if this is part of a workflow (category selection, product input, etc.)
-                await this.handleWorkflowInput(chatId, text, user);
+                const userState = userManager.getUserState(chatId);
+                if (userState.action) {
+                    await this.handleWorkflowInput(chatId, text, user);
+                } else {
+                    // Handle unknown button
+                    await telegramAPI.sendMessage(chatId, 
+                        `❓ <b>Bilinmeyen işlem:</b> "${text}"\n\n` +
+                        `Ana menüye dönmek için "🔙 Ana Menü" butonunu kullanın.`,
+                        {
+                            keyboard: this.getKeyboard('main', isAdmin),
+                            resize_keyboard: true
+                        }
+                    );
+                }
                 break;
         }
     }
@@ -1814,16 +1832,94 @@ class CommandHandler {
         );
     }
     
-    // Placeholder methods for remaining handlers
+    // Task Command Handler - Individual Task Assignment
     async handleTaskCommand(chatId, text, from, user, isAdmin) {
         if (!isAdmin) {
             await telegramAPI.sendMessage(chatId, "❌ Bu komut sadece adminler tarafından kullanılabilir.");
             return;
         }
         
-        await telegramAPI.sendMessage(chatId, 
-            "🚧 Bu özellik geliştiriliyor...\n\n" +
-            "Şimdilik butonları kullanabilirsin.");
+        // Parse: /task @username veya chatId Görev başlığı | Açıklama
+        const taskText = text.replace('/task ', '').trim();
+        const parts = taskText.split(' ');
+        
+        if (parts.length < 2 || !taskText.includes('|')) {
+            await telegramAPI.sendMessage(chatId, 
+                `❌ <b>Kullanım:</b>\n` +
+                `/task @username Görev başlığı | Açıklama\n` +
+                `veya\n` +
+                `/task <chatId> Görev başlığı | Açıklama\n\n` +
+                `💡 <b>Örnek:</b>\n` +
+                `/task @john Stok Sayımı | Mağaza stoklarını kontrol et`
+            );
+            return;
+        }
+        
+        let targetIdentifier = parts[0];
+        let taskContent = parts.slice(1).join(' ');
+        let [title, description] = taskContent.split('|').map(s => s.trim());
+        
+        if (!title || !description) {
+            await telegramAPI.sendMessage(chatId, "❌ Görev başlığı ve açıklaması gereklidir.");
+            return;
+        }
+        
+        const employees = await dataManager.readFile(DATA_FILES.employees);
+        let targetEmployee = null;
+        
+        // Find employee by username or chatId
+        if (targetIdentifier.startsWith('@')) {
+            const username = targetIdentifier.replace('@', '');
+            targetEmployee = employees.find(e => e.username === username);
+        } else if (!isNaN(Number(targetIdentifier))) {
+            const targetChatId = Number(targetIdentifier);
+            targetEmployee = employees.find(e => Number(e.chatId) === targetChatId);
+        }
+        
+        if (!targetEmployee) {
+            await telegramAPI.sendMessage(chatId, "❌ Çalışan bulunamadı. @username veya chat ID kontrolünü yapın.");
+            return;
+        }
+        
+        try {
+            const newTask = await taskManager.createTask({
+                title,
+                description,
+                assignedTo: targetEmployee.chatId,
+                assignedToName: targetEmployee.name,
+                assignedBy: chatId,
+                assignedByName: user.name,
+                type: 'individual'
+            });
+            
+            // Notify admin
+            await telegramAPI.sendMessage(chatId, 
+                `✅ <b>Görev Atandı</b>\n\n` +
+                `📋 <b>${title}</b>\n` +
+                `📄 ${description}\n\n` +
+                `👤 Atanan: ${targetEmployee.name}\n` +
+                `💬 Chat ID: ${targetEmployee.chatId}\n` +
+                `📅 Tarih: ${new Date().toLocaleDateString('tr-TR')}`
+            );
+            
+            // Notify employee
+            await telegramAPI.sendMessage(targetEmployee.chatId,
+                `📋 <b>Yeni Görev Atandı!</b>\n\n` +
+                `🎯 <b>${title}</b>\n` +
+                `📝 ${description}\n\n` +
+                `👤 Atayan: ${user.name}\n` +
+                `📅 Tarih: ${new Date().toLocaleDateString('tr-TR')}\n\n` +
+                `📋 Görevlerinizi görmek için: "📋 Görevlerim" butonunu kullanın.`,
+                {
+                    keyboard: commandHandler.getKeyboard('main', false),
+                    resize_keyboard: true
+                }
+            );
+            
+        } catch (error) {
+            console.error('❌ Task assignment error:', error);
+            await telegramAPI.sendMessage(chatId, "❌ Görev atama sırasında hata oluştu.");
+        }
     }
     
     async handleTaskAllCommand(chatId, text, from, user, isAdmin) {
@@ -1832,9 +1928,77 @@ class CommandHandler {
             return;
         }
         
-        await telegramAPI.sendMessage(chatId, 
-            "🚧 Bu özellik geliştiriliyor...\n\n" +
-            "Şimdilik butonları kullanabilirsin.");
+        // Parse: /taskall Görev başlığı | Açıklama
+        const taskText = text.replace('/taskall ', '').trim();
+        
+        if (!taskText.includes('|')) {
+            await telegramAPI.sendMessage(chatId, 
+                `❌ <b>Kullanım:</b>\n` +
+                `/taskall Görev başlığı | Açıklama\n\n` +
+                `💡 <b>Örnek:</b>\n` +
+                `/taskall Haftalık Toplantı | Bu hafta Pazartesi 14:00'da toplantı var`
+            );
+            return;
+        }
+        
+        let [title, description] = taskText.split('|').map(s => s.trim());
+        
+        if (!title || !description) {
+            await telegramAPI.sendMessage(chatId, "❌ Görev başlığı ve açıklaması gereklidir.");
+            return;
+        }
+        
+        try {
+            const employees = await dataManager.readFile(DATA_FILES.employees);
+            const activeEmployees = employees.filter(emp => emp.status === 'active' && Number(emp.chatId) !== Number(chatId));
+            
+            if (activeEmployees.length === 0) {
+                await telegramAPI.sendMessage(chatId, "❌ Görev atanacak aktif çalışan bulunamadı.");
+                return;
+            }
+            
+            const createdTasks = await taskManager.createBulkTasks({
+                title,
+                description,
+                assignedBy: chatId,
+                assignedByName: user.name,
+                type: 'bulk'
+            }, activeEmployees);
+            
+            // Notify admin
+            await telegramAPI.sendMessage(chatId,
+                `✅ <b>Toplu Görev Atandı</b>\n\n` +
+                `📋 <b>${title}</b>\n` +
+                `📄 ${description}\n\n` +
+                `👥 Atanan Çalışan Sayısı: ${createdTasks.length}\n` +
+                `📅 Tarih: ${new Date().toLocaleDateString('tr-TR')}\n\n` +
+                `📊 Tüm aktif çalışanlara başarıyla gönderildi.`
+            );
+            
+            // Notify all employees
+            for (const employee of activeEmployees) {
+                await telegramAPI.sendMessage(employee.chatId,
+                    `📢 <b>Toplu Görev Atandı!</b>\n\n` +
+                    `🎯 <b>${title}</b>\n` +
+                    `📝 ${description}\n\n` +
+                    `👤 Atayan: ${user.name}\n` +
+                    `📅 Tarih: ${new Date().toLocaleDateString('tr-TR')}\n\n` +
+                    `📋 Görevlerinizi görmek için: "📋 Görevlerim" butonunu kullanın.`,
+                    {
+                        keyboard: [{
+                            text: "📋 Görevlerim"
+                        }, {
+                            text: "📦 Eksik Ürün Bildir"
+                        }],
+                        resize_keyboard: true
+                    }
+                );
+            }
+            
+        } catch (error) {
+            console.error('❌ Bulk task assignment error:', error);
+            await telegramAPI.sendMessage(chatId, "❌ Toplu görev atama sırasında hata oluştu.");
+        }
     }
     
     async handleAddUserCommand(chatId, text, from, user, isAdmin) {
@@ -1899,32 +2063,80 @@ class CommandHandler {
             );
             return;
         }
-        
-        let productText = `📦 <b>Eksik Ürün Listesi (${products.length})</b>\n\n`;
-        
-        products.slice(0, 20).forEach((product, index) => {
-            const daysSince = Math.floor((Date.now() - new Date(product.reportedAt)) / (1000 * 60 * 60 * 24));
-            productText += `${index + 1}. 📦 <b>${product.product}</b>\n`;
-            productText += `   🏷️ ${product.category}\n`;
-            productText += `   👤 ${product.reportedBy}\n`;
-            productText += `   📅 ${daysSince} gün önce\n\n`;
-        });
-        
-        if (products.length > 20) {
-            productText += `... ve ${products.length - 20} ürün daha`;
-        }
-        
-        const inlineKeyboard = [];
+
+        // Admin için - her ürünü ayrı ayrı butonlarla gönder
         if (isAdmin) {
-            inlineKeyboard.push([
-                { text: "🗑️ Tümünü Temizle", callback_data: "clear_all_products" },
-                { text: "🔄 Listeyi Yenile", callback_data: "refresh_products" }
-            ]);
+            await telegramAPI.sendMessage(chatId,
+                `📦 <b>Eksik Ürün Listesi (${products.length})</b>\n\n` +
+                `Aşağıdaki ürünleri tek tek tamamlayabilir veya silebilirsiniz:`,
+                {
+                    keyboard: this.getKeyboard('admin_panel'),
+                    resize_keyboard: true
+                }
+            );
+
+            // Her ürün için ayrı mesaj ve butonlar
+            for (let i = 0; i < Math.min(products.length, 10); i++) {
+                const product = products[i];
+                const daysSince = Math.floor((Date.now() - new Date(product.reportedAt)) / (1000 * 60 * 60 * 24));
+                
+                await telegramAPI.sendMessage(chatId,
+                    `${i + 1}. 📦 <b>${product.product}</b>\n` +
+                    `🏷️ Kategori: ${product.category}\n` +
+                    `👤 Bildiren: ${product.reportedBy}\n` +
+                    `📅 ${daysSince} gün önce bildirildi`,
+                    {
+                        inline_keyboard: [[
+                            { text: "✅ Tamamlandı", callback_data: `complete_product_${product.id}` },
+                            { text: "🗑️ Sil", callback_data: `delete_product_${product.id}` }
+                        ]]
+                    }
+                );
+            }
+
+            if (products.length > 10) {
+                await telegramAPI.sendMessage(chatId, 
+                    `... ve ${products.length - 10} ürün daha var. \n\n` +
+                    `Tüm listeyi yönetmek için aşağıdaki butonları kullanın:`,
+                    {
+                        inline_keyboard: [[
+                            { text: "🗑️ Tümünü Temizle", callback_data: "clear_all_products" },
+                            { text: "🔄 Listeyi Yenile", callback_data: "refresh_products" }
+                        ]]
+                    }
+                );
+            } else {
+                await telegramAPI.sendMessage(chatId, 
+                    `📋 Tüm ürünleri gördünüz. Liste yönetimi:`,
+                    {
+                        inline_keyboard: [[
+                            { text: "🗑️ Tümünü Temizle", callback_data: "clear_all_products" },
+                            { text: "🔄 Listeyi Yenile", callback_data: "refresh_products" }
+                        ]]
+                    }
+                );
+            }
+        } else {
+            // Çalışan için - sadece liste görüntüleme
+            let productText = `📦 <b>Eksik Ürün Listesi (${products.length})</b>\n\n`;
+            
+            products.slice(0, 20).forEach((product, index) => {
+                const daysSince = Math.floor((Date.now() - new Date(product.reportedAt)) / (1000 * 60 * 60 * 24));
+                productText += `${index + 1}. 📦 <b>${product.product}</b>\n`;
+                productText += `   🏷️ ${product.category}\n`;
+                productText += `   👤 ${product.reportedBy}\n`;
+                productText += `   📅 ${daysSince} gün önce\n\n`;
+            });
+            
+            if (products.length > 20) {
+                productText += `... ve ${products.length - 20} ürün daha`;
+            }
+            
+            await telegramAPI.sendMessage(chatId, productText, {
+                keyboard: this.getKeyboard('main', isAdmin),
+                resize_keyboard: true
+            });
         }
-        
-        await telegramAPI.sendMessage(chatId, productText, {
-            inline_keyboard: inlineKeyboard
-        });
     }
     
     async handlePendingUsers(chatId, text, from, user, isAdmin) {
@@ -1984,7 +2196,92 @@ class CommandHandler {
     }
     
     async handleBroadcast(chatId, text, from, user, isAdmin) {
-        await telegramAPI.sendMessage(chatId, "🚧 Toplu duyuru özelliği geliştiriliyor...");
+        if (!isAdmin) {
+            await telegramAPI.sendMessage(chatId, "❌ Bu komut sadece adminler tarafından kullanılabilir.");
+            return;
+        }
+        
+        // Parse: /broadcast mesaj içeriği veya /duyuru mesaj içeriği
+        const broadcastText = text.replace(/\/(broadcast|duyuru) /, '').trim();
+        
+        if (!broadcastText || broadcastText.length < 5) {
+            await telegramAPI.sendMessage(chatId, 
+                `❌ <b>Kullanım:</b>\n` +
+                `/broadcast mesaj içeriği\n` +
+                `veya\n` +
+                `/duyuru mesaj içeriği\n\n` +
+                `💡 <b>Örnek:</b>\n` +
+                `/duyuru Yarın saat 14:00'da genel toplantı var. Lütfen katılım sağlayın.`
+            );
+            return;
+        }
+        
+        try {
+            const employees = await dataManager.readFile(DATA_FILES.employees);
+            const activeEmployees = employees.filter(emp => emp.status === 'active' && Number(emp.chatId) !== Number(chatId));
+            
+            if (activeEmployees.length === 0) {
+                await telegramAPI.sendMessage(chatId, "❌ Duyuru gönderilecek aktif çalışan bulunamadı.");
+                return;
+            }
+            
+            // Notify admin first
+            await telegramAPI.sendMessage(chatId,
+                `📢 <b>Toplu Duyuru Gönderiliyor...</b>\n\n` +
+                `👥 Hedef: ${activeEmployees.length} aktif çalışan\n` +
+                `📝 Mesaj: "${broadcastText}"\n\n` +
+                `⏳ Gönderim başlatılıyor...`
+            );
+            
+            let successCount = 0;
+            let failCount = 0;
+            
+            // Send to all employees
+            for (const employee of activeEmployees) {
+                try {
+                    await telegramAPI.sendMessage(employee.chatId,
+                        `📢 <b>YÖNETİCİDEN DUYURU</b>\n\n` +
+                        `${broadcastText}\n\n` +
+                        `👤 Gönderen: ${user.name}\n` +
+                        `📅 Tarih: ${new Date().toLocaleString('tr-TR')}`,
+                        {
+                            keyboard: commandHandler.getKeyboard('main', false),
+                            resize_keyboard: true
+                        }
+                    );
+                    successCount++;
+                    
+                    // Small delay between messages
+                    await new Promise(resolve => setTimeout(resolve, 100));
+                    
+                } catch (error) {
+                    console.error(`❌ Failed to send broadcast to ${employee.name}:`, error);
+                    failCount++;
+                }
+            }
+            
+            // Final report to admin
+            await telegramAPI.sendMessage(chatId,
+                `✅ <b>Toplu Duyuru Tamamlandı!</b>\n\n` +
+                `📊 <b>Sonuçlar:</b>\n` +
+                `✅ Başarılı: ${successCount}\n` +
+                `❌ Başarısız: ${failCount}\n` +
+                `👥 Toplam: ${activeEmployees.length}\n\n` +
+                `📅 Gönderim: ${new Date().toLocaleString('tr-TR')}`
+            );
+            
+            // Log the broadcast
+            await activityLogger.log(
+                `Toplu duyuru gönderildi: "${broadcastText.substring(0, 50)}${broadcastText.length > 50 ? '...' : ''}" → ${successCount} kişi`,
+                chatId,
+                user.name,
+                'info'
+            );
+            
+        } catch (error) {
+            console.error('❌ Broadcast error:', error);
+            await telegramAPI.sendMessage(chatId, "❌ Toplu duyuru gönderim sırasında hata oluştu.");
+        }
     }
     
     async handleBackup(chatId, text, from, user, isAdmin) {
@@ -2016,11 +2313,170 @@ class CommandHandler {
     }
     
     async handleBroadcastStart(chatId, user) {
-        await telegramAPI.sendMessage(chatId, "🚧 Duyuru gönderme özelliği geliştiriliyor...");
+        await telegramAPI.sendMessage(chatId,
+            `📢 <b>Toplu Duyuru Gönder</b>\n\n` +
+            `Tüm aktif çalışanlara mesaj göndermek için komutu kullanın:\n\n` +
+            `💡 <b>Kullanım:</b>\n` +
+            `/duyuru mesajınız\n\n` +
+            `📝 <b>Örnek:</b>\n` +
+            `/duyuru Yarın saat 14:00'da genel toplantı var.\n\n` +
+            `⚠️ Bu mesaj tüm aktif çalışanlara gönderilecektir.`,
+            {
+                keyboard: commandHandler.getKeyboard('admin_panel'),
+                resize_keyboard: true
+            }
+        );
     }
     
+    async handleTaskManagement(chatId, user) {
+        try {
+            const tasks = await dataManager.readFile(DATA_FILES.tasks);
+            const employees = await dataManager.readFile(DATA_FILES.employees);
+            
+            const allTasks = tasks.length;
+            const pendingTasks = tasks.filter(task => task.status === 'pending').length;
+            const completedTasks = tasks.filter(task => task.status === 'completed').length;
+            const activeTasks = tasks.filter(task => task.status === 'pending');
+            
+            let taskText = `📋 <b>Görev Yönetim Paneli</b>\n\n`;
+            taskText += `📊 <b>Özet İstatistikler:</b>\n`;
+            taskText += `├ 📋 Toplam: ${allTasks} görev\n`;
+            taskText += `├ ⏳ Bekleyen: ${pendingTasks} görev\n`;
+            taskText += `└ ✅ Tamamlanan: ${completedTasks} görev\n\n`;
+            
+            if (activeTasks.length > 0) {
+                taskText += `⏳ <b>Aktif Görevler:</b>\n\n`;
+                activeTasks.slice(0, 5).forEach((task, index) => {
+                    const daysSince = Math.floor((Date.now() - new Date(task.assignedAt)) / (1000 * 60 * 60 * 24));
+                    taskText += `${index + 1}. 📋 <b>${task.title}</b>\n`;
+                    taskText += `   👤 ${task.assignedToName}\n`;
+                    taskText += `   📅 ${daysSince} gün önce atandı\n\n`;
+                });
+                
+                if (activeTasks.length > 5) {
+                    taskText += `... ve ${activeTasks.length - 5} görev daha\n\n`;
+                }
+            } else {
+                taskText += `✅ Şu anda bekleyen görev bulunmuyor.\n\n`;
+            }
+            
+            taskText += `💡 <b>Yeni Görev Atamak İçin:</b>\n`;
+            taskText += `• Tek kişiye: /task @kullanıcı Görev başlığı | Açıklama\n`;
+            taskText += `• Toplu: /taskall Görev başlığı | Açıklama\n\n`;
+            taskText += `📋 <b>Örnek:</b> /task @ahmet Rapor hazırla | Haftalık satış raporu`;
+            
+            await telegramAPI.sendMessage(chatId, taskText, {
+                keyboard: this.getKeyboard('admin_panel'),
+                resize_keyboard: true
+            });
+            
+        } catch (error) {
+            console.error('❌ Task management error:', error);
+            await telegramAPI.sendMessage(chatId, "❌ Görev yönetimi yüklenirken hata oluştu.");
+        }
+    }
+
     async handleDetailedReports(chatId, user) {
-        await telegramAPI.sendMessage(chatId, "🚧 Detaylı raporlar özelliği geliştiriliyor...");
+        try {
+            const employees = await dataManager.readFile(DATA_FILES.employees);
+            const tasks = await dataManager.readFile(DATA_FILES.tasks);
+            const products = await dataManager.readFile(DATA_FILES.missingProducts);
+            const activities = await dataManager.readFile(DATA_FILES.activityLog);
+            const systemStats = await dataManager.readFile(DATA_FILES.systemStats);
+            
+            // Calculate advanced statistics
+            const totalTasks = tasks.length;
+            const completedTasks = tasks.filter(t => t.status === 'completed').length;
+            const pendingTasks = tasks.filter(t => t.status === 'pending').length;
+            const completionRate = totalTasks > 0 ? Math.round((completedTasks / totalTasks) * 100) : 0;
+            
+            // User performance analysis
+            const userPerformance = employees.map(emp => {
+                const userTasks = tasks.filter(t => Number(t.assignedTo) === Number(emp.chatId));
+                const userCompleted = userTasks.filter(t => t.status === 'completed').length;
+                const userRate = userTasks.length > 0 ? Math.round((userCompleted / userTasks.length) * 100) : 0;
+                
+                return {
+                    name: emp.name,
+                    totalTasks: userTasks.length,
+                    completed: userCompleted,
+                    rate: userRate
+                };
+            }).sort((a, b) => b.rate - a.rate);
+            
+            // Recent activity analysis
+            const recentActivities = activities.slice(-50);
+            const activityTypes = {};
+            recentActivities.forEach(act => {
+                const type = act.level || 'info';
+                activityTypes[type] = (activityTypes[type] || 0) + 1;
+            });
+            
+            // Product categories analysis
+            const productCategories = {};
+            products.forEach(prod => {
+                productCategories[prod.category] = (productCategories[prod.category] || 0) + 1;
+            });
+            
+            let reportText = `📊 <b>Detaylı Sistem Raporları</b>\n\n`;
+            
+            // System Overview
+            reportText += `🏢 <b>Sistem Genel Durumu:</b>\n`;
+            reportText += `👥 Toplam Çalışan: ${employees.length}\n`;
+            reportText += `📋 Toplam Görev: ${totalTasks}\n`;
+            reportText += `✅ Tamamlanan: ${completedTasks} (%${completionRate})\n`;
+            reportText += `⏳ Bekleyen: ${pendingTasks}\n`;
+            reportText += `📦 Eksik Ürün: ${products.length}\n`;
+            reportText += `📝 Toplam Aktivite: ${activities.length}\n\n`;
+            
+            // Top Performers
+            reportText += `🏆 <b>En Başarılı Çalışanlar:</b>\n`;
+            userPerformance.slice(0, 5).forEach((user, index) => {
+                const medal = index === 0 ? '🥇' : index === 1 ? '🥈' : index === 2 ? '🥉' : '🏅';
+                reportText += `${medal} ${user.name}: ${user.completed}/${user.totalTasks} (%${user.rate})\n`;
+            });
+            reportText += `\n`;
+            
+            // Product Categories
+            if (Object.keys(productCategories).length > 0) {
+                reportText += `📦 <b>Eksik Ürün Kategorileri:</b>\n`;
+                Object.entries(productCategories)
+                    .sort(([,a], [,b]) => b - a)
+                    .slice(0, 5)
+                    .forEach(([category, count]) => {
+                        reportText += `• ${category}: ${count} ürün\n`;
+                    });
+                reportText += `\n`;
+            }
+            
+            // Activity Summary
+            reportText += `📈 <b>Aktivite Analizi (Son 50):</b>\n`;
+            Object.entries(activityTypes).forEach(([type, count]) => {
+                const emoji = type === 'success' ? '✅' : type === 'error' ? '❌' : type === 'warning' ? '⚠️' : 'ℹ️';
+                reportText += `${emoji} ${type}: ${count}\n`;
+            });
+            reportText += `\n`;
+            
+            // System Health
+            const uptime = systemStats.uptime || Date.now();
+            const uptimeHours = Math.floor((Date.now() - uptime) / (1000 * 60 * 60));
+            reportText += `🔧 <b>Sistem Sağlık Durumu:</b>\n`;
+            reportText += `⏱️ Uptime: ${uptimeHours} saat\n`;
+            reportText += `💾 Versiyon: ${systemStats.version || CONFIG.VERSION}\n`;
+            reportText += `📅 Son Güncelleme: ${systemStats.lastUpdate ? new Date(systemStats.lastUpdate).toLocaleString('tr-TR') : 'Bilinmiyor'}\n`;
+            reportText += `🔄 Son Yedekleme: ${systemStats.lastBackup ? new Date(systemStats.lastBackup).toLocaleString('tr-TR') : 'Henüz yok'}\n\n`;
+            
+            reportText += `📅 <b>Rapor Tarihi:</b> ${new Date().toLocaleString('tr-TR')}`;
+            
+            await telegramAPI.sendMessage(chatId, reportText, {
+                keyboard: commandHandler.getKeyboard('admin_panel'),
+                resize_keyboard: true
+            });
+            
+        } catch (error) {
+            console.error('❌ Detailed reports error:', error);
+            await telegramAPI.sendMessage(chatId, "❌ Detaylı rapor oluşturma sırasında hata oluştu.");
+        }
     }
 }
 

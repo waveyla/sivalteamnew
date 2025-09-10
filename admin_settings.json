@@ -1,0 +1,8 @@
+{
+  "adminUsers": [],
+  "approvalRequired": false,
+  "maintenanceMode": false,
+  "welcomeMessage": "🎉 Hoşgeldin SivalTeam sistemine!",
+  "maxTasksPerUser": 50,
+  "allowGuestAccess": false
+}
