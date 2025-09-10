@@ -2754,7 +2754,7 @@ class CommandHandler {
                         ],
                         [
                             { text: "📋 Görev Şablonu Seç", callback_data: "task_template" },
-                            { text: "🔄 Aktif Görevleri Yenile", callback_data: "refresh_tasks" }
+                            { text: "📋 Aktif Görevleri Gör", callback_data: "show_active_tasks" }
                         ]
                     ]
                 }
@@ -3108,8 +3108,9 @@ class CallbackQueryHandler {
         this.handlers.set('assign_single_task', this.handleAssignSingleTask.bind(this));
         this.handlers.set('assign_all_task', this.handleAssignAllTask.bind(this));
         this.handlers.set('task_template', this.handleTaskTemplate.bind(this));
-        this.handlers.set('refresh_tasks', this.handleRefreshTasks.bind(this));
+        this.handlers.set('show_active_tasks', this.handleShowActiveTasks.bind(this));
         this.handlers.set('select_employee_', this.handleSelectEmployee.bind(this));
+        this.handlers.set('back_to_task_menu', this.handleBackToTaskMenu.bind(this));
     }
     
     async handleCallback(callbackQuery) {
@@ -3716,13 +3717,63 @@ class CallbackQueryHandler {
         });
     }
     
-    async handleRefreshTasks(data, chatId, from, message, user, isAdmin) {
+    async handleShowActiveTasks(data, chatId, from, message, user, isAdmin) {
         if (!isAdmin) return;
         
-        await telegramAPI.sendMessage(chatId, "🔄 Görev listesi yenileniyor...");
-        
-        // Call task management again to refresh
-        await this.handleTaskManagement(chatId, user);
+        try {
+            const tasks = await dataManager.readFile(DATA_FILES.tasks);
+            const activeTasks = tasks.filter(task => task.status === 'pending');
+            
+            if (activeTasks.length === 0) {
+                await telegramAPI.sendMessage(chatId,
+                    "📋 <b>Aktif Görevler</b>\n\n" +
+                    "✅ Şu anda bekleyen görev bulunmuyor!\n\n" +
+                    "Yeni görev atamak için yukarıdaki butonları kullanın.",
+                    {
+                        keyboard: this.getKeyboard('admin_panel'),
+                        resize_keyboard: true
+                    }
+                );
+                return;
+            }
+            
+            let taskText = `📋 <b>Aktif Görevler (${activeTasks.length})</b>\n\n`;
+            
+            activeTasks.slice(0, 10).forEach((task, index) => {
+                const daysSince = Math.floor((Date.now() - new Date(task.assignedAt)) / (1000 * 60 * 60 * 24));
+                taskText += `${index + 1}. 📋 <b>${task.title}</b>\n`;
+                taskText += `   👤 ${task.assignedToName}\n`;
+                taskText += `   📝 ${task.description.substring(0, 50)}${task.description.length > 50 ? '...' : ''}\n`;
+                taskText += `   📅 ${daysSince} gün önce atandı\n`;
+                taskText += `   👤 Atayan: ${task.assignedByName}\n\n`;
+            });
+            
+            if (activeTasks.length > 10) {
+                taskText += `... ve ${activeTasks.length - 10} görev daha`;
+            }
+            
+            // Create task completion buttons for first 5 tasks
+            const taskButtons = [];
+            activeTasks.slice(0, 5).forEach(task => {
+                taskButtons.push([{
+                    text: `✅ "${task.title.substring(0, 20)}${task.title.length > 20 ? '...' : ''}" Tamamla`,
+                    callback_data: `complete_task_${task.id}`
+                }]);
+            });
+            
+            taskButtons.push([
+                { text: "🔄 Listeyi Yenile", callback_data: "show_active_tasks" },
+                { text: "🔙 Görev Paneli", callback_data: "back_to_task_menu" }
+            ]);
+            
+            await telegramAPI.sendMessage(chatId, taskText, {
+                inline_keyboard: taskButtons
+            });
+            
+        } catch (error) {
+            console.error('❌ Show active tasks error:', error);
+            await telegramAPI.sendMessage(chatId, "❌ Aktif görevler yüklenirken hata oluştu.");
+        }
     }
     
     // Helper function to create employee buttons
@@ -3744,6 +3795,13 @@ class CallbackQueryHandler {
         }
         buttons.push([{ text: "🔙 Geri Dön", callback_data: "back_to_task_menu" }]);
         return buttons;
+    }
+
+    async handleBackToTaskMenu(data, chatId, from, message, user, isAdmin) {
+        if (!isAdmin) return;
+        
+        // Go back to task management panel
+        await this.handleTaskManagement(chatId, user);
     }
 
     async handleUserAction(data, chatId, from, message, user, isAdmin) {
