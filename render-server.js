@@ -67,7 +67,8 @@ const DATA_FILES = {
     pendingUsers: 'pending_users.json',
     backups: 'backups/',
     systemStats: 'system_stats.json',
-    userSessions: 'user_sessions.json'
+    userSessions: 'user_sessions.json',
+    userStates: 'user_states.json'
 };
 
 // 🏗️ Express Application Setup
@@ -323,6 +324,8 @@ class DataManager {
                 };
             case 'userSessions':
                 return [];
+            case 'userStates':
+                return {};
             default:
                 return [];
         }
@@ -879,16 +882,37 @@ class UserManager {
         return rejectedUser;
     }
     
-    getUserState(chatId) {
-        return this.userStates.get(Number(chatId)) || {};
+    async getUserState(chatId) {
+        try {
+            const userStates = await dataManager.readFile(DATA_FILES.userStates);
+            return userStates[String(chatId)] || {};
+        } catch (error) {
+            console.error('Error reading user states:', error);
+            return {};
+        }
     }
     
-    setUserState(chatId, state) {
-        this.userStates.set(Number(chatId), { ...this.getUserState(chatId), ...state });
+    async setUserState(chatId, state) {
+        try {
+            const userStates = await dataManager.readFile(DATA_FILES.userStates);
+            const currentState = userStates[String(chatId)] || {};
+            userStates[String(chatId)] = { ...currentState, ...state };
+            await dataManager.writeFile(DATA_FILES.userStates, userStates);
+            console.log(`🔄 User state saved for ${chatId}:`, userStates[String(chatId)]);
+        } catch (error) {
+            console.error('Error saving user state:', error);
+        }
     }
     
-    clearUserState(chatId) {
-        this.userStates.delete(Number(chatId));
+    async clearUserState(chatId) {
+        try {
+            const userStates = await dataManager.readFile(DATA_FILES.userStates);
+            delete userStates[String(chatId)];
+            await dataManager.writeFile(DATA_FILES.userStates, userStates);
+            console.log(`🗾 User state cleared for ${chatId}`);
+        } catch (error) {
+            console.error('Error clearing user state:', error);
+        }
     }
 }
 
@@ -1505,7 +1529,7 @@ class CommandHandler {
             }
 
             // Check if user is in product reporting workflow
-            const userState = userManager.getUserState(chatId);
+            const userState = await userManager.getUserState(chatId);
             if (userState.action === 'entering_product_name') {
                 await this.handleProductMediaInput(chatId, message, user, userState);
                 return;
@@ -1577,7 +1601,7 @@ class CommandHandler {
             const newProduct = await productManager.reportMissingProduct(productData);
             
             // Clear user state
-            userManager.clearUserState(chatId);
+            await userManager.clearUserState(chatId);
 
             await telegramAPI.sendMessage(chatId,
                 `✅ <b>Eksik Ürün Kaydedildi!</b>\n\n` +
@@ -1634,7 +1658,7 @@ class CommandHandler {
         } catch (error) {
             console.error('❌ Product media report error:', error);
             await telegramAPI.sendMessage(chatId, "❌ Ürün bildirimi sırasında hata oluştu.");
-            userManager.clearUserState(chatId);
+            await userManager.clearUserState(chatId);
         }
     }
 
@@ -1984,7 +2008,7 @@ class CommandHandler {
         }
         
         // Clear user state for fresh start
-        userManager.clearUserState(chatId);
+        await userManager.clearUserState(chatId);
         
         switch (text) {
             case "📦 Eksik Ürün Bildir":
@@ -2062,7 +2086,7 @@ class CommandHandler {
                 
             default:
                 // Check if this is part of a workflow (category selection, product input, etc.)
-                const userState = userManager.getUserState(chatId);
+                const userState = await userManager.getUserState(chatId);
                 console.log(`🔍 Debug - User: ${chatId}, Text: "${text}", UserState:`, userState);
                 
                 if (userState.action) {
@@ -2110,12 +2134,12 @@ class CommandHandler {
         );
         
         // Set user state
-        userManager.setUserState(chatId, { 
+        await userManager.setUserState(chatId, { 
             action: 'selecting_category',
             step: 1
         });
         
-        console.log(`🔍 Set user state for ${chatId}:`, userManager.getUserState(chatId));
+        console.log(`🔍 Set user state for ${chatId}:`, await userManager.getUserState(chatId));
     }
     
     async handleMyTasks(chatId, user) {
@@ -2189,7 +2213,7 @@ class CommandHandler {
     
     // Remaining command handlers will be continued...
     async handleWorkflowInput(chatId, text, user) {
-        const userState = userManager.getUserState(chatId);
+        const userState = await userManager.getUserState(chatId);
         
         console.log(`🔍 Workflow Debug - Action: ${userState.action}, Text: "${text}"`); 
         
@@ -2201,7 +2225,7 @@ class CommandHandler {
             
             if (categories.includes(text)) {
                 console.log(`✅ Category "${text}" found! Setting next state...`);
-                userManager.setUserState(chatId, {
+                await userManager.setUserState(chatId, {
                     action: 'entering_product_name',
                     selectedCategory: text,
                     step: 2
@@ -2225,7 +2249,7 @@ class CommandHandler {
         } else if (userState.action === 'entering_single_task') {
             // Admin entered task for specific employee
             if (text === "❌ İptal Et") {
-                userManager.clearUserState(chatId);
+                await userManager.clearUserState(chatId);
                 await telegramAPI.sendMessage(chatId, "❌ Görev atama iptal edildi.", {
                     keyboard: this.getKeyboard('admin_panel'),
                     resize_keyboard: true
@@ -2258,7 +2282,7 @@ class CommandHandler {
                 });
                 
                 // Clear state
-                userManager.clearUserState(chatId);
+                await userManager.clearUserState(chatId);
                 
                 await telegramAPI.sendMessage(chatId,
                     `✅ <b>Görev Başarıyla Atandı!</b>\n\n` +
@@ -2288,13 +2312,13 @@ class CommandHandler {
             } catch (error) {
                 console.error('❌ Single task creation error:', error);
                 await telegramAPI.sendMessage(chatId, "❌ Görev atama sırasında hata oluştu.");
-                userManager.clearUserState(chatId);
+                await userManager.clearUserState(chatId);
             }
             
         } else if (userState.action === 'entering_bulk_task') {
             // Admin entered task for all employees
             if (text === "❌ İptal Et") {
-                userManager.clearUserState(chatId);
+                await userManager.clearUserState(chatId);
                 await telegramAPI.sendMessage(chatId, "❌ Toplu görev atama iptal edildi.", {
                     keyboard: this.getKeyboard('admin_panel'),
                     resize_keyboard: true
@@ -2320,7 +2344,7 @@ class CommandHandler {
                 
                 if (activeEmployees.length === 0) {
                     await telegramAPI.sendMessage(chatId, "❌ Görev atanabilecek çalışan bulunamadı.");
-                    userManager.clearUserState(chatId);
+                    await userManager.clearUserState(chatId);
                     return;
                 }
                 
@@ -2363,7 +2387,7 @@ class CommandHandler {
                 }
                 
                 // Clear state
-                userManager.clearUserState(chatId);
+                await userManager.clearUserState(chatId);
                 
                 await telegramAPI.sendMessage(chatId,
                     `✅ <b>Toplu Görev Atama Tamamlandı!</b>\n\n` +
@@ -2380,13 +2404,13 @@ class CommandHandler {
             } catch (error) {
                 console.error('❌ Bulk task creation error:', error);
                 await telegramAPI.sendMessage(chatId, "❌ Toplu görev atama sırasında hata oluştu.");
-                userManager.clearUserState(chatId);
+                await userManager.clearUserState(chatId);
             }
             
         } else if (userState.action === 'entering_broadcast') {
             // Admin entered broadcast message
             if (text === "❌ İptal Et") {
-                userManager.clearUserState(chatId);
+                await userManager.clearUserState(chatId);
                 await telegramAPI.sendMessage(chatId, "❌ Duyuru gönderim iptal edildi.", {
                     keyboard: this.getKeyboard('admin_panel'),
                     resize_keyboard: true
@@ -2410,7 +2434,7 @@ class CommandHandler {
                 
                 if (allUsers.length === 0) {
                     await telegramAPI.sendMessage(chatId, "❌ Duyuru gönderilecek kullanıcı bulunamadı.");
-                    userManager.clearUserState(chatId);
+                    await userManager.clearUserState(chatId);
                     return;
                 }
                 
@@ -2433,7 +2457,7 @@ class CommandHandler {
                 }
                 
                 // Clear state
-                userManager.clearUserState(chatId);
+                await userManager.clearUserState(chatId);
                 
                 await telegramAPI.sendMessage(chatId,
                     `✅ <b>Duyuru Başarıyla Gönderildi!</b>\n\n` +
@@ -2457,7 +2481,7 @@ class CommandHandler {
             } catch (error) {
                 console.error('❌ Broadcast error:', error);
                 await telegramAPI.sendMessage(chatId, "❌ Duyuru gönderim sırasında hata oluştu.");
-                userManager.clearUserState(chatId);
+                await userManager.clearUserState(chatId);
             }
             
         } else if (userState.action === 'entering_product_name') {
@@ -2521,7 +2545,7 @@ class CommandHandler {
             }
             
             // Clear user state
-            userManager.clearUserState(chatId);
+            await userManager.clearUserState(chatId);
         }
     }
     
@@ -3123,7 +3147,7 @@ class CommandHandler {
     
     async handleBroadcastStart(chatId, user) {
         // Set user state for broadcast input
-        userManager.setUserState(chatId, { action: 'entering_broadcast' });
+        await userManager.setUserState(chatId, { action: 'entering_broadcast' });
         
         await telegramAPI.sendMessage(chatId,
             `📢 <b>Toplu Duyuru Gönder</b>\n\n` +
@@ -4151,7 +4175,7 @@ class CallbackQueryHandler {
         if (!isAdmin) return;
         
         // Set user state for task input
-        userManager.setUserState(chatId, { action: 'entering_bulk_task' });
+        await userManager.setUserState(chatId, { action: 'entering_bulk_task' });
         
         await telegramAPI.sendMessage(chatId,
             `👥 <b>Herkese Görev Atama</b>\n\n` +
@@ -4180,7 +4204,7 @@ class CallbackQueryHandler {
             }
             
             // Set user state for task input
-            userManager.setUserState(chatId, { 
+            await userManager.setUserState(chatId, { 
                 action: 'entering_single_task',
                 targetEmployee: selectedEmployee
             });
