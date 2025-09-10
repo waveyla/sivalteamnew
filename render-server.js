@@ -1025,7 +1025,7 @@ class TaskManager {
         
         const task = tasks[taskIndex];
         
-        if (Number(task.assignedTo) !== Number(completedBy)) {
+        if (Number(task.assignedToChatId) !== Number(completedBy)) {
             throw new Error('Bu görev size ait değil');
         }
         
@@ -1068,7 +1068,7 @@ class TaskManager {
     
     async getUserTasks(chatId, status = null) {
         const tasks = await dataManager.readFile(DATA_FILES.tasks);
-        let userTasks = tasks.filter(task => Number(task.assignedTo) === Number(chatId));
+        let userTasks = tasks.filter(task => Number(task.assignedToChatId) === Number(chatId));
         
         if (status) {
             userTasks = userTasks.filter(task => task.status === status);
