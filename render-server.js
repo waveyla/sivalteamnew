@@ -1853,6 +1853,181 @@ class CommandHandler {
                     }
                 );
             }
+        } else if (userState.action === 'entering_single_task') {
+            // Admin entered task for specific employee
+            if (text === "❌ İptal Et") {
+                userManager.clearUserState(chatId);
+                await telegramAPI.sendMessage(chatId, "❌ Görev atama iptal edildi.", {
+                    keyboard: this.getKeyboard('admin_panel'),
+                    resize_keyboard: true
+                });
+                return;
+            }
+            
+            if (!text.includes('|')) {
+                await telegramAPI.sendMessage(chatId,
+                    `❌ <b>Format Hatası!</b>\n\n` +
+                    `Lütfen formatı kullanın: Görev başlığı | Açıklama\n\n` +
+                    `Örnek: Rapor hazırla | Haftalık satış verilerini derle`
+                );
+                return;
+            }
+            
+            const [title, description] = text.split('|').map(part => part.trim());
+            if (!title || !description) {
+                await telegramAPI.sendMessage(chatId,
+                    "❌ Hem görev başlığı hem de açıklama gerekli!"
+                );
+                return;
+            }
+            
+            try {
+                const targetEmployee = userState.targetEmployee;
+                
+                const newTask = await taskManager.createTask({
+                    title: turkishHandler.protect(title),
+                    description: turkishHandler.protect(description),
+                    assignedToChatId: targetEmployee.chatId,
+                    assignedToName: targetEmployee.name,
+                    assignedBy: chatId,
+                    assignedByName: user.name
+                });
+                
+                // Clear state
+                userManager.clearUserState(chatId);
+                
+                await telegramAPI.sendMessage(chatId,
+                    `✅ <b>Görev Başarıyla Atandı!</b>\n\n` +
+                    `👤 <b>Çalışan:</b> ${targetEmployee.name}\n` +
+                    `📋 <b>Görev:</b> ${title}\n` +
+                    `📝 <b>Açıklama:</b> ${description}\n` +
+                    `📅 <b>Tarih:</b> ${new Date().toLocaleString('tr-TR')}\n\n` +
+                    `🔔 Çalışana bildirim gönderildi.`,
+                    {
+                        keyboard: this.getKeyboard('admin_panel'),
+                        resize_keyboard: true
+                    }
+                );
+                
+                // Notify the employee
+                await telegramAPI.sendMessage(Number(targetEmployee.chatId),
+                    `🎯 <b>Yeni Görev Atandı!</b>\n\n` +
+                    `📋 <b>Görev:</b> ${title}\n` +
+                    `📝 <b>Açıklama:</b> ${description}\n` +
+                    `👤 <b>Atayan:</b> ${user.name}\n` +
+                    `📅 <b>Tarih:</b> ${new Date().toLocaleString('tr-TR')}\n\n` +
+                    `📋 Görevlerinizi görmek için: "📋 Görevlerim" butonunu kullanın.`,
+                    {
+                        keyboard: this.getKeyboard('main', false),
+                        resize_keyboard: true
+                    }
+                );
+                
+            } catch (error) {
+                console.error('❌ Single task creation error:', error);
+                await telegramAPI.sendMessage(chatId, "❌ Görev atama sırasında hata oluştu.");
+                userManager.clearUserState(chatId);
+            }
+            
+        } else if (userState.action === 'entering_bulk_task') {
+            // Admin entered task for all employees
+            if (text === "❌ İptal Et") {
+                userManager.clearUserState(chatId);
+                await telegramAPI.sendMessage(chatId, "❌ Toplu görev atama iptal edildi.", {
+                    keyboard: this.getKeyboard('admin_panel'),
+                    resize_keyboard: true
+                });
+                return;
+            }
+            
+            if (!text.includes('|')) {
+                await telegramAPI.sendMessage(chatId,
+                    `❌ <b>Format Hatası!</b>\n\n` +
+                    `Lütfen formatı kullanın: Görev başlığı | Açıklama\n\n` +
+                    `Örnek: Haftalık toplantı | Pazartesi 14:00'da genel toplantı`
+                );
+                return;
+            }
+            
+            const [title, description] = text.split('|').map(part => part.trim());
+            if (!title || !description) {
+                await telegramAPI.sendMessage(chatId,
+                    "❌ Hem görev başlığı hem de açıklama gerekli!"
+                );
+                return;
+            }
+            
+            try {
+                const employees = await dataManager.readFile(DATA_FILES.employees);
+                const activeEmployees = employees.filter(emp => emp.role !== 'admin');
+                
+                if (activeEmployees.length === 0) {
+                    await telegramAPI.sendMessage(chatId, "❌ Görev atanabilecek çalışan bulunamadı.");
+                    userManager.clearUserState(chatId);
+                    return;
+                }
+                
+                let successCount = 0;
+                
+                // Assign task to all employees
+                for (const employee of activeEmployees) {
+                    try {
+                        await taskManager.createTask({
+                            title: turkishHandler.protect(title),
+                            description: turkishHandler.protect(description),
+                            assignedToChatId: employee.chatId,
+                            assignedToName: employee.name,
+                            assignedBy: chatId,
+                            assignedByName: user.name
+                        });
+                        
+                        // Notify each employee
+                        await telegramAPI.sendMessage(Number(employee.chatId),
+                            `🎯 <b>Yeni Toplu Görev!</b>\n\n` +
+                            `📋 <b>Görev:</b> ${title}\n` +
+                            `📝 <b>Açıklama:</b> ${description}\n` +
+                            `👤 <b>Atayan:</b> ${user.name}\n` +
+                            `📅 <b>Tarih:</b> ${new Date().toLocaleString('tr-TR')}\n\n` +
+                            `👥 Bu görev tüm çalışanlara atanmıştır.\n` +
+                            `📋 Görevlerinizi görmek için: "📋 Görevlerim" butonunu kullanın.`,
+                            {
+                                keyboard: [{
+                                    text: "📋 Görevlerim"
+                                }, {
+                                    text: "📦 Eksik Ürün Bildir"
+                                }],
+                                resize_keyboard: true
+                            }
+                        );
+                        
+                        successCount++;
+                    } catch (error) {
+                        console.error(`❌ Task assignment failed for ${employee.name}:`, error);
+                    }
+                }
+                
+                // Clear state
+                userManager.clearUserState(chatId);
+                
+                await telegramAPI.sendMessage(chatId,
+                    `✅ <b>Toplu Görev Atama Tamamlandı!</b>\n\n` +
+                    `📋 <b>Görev:</b> ${title}\n` +
+                    `📝 <b>Açıklama:</b> ${description}\n` +
+                    `👥 <b>Atanan Çalışan:</b> ${successCount}/${activeEmployees.length}\n` +
+                    `📅 <b>Tarih:</b> ${new Date().toLocaleString('tr-TR')}\n\n` +
+                    `🔔 Tüm çalışanlara bildirim gönderildi.`,
+                    {
+                        keyboard: this.getKeyboard('admin_panel'),
+                        resize_keyboard: true
+                    }
+                );
+                
+            } catch (error) {
+                console.error('❌ Bulk task creation error:', error);
+                await telegramAPI.sendMessage(chatId, "❌ Toplu görev atama sırasında hata oluştu.");
+                userManager.clearUserState(chatId);
+            }
+            
         } else if (userState.action === 'entering_product_name') {
             // User entered product name
             if (text.length < 2) {
@@ -2562,15 +2737,28 @@ class CommandHandler {
                 taskText += `✅ Şu anda bekleyen görev bulunmuyor.\n\n`;
             }
             
-            taskText += `💡 <b>Yeni Görev Atamak İçin:</b>\n`;
-            taskText += `• Tek kişiye: /task @kullanıcı Görev başlığı | Açıklama\n`;
-            taskText += `• Toplu: /taskall Görev başlığı | Açıklama\n\n`;
-            taskText += `📋 <b>Örnek:</b> /task @ahmet Rapor hazırla | Haftalık satış raporu`;
-            
             await telegramAPI.sendMessage(chatId, taskText, {
                 keyboard: this.getKeyboard('admin_panel'),
                 resize_keyboard: true
             });
+            
+            // Add task assignment buttons
+            await telegramAPI.sendMessage(chatId,
+                `🎯 <b>Yeni Görev Atama Seçenekleri:</b>\n\n` +
+                `Aşağıdaki butonlardan birini seçin:`,
+                {
+                    inline_keyboard: [
+                        [
+                            { text: "👤 Tek Kişiye Görev Ata", callback_data: "assign_single_task" },
+                            { text: "👥 Herkese Görev Ata", callback_data: "assign_all_task" }
+                        ],
+                        [
+                            { text: "📋 Görev Şablonu Seç", callback_data: "task_template" },
+                            { text: "🔄 Aktif Görevleri Yenile", callback_data: "refresh_tasks" }
+                        ]
+                    ]
+                }
+            );
             
         } catch (error) {
             console.error('❌ Task management error:', error);
@@ -2915,6 +3103,13 @@ class CallbackQueryHandler {
         this.handlers.set('user_', this.handleUserAction.bind(this));
         this.handlers.set('promote_admin_', this.handlePromoteAdminCallback.bind(this));
         this.handlers.set('user_detail_', this.handleUserDetailCallback.bind(this));
+        
+        // Task assignment handlers
+        this.handlers.set('assign_single_task', this.handleAssignSingleTask.bind(this));
+        this.handlers.set('assign_all_task', this.handleAssignAllTask.bind(this));
+        this.handlers.set('task_template', this.handleTaskTemplate.bind(this));
+        this.handlers.set('refresh_tasks', this.handleRefreshTasks.bind(this));
+        this.handlers.set('select_employee_', this.handleSelectEmployee.bind(this));
     }
     
     async handleCallback(callbackQuery) {
@@ -3404,6 +3599,151 @@ class CallbackQueryHandler {
             console.error('❌ User detail error:', error);
             await telegramAPI.sendMessage(chatId, "❌ Kullanıcı detayları yüklenirken hata oluştu.");
         }
+    }
+
+    // 🎯 Task Assignment Button Handlers
+    async handleAssignSingleTask(data, chatId, from, message, user, isAdmin) {
+        if (!isAdmin) return;
+        
+        try {
+            const employees = await dataManager.readFile(DATA_FILES.employees);
+            const regularEmployees = employees.filter(emp => emp.role !== 'admin');
+            
+            if (regularEmployees.length === 0) {
+                await telegramAPI.sendMessage(chatId, "❌ Görev atanabilecek çalışan bulunamadı.");
+                return;
+            }
+            
+            await telegramAPI.sendMessage(chatId,
+                `👤 <b>Tek Kişiye Görev Atama</b>\n\n` +
+                `Görev atamak istediğiniz çalışanı seçin:`,
+                {
+                    inline_keyboard: this.createEmployeeButtons(regularEmployees, 'select_employee_')
+                }
+            );
+            
+        } catch (error) {
+            console.error('❌ Single task assignment error:', error);
+            await telegramAPI.sendMessage(chatId, "❌ Çalışan listesi yüklenirken hata oluştu.");
+        }
+    }
+    
+    async handleAssignAllTask(data, chatId, from, message, user, isAdmin) {
+        if (!isAdmin) return;
+        
+        // Set user state for task input
+        userManager.setUserState(chatId, { action: 'entering_bulk_task' });
+        
+        await telegramAPI.sendMessage(chatId,
+            `👥 <b>Herkese Görev Atama</b>\n\n` +
+            `📝 Görev başlığını ve açıklamasını yazın:\n\n` +
+            `📋 <b>Format:</b>\n` +
+            `Görev başlığı | Görev açıklaması\n\n` +
+            `💡 <b>Örnek:</b>\n` +
+            `Haftalık rapor hazırlama | Bu haftanın satış verilerini derleyip rapor halinde sunun\n\n` +
+            `✍️ Şimdi görevinizi yazın:`,
+            {
+                keyboard: [[{ text: "❌ İptal Et" }]],
+                resize_keyboard: true
+            }
+        );
+    }
+    
+    async handleSelectEmployee(data, chatId, from, message, user, isAdmin) {
+        if (!isAdmin) return;
+        
+        const employeeChatId = data.replace('select_employee_', '');
+        
+        try {
+            const employees = await dataManager.readFile(DATA_FILES.employees);
+            const selectedEmployee = employees.find(emp => Number(emp.chatId) === Number(employeeChatId));
+            
+            if (!selectedEmployee) {
+                await telegramAPI.sendMessage(chatId, "❌ Seçilen çalışan bulunamadı.");
+                return;
+            }
+            
+            // Set user state for task input
+            userManager.setUserState(chatId, { 
+                action: 'entering_single_task',
+                targetEmployee: selectedEmployee
+            });
+            
+            await telegramAPI.sendMessage(chatId,
+                `👤 <b>Görev Atama - ${selectedEmployee.name}</b>\n\n` +
+                `📝 Görev başlığını ve açıklamasını yazın:\n\n` +
+                `📋 <b>Format:</b>\n` +
+                `Görev başlığı | Görev açıklaması\n\n` +
+                `💡 <b>Örnek:</b>\n` +
+                `Müşteri araması | Yeni müşteri listesindeki 10 kişiyi arayıp bilgi ver\n\n` +
+                `✍️ Şimdi görevinizi yazın:`,
+                {
+                    keyboard: [[{ text: "❌ İptal Et" }]],
+                    resize_keyboard: true
+                }
+            );
+            
+        } catch (error) {
+            console.error('❌ Employee selection error:', error);
+            await telegramAPI.sendMessage(chatId, "❌ Çalışan seçimi sırasında hata oluştu.");
+        }
+    }
+    
+    async handleTaskTemplate(data, chatId, from, message, user, isAdmin) {
+        if (!isAdmin) return;
+        
+        const templates = [
+            { title: "📞 Müşteri Araması", desc: "Müşteri listesindeki kişileri arayarak bilgi toplama" },
+            { title: "📊 Rapor Hazırlama", desc: "Haftalık/aylık performans raporu hazırlama" },
+            { title: "📦 Envanter Kontrolü", desc: "Mağaza/depo envanter sayımı ve kontrolü" },
+            { title: "💰 Satış Takibi", desc: "Günlük satış verilerini kaydetme ve analiz" },
+            { title: "🛠️ Bakım Kontrolü", desc: "Ekipman ve sistem bakım kontrolü yapma" },
+            { title: "📧 E-posta Yanıtlama", desc: "Müşteri e-postalarını yanıtlama ve takip" }
+        ];
+        
+        let templateText = `📋 <b>Görev Şablonları</b>\n\n`;
+        templateText += `Hazır şablonlardan birini seçin veya kendi görevinizi yazın:\n\n`;
+        
+        const templateButtons = templates.map((template, index) => ([{
+            text: template.title,
+            callback_data: `template_${index}`
+        }]));
+        
+        templateButtons.push([{ text: "✏️ Özel Görev Yaz", callback_data: "custom_task" }]);
+        
+        await telegramAPI.sendMessage(chatId, templateText, {
+            inline_keyboard: templateButtons
+        });
+    }
+    
+    async handleRefreshTasks(data, chatId, from, message, user, isAdmin) {
+        if (!isAdmin) return;
+        
+        await telegramAPI.sendMessage(chatId, "🔄 Görev listesi yenileniyor...");
+        
+        // Call task management again to refresh
+        await this.handleTaskManagement(chatId, user);
+    }
+    
+    // Helper function to create employee buttons
+    createEmployeeButtons(employees, prefix) {
+        const buttons = [];
+        for (let i = 0; i < employees.length; i += 2) {
+            const row = [];
+            row.push({
+                text: `👤 ${employees[i].name}`,
+                callback_data: `${prefix}${employees[i].chatId}`
+            });
+            if (employees[i + 1]) {
+                row.push({
+                    text: `👤 ${employees[i + 1].name}`,
+                    callback_data: `${prefix}${employees[i + 1].chatId}`
+                });
+            }
+            buttons.push(row);
+        }
+        buttons.push([{ text: "🔙 Geri Dön", callback_data: "back_to_task_menu" }]);
+        return buttons;
     }
 
     async handleUserAction(data, chatId, from, message, user, isAdmin) {
