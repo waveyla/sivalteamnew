@@ -399,6 +399,8 @@ class DataManager extends MongoDataManager {
                 return [];
             case 'userStates':
                 return {};
+            case 'user_states':
+                return {};
             default:
                 return [];
         }
@@ -614,7 +616,7 @@ class TelegramAPI {
         });
     }
     
-    async editMessageReplyMarkup(chatId, messageId, replyMarkup = {}) {
+    async editMessageReplyMarkup(chatId, messageId, replyMarkup = { inline_keyboard: [] }) {
         return new Promise((resolve, reject) => {
             this.messageQueue.push({
                 method: 'editMessageReplyMarkup',
