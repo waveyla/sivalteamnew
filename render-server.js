@@ -58,6 +58,35 @@ const CONFIG = {
     MAX_ACTIVITY_ENTRIES: 500
 };
 
+// 📁 Initialize Required Files
+function initializeRequiredFiles() {
+    const fs = require('fs');
+    
+    const requiredFiles = {
+        'blocked_users.json': [],
+        'user_states.json': {},
+        'pending_users.json': [],
+        'employees.json': [],
+        'admin_settings.json': { adminUsers: [], superAdmins: [] },
+        'activity_log.json': [],
+        'tasks.json': [],
+        'missing_products.json': [],
+        'deleted_employees.json': [],
+        'categories.json': [],
+        'system_stats.json': {}
+    };
+    
+    for (const [filename, defaultContent] of Object.entries(requiredFiles)) {
+        if (!fs.existsSync(filename)) {
+            console.log(`📁 Creating missing file: ${filename}`);
+            fs.writeFileSync(filename, JSON.stringify(defaultContent, null, 2));
+        }
+    }
+}
+
+// Initialize files on startup
+initializeRequiredFiles();
+
 // 📁 Data Files Structure
 const DATA_FILES = {
     employees: 'employees.json',
@@ -645,6 +674,13 @@ class TelegramAPI {
                 task.resolve(result);
             } catch (error) {
                 console.error(`❌ Telegram API Error (${task.method}):`, error.message);
+                console.error('Full error stack:', error.stack);
+                
+                // Handle 400 errors with fallback
+                if (error.response && error.response.status === 400) {
+                    await this.handle400Error(task, error);
+                }
+                
                 task.reject(error);
             }
             
@@ -763,6 +799,32 @@ class TelegramAPI {
         setInterval(() => {
             this.processQueue();
         }, 100);
+    }
+    
+    async handle400Error(task, error) {
+        const { method, chatId, text } = task;
+        
+        try {
+            // For editMessageReplyMarkup errors, send a new message instead
+            if (method === 'editMessageReplyMarkup') {
+                console.log('Could not edit message buttons, 400 error caught');
+                // Don't send a new message, just log the error
+                return;
+            }
+            
+            // For editMessageText errors, send a new message
+            if (method === 'editMessageText' && text) {
+                console.log('Could not edit message text, sending new message instead');
+                await this.sendMessage(chatId, text);
+                return;
+            }
+            
+            // For other methods, just log
+            console.log(`400 error on ${method}, no fallback available`);
+            
+        } catch (fallbackError) {
+            console.error('Fallback also failed:', fallbackError.message);
+        }
     }
 }
 
