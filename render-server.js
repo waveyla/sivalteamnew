@@ -857,7 +857,9 @@ class BotCommandHandler {
                 `• Sistem istatistikleri\n` +
                 `• Toplu duyuru gönderme\n\n` +
                 `✅ Artık sistemi tam yetkilerle kullanabilirsin!`,
-                { ...this.getKeyboard('main', true) }
+                {
+                    reply_markup: this.getKeyboard('main', true)
+                }
             );
             
             await activityLogger.log(`İlk admin otomatik eklendi: ${firstAdmin.firstName}`, chatId);
@@ -874,7 +876,7 @@ class BotCommandHandler {
                                `✅ Giriş başarılı - Sistemi kullanmaya devam edebilirsin.`;
             
             await telegramAPI.sendMessage(chatId, welcomeText, {
-                ...this.getKeyboard('main', isUserAdmin)
+                reply_markup: this.getKeyboard('main', isUserAdmin)
             });
             
             await activityLogger.log(`${user.firstName} sisteme tekrar giriş yaptı`, chatId);
@@ -950,7 +952,7 @@ Sorun yaşadığınızda adminlere ulaşın.
         `;
         
         await telegramAPI.sendMessage(chatId, helpText, {
-            ...this.getKeyboard('main', isAdmin)
+            reply_markup: this.getKeyboard('main', isAdmin)
         });
     }
     
@@ -968,7 +970,7 @@ Sorun yaşadığınızda adminlere ulaşın.
                         `⬇️ Lütfen yapmak istediğiniz işlemi seçin:`;
         
         await telegramAPI.sendMessage(chatId, menuText, {
-            ...this.getKeyboard('main', isAdmin)
+            reply_markup: this.getKeyboard('main', isAdmin)
         });
         
         this.clearUserState(chatId);
@@ -992,7 +994,7 @@ Sorun yaşadığınızda adminlere ulaşın.
                          `⬇️ Yönetim seçeneğinizi belirleyin:`;
         
         await telegramAPI.sendMessage(chatId, panelText, {
-            ...this.getKeyboard('admin_panel')
+            reply_markup: this.getKeyboard('admin_panel')
         });
         
         this.clearUserState(chatId);
@@ -1014,7 +1016,7 @@ Sorun yaşadığınızda adminlere ulaşın.
                 `📝 <b>Görevlerim</b>\n\n` +
                 `✅ Harika! Şu anda aktif göreviniz bulunmuyor.\n\n` +
                 `🎯 Yeni görevler atandığında buradan takip edebilirsiniz.`,
-                { ...this.getKeyboard('main', isAdmin) }
+                { reply_markup: this.getKeyboard('main', isAdmin) }
             );
             return;
         }
@@ -1065,7 +1067,7 @@ Sorun yaşadığınızda adminlere ulaşın.
             `📦 <b>Eksik Ürün Bildirimi</b>\n\n` +
             `📝 Lütfen eksik olan ürünün adını yazın:\n\n` +
             `💡 <b>Örnek:</b> "Bilgisayar mouse'u" veya "A4 kağıt"`,
-            { ...this.getKeyboard('cancel') }
+            { reply_markup: this.getKeyboard('cancel') }
         );
         
         this.setUserState(chatId, { 
@@ -1131,7 +1133,7 @@ Sorun yaşadığınızda adminlere ulaşın.
             `📋 <b>Toplu Görev Atama</b>\n\n` +
             `👥 ${nonAdminEmployees.length} çalışana görev atanacak.\n\n` +
             `📝 Lütfen görev başlığını yazın:`,
-            { ...this.getKeyboard('cancel') }
+            { reply_markup: this.getKeyboard('cancel') }
         );
         
         this.setUserState(chatId, { 
@@ -1152,7 +1154,7 @@ Sorun yaşadığınızda adminlere ulaşın.
             await telegramAPI.sendMessage(chatId,
                 `⏳ <b>Bekleyen Onaylar</b>\n\n` +
                 `✅ Şu anda bekleyen kullanıcı bulunmuyor.`,
-                { ...this.getKeyboard('admin_panel') }
+                { reply_markup: this.getKeyboard('admin_panel') }
             );
             return;
         }
@@ -1205,7 +1207,7 @@ Sorun yaşadığınızda adminlere ulaşın.
             await telegramAPI.sendMessage(chatId,
                 `🗑️ <b>Silinmiş Çalışanlar</b>\n\n` +
                 `✅ Şu anda silinmiş çalışan bulunmuyor.`,
-                { ...this.getKeyboard('admin_panel') }
+                { reply_markup: this.getKeyboard('admin_panel') }
             );
             return;
         }
@@ -1268,7 +1270,7 @@ Sorun yaşadığınızda adminlere ulaşın.
                          `• Son Güncelleme: ${new Date().toLocaleString('tr-TR')}`;
         
         await telegramAPI.sendMessage(chatId, statsText, {
-            ...this.getKeyboard(isAdmin ? 'admin_panel' : 'main', isAdmin)
+            reply_markup: this.getKeyboard(isAdmin ? 'admin_panel' : 'main', isAdmin)
         });
     }
     
@@ -1312,7 +1314,7 @@ Sorun yaşadığınızda adminlere ulaşın.
             `📢 <b>Toplu Duyuru</b>\n\n` +
             `📝 Tüm kullanıcılara gönderilecek mesajı yazın:\n\n` +
             `⚠️ Dikkatli olun - bu mesaj tüm kayıtlı kullanıcılara gönderilecek.`,
-            { ...this.getKeyboard('cancel') }
+            { reply_markup: this.getKeyboard('cancel') }
         );
         
         this.setUserState(chatId, { action: 'awaiting_broadcast_message' });
@@ -1401,7 +1403,7 @@ Sorun yaşadığınızda adminlere ulaşın.
         if (text === '❌ İptal Et') {
             this.clearUserState(chatId);
             await telegramAPI.sendMessage(chatId, "❌ Ürün bildirimi iptal edildi.", {
-                ...this.getKeyboard('main', await userManager.isAdmin(chatId))
+                reply_markup: this.getKeyboard('main', await userManager.isAdmin(chatId))
             });
             return;
         }
@@ -1459,7 +1461,7 @@ Sorun yaşadığınızda adminlere ulaşın.
         if (text === '❌ İptal Et') {
             this.clearUserState(chatId);
             await telegramAPI.sendMessage(chatId, "❌ Görev ataması iptal edildi.", {
-                ...this.getKeyboard('admin_panel')
+                reply_markup: this.getKeyboard('admin_panel')
             });
             return;
         }
@@ -1478,7 +1480,7 @@ Sorun yaşadığınızda adminlere ulaşın.
         await telegramAPI.sendMessage(chatId,
             `📝 <b>Görev Başlığı:</b> ${taskTitle}\n\n` +
             `📄 Şimdi görev açıklamasını yazın:`,
-            { ...this.getKeyboard('cancel') }
+            { reply_markup: this.getKeyboard('cancel') }
         );
     }
     
@@ -1486,7 +1488,7 @@ Sorun yaşadığınızda adminlere ulaşın.
         if (text === '❌ İptal Et') {
             this.clearUserState(chatId);
             await telegramAPI.sendMessage(chatId, "❌ Görev ataması iptal edildi.", {
-                ...this.getKeyboard('admin_panel')
+                reply_markup: this.getKeyboard('admin_panel')
             });
             return;
         }
@@ -1513,7 +1515,7 @@ Sorun yaşadığınızda adminlere ulaşın.
                 `📝 <b>Başlık:</b> ${task.title}\n` +
                 `📄 <b>Açıklama:</b> ${task.description}\n\n` +
                 `🔔 Çalışana bildirim gönderildi.`,
-                { ...this.getKeyboard('admin_panel') }
+                { reply_markup: this.getKeyboard('admin_panel') }
             );
             
             // Notify assigned user
@@ -1536,7 +1538,7 @@ Sorun yaşadığınızda adminlere ulaşın.
         if (text === '❌ İptal Et') {
             this.clearUserState(chatId);
             await telegramAPI.sendMessage(chatId, "❌ Toplu görev ataması iptal edildi.", {
-                ...this.getKeyboard('admin_panel')
+                reply_markup: this.getKeyboard('admin_panel')
             });
             return;
         }
@@ -1556,7 +1558,7 @@ Sorun yaşadığınızda adminlere ulaşın.
             `📋 <b>Toplu Görev Başlığı:</b> ${taskTitle}\n\n` +
             `👥 <b>Atanacak Çalışan:</b> ${userState.targetUsers.length}\n\n` +
             `📄 Şimdi görev açıklamasını yazın:`,
-            { ...this.getKeyboard('cancel') }
+            { reply_markup: this.getKeyboard('cancel') }
         );
     }
     
@@ -1564,7 +1566,7 @@ Sorun yaşadığınızda adminlere ulaşın.
         if (text === '❌ İptal Et') {
             this.clearUserState(chatId);
             await telegramAPI.sendMessage(chatId, "❌ Toplu görev ataması iptal edildi.", {
-                ...this.getKeyboard('admin_panel')
+                reply_markup: this.getKeyboard('admin_panel')
             });
             return;
         }
@@ -1587,7 +1589,7 @@ Sorun yaşadığınızda adminlere ulaşın.
                 `📄 <b>Açıklama:</b> ${taskDesc}\n` +
                 `👥 <b>Atanan Çalışan:</b> ${tasks.length}\n\n` +
                 `🔔 Tüm çalışanlara bildirim gönderildi.`,
-                { ...this.getKeyboard('admin_panel') }
+                { reply_markup: this.getKeyboard('admin_panel') }
             );
             
             // Notify all assigned users
@@ -1613,7 +1615,7 @@ Sorun yaşadığınızda adminlere ulaşın.
         if (text === '❌ İptal Et') {
             this.clearUserState(chatId);
             await telegramAPI.sendMessage(chatId, "❌ Duyuru iptal edildi.", {
-                ...this.getKeyboard('admin_panel')
+                reply_markup: this.getKeyboard('admin_panel')
             });
             return;
         }
@@ -1656,7 +1658,7 @@ Sorun yaşadığınızda adminlere ulaşın.
                 `• Başarısız: ${failCount}\n` +
                 `• Toplam: ${employees.length}\n\n` +
                 `📝 <b>Mesaj:</b> "${broadcastMessage.substring(0, 100)}${broadcastMessage.length > 100 ? '...' : ''}"`,
-                { ...this.getKeyboard('admin_panel') }
+                { reply_markup: this.getKeyboard('admin_panel') }
             );
             
             await activityLogger.log(
@@ -1746,7 +1748,7 @@ Sorun yaşadığınızda adminlere ulaşın.
             `👑 <b>Admin özelliği:</b> Medyanız sistem loglarına kaydedildi.\n` +
             `📝 Açıklama: ${caption || 'Açıklama yok'}\n\n` +
             `💡 Çalışanlara duyuru yapmak için "📢 Duyuru Gönder" özelliğini kullanabilirsin.`,
-            { ...this.getKeyboard('main', true) }
+            { reply_markup: this.getKeyboard('main', true) }
         );
     }
     
@@ -1763,7 +1765,7 @@ Sorun yaşadığınızda adminlere ulaşın.
                 `🎤 <b>Ses Kaydı:</b> ${reportData.voiceFileId ? 'Evet' : 'Hayır'}\n\n` +
                 `🔔 Adminlere bildirim gönderildi.\n` +
                 `⏰ Rapor zamanı: ${new Date().toLocaleString('tr-TR')}`,
-                { ...this.getKeyboard('main', await userManager.isAdmin(chatId)) }
+                { reply_markup: this.getKeyboard('main', await userManager.isAdmin(chatId)) }
             );
             
             // Notify admins
@@ -1851,7 +1853,7 @@ Sorun yaşadığınızda adminlere ulaşın.
                 if (!isAdmin) {
                     await telegramAPI.sendMessage(chatId,
                         "❓ Anlaşılamayan komut. Yardım için /help yazın.",
-                        { ...this.getKeyboard('main', false) }
+                        { reply_markup: this.getKeyboard('main', false) }
                     );
                 }
                 break;
@@ -1873,7 +1875,7 @@ Sorun yaşadığınızda adminlere ulaşın.
                         `⬇️ Yapmak istediğiniz işlemi seçin:`;
         
         await telegramAPI.sendMessage(chatId, taskText, {
-            ...this.getKeyboard('task_types')
+            reply_markup: this.getKeyboard('task_types')
         });
     }
     
@@ -1886,7 +1888,7 @@ Sorun yaşadığınızda adminlere ulaşın.
             await telegramAPI.sendMessage(chatId,
                 `📦 <b>Ürün Raporları</b>\n\n` +
                 `✅ Şu anda bekleyen ürün raporu bulunmuyor.`,
-                { ...this.getKeyboard('admin_panel') }
+                { reply_markup: this.getKeyboard('admin_panel') }
             );
             return;
         }
@@ -2004,7 +2006,7 @@ Sorun yaşadığınızda adminlere ulaşın.
                 `✅ SivalTeam sistemine başarıyla kaydoldunuz!\n` +
                 `👤 Onaylayan: ${user.firstName}\n\n` +
                 `🚀 Artık sistemi kullanmaya başlayabilirsiniz.`,
-                { ...this.getKeyboard('main', false) }
+                { reply_markup: this.getKeyboard('main', false) }
             );
             
         } catch (error) {
@@ -2090,7 +2092,7 @@ Sorun yaşadığınızda adminlere ulaşın.
                 `✅ SivalTeam sistemine tekrar erişiminiz açılmıştır.\n` +
                 `👤 İşlemi yapan: ${user.firstName}\n\n` +
                 `🚀 Sistemi kullanmaya devam edebilirsiniz.`,
-                { ...this.getKeyboard('main', false) }
+                { reply_markup: this.getKeyboard('main', false) }
             );
             
         } catch (error) {
@@ -2201,7 +2203,7 @@ Sorun yaşadığınızda adminlere ulaşın.
             `📝 <b>Görev Atama - ${targetUser.firstName}</b>\n\n` +
             `👤 <b>Atanacak Çalışan:</b> ${targetUser.firstName}\n\n` +
             `📝 Lütfen görev başlığını yazın:`,
-            { ...this.getKeyboard('cancel') }
+            { reply_markup: this.getKeyboard('cancel') }
         );
         
         this.setUserState(chatId, {
