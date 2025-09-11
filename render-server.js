@@ -655,7 +655,7 @@ class TelegramAPI {
     }
     
     async executeTask(task) {
-        const { method, chatId, text, options, callbackQueryId, messageId, photo, voice, caption } = task;
+        const { method, chatId, text, options, callbackQueryId, messageId, photo, voice, caption, replyMarkup } = task;
         
         let payload = {};
         let endpoint = method;
@@ -939,7 +939,14 @@ class UserManager {
         const userIndex = pendingUsers.findIndex(u => Number(u.chatId) === Number(chatId));
         
         if (userIndex === -1) {
-            throw new Error('Bekleyen kullanıcı bulunamadı');
+            // Check if user is already approved (in MongoDB)
+            const existingUser = await dataManager.getEmployees();
+            const alreadyApproved = existingUser.find(emp => emp.chatId === String(chatId));
+            
+            if (alreadyApproved) {
+                throw new Error('Kullanıcı zaten onaylanmış');
+            }
+            throw new Error('Bekleyen kullanıcı bulunamadı - Kullanıcı yeniden /start yazmalı');
         }
         
         const pendingUser = pendingUsers[userIndex];
@@ -1028,15 +1035,10 @@ class TaskManager {
         const newTask = await dataManager.addTask({
             title: turkishHandler.protect(taskData.title),
             description: turkishHandler.protect(taskData.description),
-            assignedTo: Number(taskData.assignedTo),
-            assignedToName: turkishHandler.protect(taskData.assignedToName),
-            assignedBy: Number(taskData.assignedBy),
-            assignedByName: turkishHandler.protect(taskData.assignedByName),
+            assignedTo: String(taskData.assignedTo),
+            assignedBy: String(taskData.assignedBy),
             priority: taskData.priority || 'medium',
-            type: taskData.type || 'individual',
-            bulkId: taskData.bulkId || null,
-            deadline: taskData.dueDate || null,
-            category: taskData.category || 'general',
+            deadline: taskData.deadline || null,
             tags: taskData.tags || []
         });
         
@@ -1062,37 +1064,21 @@ class TaskManager {
         const createdTasks = [];
         
         for (const user of targetUsers) {
-            const newTask = {
-                id: Date.now() + Math.random() + Math.random(),
+            const newTask = await dataManager.addTask({
                 title: turkishHandler.protect(taskData.title),
                 description: turkishHandler.protect(taskData.description),
-                assignedTo: Number(user.chatId),
-                assignedToName: turkishHandler.protect(user.name),
-                assignedBy: Number(taskData.assignedBy),
-                assignedByName: turkishHandler.protect(taskData.assignedByName),
-                createdAt: new Date().toISOString(),
-                updatedAt: new Date().toISOString(),
-                status: 'pending',
-                priority: taskData.priority || 'normal',
-                type: 'bulk',
-                bulkId: bulkId,
-                dueDate: taskData.dueDate || null,
-                category: taskData.category || 'general',
-                tags: taskData.tags || [],
-                completedAt: null,
-                completedBy: null,
-                estimatedTime: taskData.estimatedTime || null,
-                actualTime: null
-            };
+                assignedTo: String(user.chatId),
+                assignedBy: String(taskData.assignedBy),
+                priority: taskData.priority || 'medium',
+                deadline: taskData.dueDate || null,
+                tags: taskData.tags || []
+            });
             
-            tasks.push(newTask);
             createdTasks.push(newTask);
             
             // Update user task count
-            await this.updateUserTaskStats(newTask.assignedTo);
+            await this.updateUserTaskStats(String(user.chatId));
         }
-        
-        await dataManager.writeFile(DATA_FILES.tasks, tasks);
         
         await activityLogger.log(
             `Toplu görev atandı: "${taskData.title}" → ${targetUsers.length} kişi`,
@@ -1114,7 +1100,7 @@ class TaskManager {
         }
         
         // Toplu görevlerde herkes tamamlayabilir, kişisel görevlerde sadece atanan kişi
-        if (task.type !== 'bulk' && Number(task.assignedTo) !== Number(completedBy)) {
+        if (task.type !== 'bulk' && String(task.assignedTo) !== String(completedBy)) {
             throw new Error('Bu görev size ait değil');
         }
         
@@ -1163,7 +1149,7 @@ class TaskManager {
     
     async getUserTasks(chatId, status = null) {
         const tasks = await dataManager.getTasks();
-        let userTasks = tasks.filter(task => Number(task.assignedTo) === Number(chatId));
+        let userTasks = tasks.filter(task => String(task.assignedTo) === String(chatId));
         
         if (status) {
             userTasks = userTasks.filter(task => task.status === status);
@@ -1176,7 +1162,7 @@ class TaskManager {
     }
     
     async getAllTasks(status = null, limit = null) {
-        const tasks = await dataManager.readFile(DATA_FILES.tasks);
+        const tasks = await dataManager.getTasks();
         let filteredTasks = status ? tasks.filter(task => task.status === status) : tasks;
         
         // Sort by creation date (newest first)
@@ -1191,20 +1177,17 @@ class TaskManager {
     
     async updateUserTaskStats(chatId) {
         try {
-            const employees = await dataManager.readFile(DATA_FILES.employees);
-            const userIndex = employees.findIndex(emp => Number(emp.chatId) === Number(chatId));
+            // MongoDB ile çalışanları al
+            const employees = await dataManager.getEmployees();
+            const employee = employees.find(emp => emp.chatId === String(chatId));
             
-            if (userIndex !== -1) {
+            if (employee) {
                 const userTasks = await this.getUserTasks(chatId);
                 const completedTasks = userTasks.filter(task => task.status === 'completed');
                 
-                employees[userIndex].totalTasks = userTasks.length;
-                employees[userIndex].completedTasks = completedTasks.length;
-                employees[userIndex].taskCompletionRate = userTasks.length > 0 
-                    ? Math.round((completedTasks.length / userTasks.length) * 100) 
-                    : 0;
-                
-                await dataManager.writeFile(DATA_FILES.employees, employees);
+                // İstatistikleri hesapla ama MongoDB'de ayrı bir alan olarak tutmak yerine
+                // görevler doğrudan sorgulanabilir, bu nedenle bu metodu basitleştiriyoruz
+                console.log(`📊 Task stats for ${employee.firstName || employee.username}: ${completedTasks.length}/${userTasks.length} completed`);
             }
         } catch (error) {
             console.error('❌ Error updating user task stats:', error);
@@ -1212,29 +1195,37 @@ class TaskManager {
     }
     
     async deleteTask(taskId, deletedBy) {
-        const tasks = await dataManager.readFile(DATA_FILES.tasks);
-        const taskIndex = tasks.findIndex(t => t.id == taskId);
+        const tasks = await dataManager.getTasks();
+        const task = tasks.find(t => t.taskId === taskId || t.id === taskId);
         
-        if (taskIndex === -1) {
+        if (!task) {
             throw new Error('Görev bulunamadı');
         }
         
-        const deletedTask = tasks[taskIndex];
-        tasks.splice(taskIndex, 1);
-        
-        await dataManager.writeFile(DATA_FILES.tasks, tasks);
-        
-        // Update user task stats
-        await this.updateUserTaskStats(deletedTask.assignedTo);
-        
-        await activityLogger.log(
-            `Görev silindi: "${deletedTask.title}"`,
-            deletedBy,
-            null,
-            'warning'
-        );
-        
-        return deletedTask;
+        // MongoDB'de görev silme işlemi (dataManager'da deleteTask metodu yoksa manual olarak)
+        try {
+            // Update task status to 'cancelled' instead of deleting
+            const updatedTask = await dataManager.updateTask(task.taskId || task.id, {
+                status: 'cancelled',
+                deletedBy: String(deletedBy),
+                deletedAt: new Date()
+            });
+            
+            // Update user task stats
+            await this.updateUserTaskStats(task.assignedTo);
+            
+            await activityLogger.log(
+                `Görev iptal edildi: "${task.title}"`,
+                deletedBy,
+                null,
+                'warning'
+            );
+            
+            return updatedTask;
+        } catch (error) {
+            console.error('Error deleting task:', error);
+            throw new Error('Görev silinirken hata oluştu');
+        }
     }
 }
 
@@ -1454,7 +1445,15 @@ class CommandHandler {
     
     getKeyboard(type, isAdmin = false) {
         if (type === 'main') {
-            return isAdmin ? this.keyboards.get('admin_main') : this.keyboards.get('employee_main');
+            if (isAdmin) {
+                // Admin için dinamik klavye - İstatistikler yerine Tamamlanmayan Görevler
+                return [
+                    [{ text: "📦 Eksik Ürün Bildir" }, { text: "👑 Admin Panel" }],
+                    [{ text: "📋 Tamamlanmayan Görevler" }, { text: "ℹ️ Yardım" }]
+                ];
+            } else {
+                return this.keyboards.get('employee_main');
+            }
         }
         return this.keyboards.get(type) || this.keyboards.get('back_menu');
     }
@@ -2115,6 +2114,10 @@ class CommandHandler {
                 await this.handleStats(chatId, text, from, user, isAdmin);
                 break;
                 
+            case "📋 Tamamlanmayan Görevler":
+                await this.handleAdminPendingTasks(chatId, user);
+                break;
+                
             case "👑 Admin Panel":
                 if (!isAdmin) {
                     await telegramAPI.sendMessage(chatId, "❌ Bu özellik sadece adminler tarafından kullanılabilir.");
@@ -2282,7 +2285,7 @@ class CommandHandler {
         pendingTasks.slice(0, 5).forEach(task => {
             inlineKeyboard.push([{
                 text: `✅ "${task.title.substring(0, 30)}${task.title.length > 30 ? '...' : ''}" Tamamla`,
-                callback_data: `complete_task_${task.id}`
+                callback_data: `complete_task_${task.taskId || task.id}`
             }]);
         });
         
@@ -2367,10 +2370,9 @@ class CommandHandler {
                 const newTask = await taskManager.createTask({
                     title: turkishHandler.protect(title),
                     description: turkishHandler.protect(description),
-                    assignedToChatId: targetEmployee.chatId,
-                    assignedToName: targetEmployee.name,
-                    assignedBy: chatId,
-                    assignedByName: user.name
+                    assignedTo: String(targetEmployee.chatId),
+                    assignedBy: String(chatId),
+                    type: 'individual'
                 });
                 
                 // Clear state
@@ -2397,7 +2399,7 @@ class CommandHandler {
                     `✅ Görevi tamamladığınızda butonu kullanın.`,
                     {
                         inline_keyboard: [[
-                            { text: "✅ Görevi Tamamla", callback_data: `complete_task_${newTask.id}` }
+                            { text: "✅ Görevi Tamamla", callback_data: `complete_task_${newTask.taskId || newTask.id}` }
                         ]],
                         keyboard: this.getKeyboard('main', false),
                         resize_keyboard: true
@@ -2467,7 +2469,7 @@ class CommandHandler {
                             `✅ Görevi tamamladığınızda butonu kullanın.`,
                             {
                                 inline_keyboard: [[
-                                    { text: "✅ Görevi Tamamla", callback_data: `complete_task_${newTask.id}` }
+                                    { text: "✅ Görevi Tamamla", callback_data: `complete_task_${newTask.taskId || newTask.id}` }
                                 ]],
                                 keyboard: [{
                                     text: "📋 Görevlerim"
@@ -2772,6 +2774,94 @@ class CommandHandler {
         }
     }
     
+    async handleAdminPendingTasks(chatId, user) {
+        try {
+            // MongoDB'den tüm tamamlanmayan görevleri al
+            const tasks = await dataManager.getTasks();
+            const pendingTasks = tasks.filter(task => task.status === 'pending' || task.status === 'active');
+            
+            if (pendingTasks.length === 0) {
+                await telegramAPI.sendMessage(chatId,
+                    `📋 <b>Tamamlanmayan Görevler</b>\n\n` +
+                    `✅ Harika! Şu anda tamamlanmayan görev bulunmuyor.\n\n` +
+                    `📊 Tüm görevler başarıyla tamamlanmış.`,
+                    {
+                        keyboard: this.getKeyboard('main', true),
+                        resize_keyboard: true
+                    }
+                );
+                return;
+            }
+            
+            // Görevleri öncelik sırasına göre sıralama
+            const priorityOrder = { 'high': 3, 'medium': 2, 'low': 1 };
+            pendingTasks.sort((a, b) => {
+                return (priorityOrder[b.priority] || 2) - (priorityOrder[a.priority] || 2);
+            });
+            
+            let taskText = `📋 <b>Tamamlanmayan Görevler (${pendingTasks.length})</b>\n\n`;
+            
+            // İstatistikler
+            const highPriority = pendingTasks.filter(t => t.priority === 'high').length;
+            const mediumPriority = pendingTasks.filter(t => t.priority === 'medium').length;
+            const lowPriority = pendingTasks.filter(t => t.priority === 'low').length;
+            
+            taskText += `📊 <b>Öncelik Dağılımı:</b>\n`;
+            taskText += `├ 🔴 Yüksek: ${highPriority} görev\n`;
+            taskText += `├ 🟡 Orta: ${mediumPriority} görev\n`;
+            taskText += `└ 🟢 Düşük: ${lowPriority} görev\n\n`;
+            
+            // Görev listesi (ilk 10 görev)
+            taskText += `📝 <b>Görev Listesi:</b>\n\n`;
+            
+            for (let i = 0; i < Math.min(pendingTasks.length, 10); i++) {
+                const task = pendingTasks[i];
+                const priorityIcon = task.priority === 'high' ? '🔴' : task.priority === 'medium' ? '🟡' : '🟢';
+                const statusIcon = task.status === 'active' ? '⚡' : '⏳';
+                
+                // Atanan kişinin bilgilerini al
+                const assignedUser = await dataManager.getEmployees();
+                const assignedEmployee = assignedUser.find(emp => emp.chatId === task.assignedTo);
+                const assignedName = assignedEmployee ? assignedEmployee.firstName || assignedEmployee.username : 'Bilinmeyen';
+                
+                // Görev süresi hesaplama
+                const createdDate = new Date(task.createdAt);
+                const daysPassed = Math.floor((Date.now() - createdDate.getTime()) / (1000 * 60 * 60 * 24));
+                
+                taskText += `${priorityIcon} ${statusIcon} <b>${task.title}</b>\n`;
+                taskText += `   👤 Atanan: ${assignedName}\n`;
+                taskText += `   📅 ${daysPassed} gün önce atandı\n`;
+                if (task.deadline) {
+                    const deadline = new Date(task.deadline);
+                    const isOverdue = deadline < new Date();
+                    taskText += `   ⏰ ${isOverdue ? '⚠️ GEÇMİŞ' : 'Son'}: ${deadline.toLocaleDateString('tr-TR')}\n`;
+                }
+                taskText += `\n`;
+            }
+            
+            if (pendingTasks.length > 10) {
+                taskText += `... ve ${pendingTasks.length - 10} görev daha\n\n`;
+            }
+            
+            taskText += `💡 <b>İpucu:</b> Görev detayları için "📋 Görev Yönetimi" panelini kullanın.`;
+            
+            await telegramAPI.sendMessage(chatId, taskText, {
+                keyboard: this.getKeyboard('main', true),
+                resize_keyboard: true
+            });
+            
+        } catch (error) {
+            console.error('❌ Admin pending tasks error:', error);
+            await telegramAPI.sendMessage(chatId, 
+                "❌ Tamamlanmayan görevler yüklenirken hata oluştu. MongoDB bağlantısını kontrol edin.",
+                {
+                    keyboard: this.getKeyboard('main', true),
+                    resize_keyboard: true
+                }
+            );
+        }
+    }
+    
     async handleDebug(chatId, text, from, user, isAdmin) {
         const debugText = `🔍 <b>Debug Bilgileri</b>\n\n` +
             `👤 <b>Kullanıcı:</b> ${from.first_name || 'Bilinmeyen'}\n` +
@@ -2866,10 +2956,8 @@ class CommandHandler {
             const newTask = await taskManager.createTask({
                 title,
                 description,
-                assignedTo: targetEmployee.chatId,
-                assignedToName: targetEmployee.name,
-                assignedBy: chatId,
-                assignedByName: user.name,
+                assignedTo: String(targetEmployee.chatId),
+                assignedBy: String(chatId),
                 type: 'individual'
             });
             
@@ -4063,7 +4151,7 @@ class CallbackQueryHandler {
         pendingTasks.slice(0, 10).forEach(task => {
             inlineKeyboard.push([{
                 text: `✅ "${task.title.substring(0, 25)}${task.title.length > 25 ? '...' : ''}" Tamamla`,
-                callback_data: `complete_task_${task.id}`
+                callback_data: `complete_task_${task.taskId || task.id}`
             }]);
         });
         
@@ -4503,7 +4591,7 @@ class CallbackQueryHandler {
             activeTasks.slice(0, 5).forEach(task => {
                 taskButtons.push([{
                     text: `✅ "${task.title.substring(0, 20)}${task.title.length > 20 ? '...' : ''}" Tamamla`,
-                    callback_data: `complete_task_${task.id}`
+                    callback_data: `complete_task_${task.taskId || task.id}`
                 }]);
             });
             
