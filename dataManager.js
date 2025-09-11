@@ -33,7 +33,10 @@ class MongoDataManager {
 
     async getEmployees() {
         try {
-            const employees = await User.find({ type: 'employee' }).lean();
+            // TÜM KULLANICILARI AL (admin + employee)
+            const employees = await User.find({ 
+                type: { $in: ['admin', 'employee'] } 
+            }).lean();
             return employees || [];
         } catch (error) {
             console.error('Error getting employees:', error);
