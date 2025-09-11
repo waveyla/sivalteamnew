@@ -1645,8 +1645,8 @@ class MessageHandler {
                     );
 
                     // Admin'lere bildirim gönder
-                    const adminUsers = await this.dataManager.getEmployees();
-                    const admins = adminUsers.filter(u => u.type === 'admin');
+                    const adminUserList = await this.dataManager.getEmployees();
+                    const admins = adminUserList.filter(u => u.type === 'admin');
                     
                     for (const admin of admins) {
                         await this.bot.sendMessage(
