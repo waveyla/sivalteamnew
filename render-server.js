@@ -1532,20 +1532,20 @@ class MessageHandler {
                     let targetUser = null;
                     
                     // Farklı formatlarda arama
-                    const allUsers = await this.dataManager.getEmployees();
+                    const userList = await this.dataManager.getEmployees();
                     
                     // ID ile arama
                     if (/^\d+$/.test(adminInfo)) {
-                        targetUser = allUsers.find(u => u.chatId === adminInfo);
+                        targetUser = userList.find(u => u.chatId === adminInfo);
                     }
                     // @username ile arama
                     else if (adminInfo.startsWith('@')) {
                         const username = adminInfo.substring(1);
-                        targetUser = allUsers.find(u => u.username?.toLowerCase() === username.toLowerCase());
+                        targetUser = userList.find(u => u.username?.toLowerCase() === username.toLowerCase());
                     }
                     // İsim ile arama
                     else {
-                        targetUser = allUsers.find(u => 
+                        targetUser = userList.find(u => 
                             `${u.firstName} ${u.lastName || ''}`.toLowerCase().includes(adminInfo.toLowerCase()) ||
                             u.firstName?.toLowerCase().includes(adminInfo.toLowerCase())
                         );
