@@ -119,7 +119,7 @@ app.use((req, res, next) => {
     
     if (req.method === 'OPTIONS') {
         res.sendStatus(200);
-    }
+    } else {
         next();
     }
 });
@@ -296,7 +296,7 @@ class DataManager extends MongoDataManager {
     
     async initializeDatabase() {
         try {
-            // MongoDB'ye bağlan - ZORUNLU
+            // MongoDB'ye bağlan
             await connectDB();
             
             // Create backup directory for exports
@@ -306,11 +306,12 @@ class DataManager extends MongoDataManager {
             
             console.log('💾 MongoDB data management system initialized successfully');
             this.mongoConnected = true;
-            console.log('🔥 PURE MONGODB MODE - No fallback files');
         } catch (error) {
-            console.error('❌ CRITICAL: MongoDB connection failed:', error);
-            console.error('💀 System cannot run without MongoDB - exiting...');
-            process.exit(1); // Force exit - no fallback allowed
+            console.error('❌ Failed to initialize MongoDB:', error);
+            // Fallback to local files if MongoDB fails
+            console.log('⚠️ Falling back to local file storage...');
+            this.mongoConnected = false;
+            await this.initializeLocalFiles();
         }
     }
     
@@ -351,7 +352,7 @@ class DataManager extends MongoDataManager {
     async getTasks() {
         if (this.mongoConnected) {
             return await super.getTasks();
-        }
+        } else {
             return await this.readFile(DATA_FILES.tasks);
         }
     }
@@ -359,7 +360,7 @@ class DataManager extends MongoDataManager {
     async addTask(taskData) {
         if (this.mongoConnected) {
             return await super.addTask(taskData);
-        }
+        } else {
             const tasks = await this.readFile(DATA_FILES.tasks);
             const newTask = {
                 id: Date.now() + Math.random(),
@@ -381,8 +382,8 @@ class DataManager extends MongoDataManager {
     async getEmployees() {
         if (this.mongoConnected) {
             return await super.getEmployees();
-        }
-            return await this.getEmployees();
+        } else {
+            return await this.readFile(DATA_FILES.employees);
         }
     }
     
@@ -499,7 +500,7 @@ class DataManager extends MongoDataManager {
     
     async updateSystemStats() {
         try {
-            const employees = await this.getEmployees();
+            const employees = await this.readFile(DATA_FILES.employees);
             const tasks = await this.readFile(DATA_FILES.tasks);
             const products = await this.readFile(DATA_FILES.missingProducts);
             
@@ -702,7 +703,7 @@ class TelegramAPI {
                 if (text && text.length > CONFIG.MAX_MESSAGE_LENGTH) {
                     const truncatedText = text.substring(0, CONFIG.MAX_MESSAGE_LENGTH - 50) + '\n\n... (mesaj kısaltıldı)';
                     payload = { chat_id: chatId, text: truncatedText, parse_mode: 'HTML' };
-                }
+                } else {
                     payload = { chat_id: chatId, text, parse_mode: 'HTML' };
                 }
                 
@@ -909,11 +910,7 @@ class UserManager {
     }
     
     async addUser(userData) {
-        const newEmployee = await dataManager.addEmployee({
-            chatId: userData.chatId,
-            firstName: userData.name,
-            username: userData.username || 'kullanici_' + Date.now()
-        });
+        const employees = await dataManager.readFile(DATA_FILES.employees);
         
         const newUser = {
             chatId: Number(userData.chatId),
@@ -930,37 +927,16 @@ class UserManager {
             permissions: userData.permissions || ['basic_access']
         };
         
+        employees.push(newUser);
+        await dataManager.writeFile(DATA_FILES.employees, employees);
+        
         await activityLogger.log(`Yeni kullanıcı eklendi: ${newUser.name}`, userData.addedBy, null, 'info');
+        
         return newUser;
-    }
-            // Fallback to JSON files
-            const employees = await dataManager.getEmployees();
-            
-            const newUser = {
-                chatId: Number(userData.chatId),
-                name: turkishHandler.protect(userData.name),
-                username: userData.username || 'kullanici_' + Date.now(),
-                department: userData.department || 'Yeni Çalışan',
-                role: userData.role || 'employee',
-                addedAt: new Date().toISOString(),
-                addedBy: userData.addedBy || null,
-                status: 'active',
-                lastActivity: new Date().toISOString(),
-                totalTasks: 0,
-                completedTasks: 0,
-                permissions: userData.permissions || ['basic_access']
-            };
-            
-            employees.push(newUser);
-            await dataManager.writeFile(DATA_FILES.employees, employees);
-            
-            await activityLogger.log(`Yeni kullanıcı eklendi: ${newUser.name}`, userData.addedBy, null, 'info');
-            
-            return newUser;
     }
     
     async updateUserActivity(chatId) {
-        const employees = await dataManager.getEmployees();
+        const employees = await dataManager.readFile(DATA_FILES.employees);
         const userIndex = employees.findIndex(emp => Number(emp.chatId) === Number(chatId));
         
         if (userIndex !== -1) {
@@ -970,7 +946,7 @@ class UserManager {
     }
     
     async deleteUser(chatId, deletedBy) {
-        const employees = await dataManager.getEmployees();
+        const employees = await dataManager.readFile(DATA_FILES.employees);
         const userIndex = employees.findIndex(emp => Number(emp.chatId) === Number(chatId));
         
         if (userIndex === -1) {
@@ -1547,7 +1523,7 @@ class CommandHandler {
                     [{ text: "📦 Eksik Ürün Bildir" }, { text: "👑 Admin Panel" }],
                     [{ text: "📋 Tamamlanmayan Görevler" }, { text: "ℹ️ Yardım" }]
                 ];
-            }
+            } else {
                 return this.keyboards.get('employee_main');
             }
         }
@@ -1905,7 +1881,7 @@ class CommandHandler {
                 if (text === '/start') {
                     await this.handleStart(chatId, text, from, null, false);
                     return;
-                }
+                } else {
                     // Block everything else for unauthorized users
                     await telegramAPI.sendMessage(chatId,
                         "🔒 <b>Erişim Reddedildi</b>\n\n" +
@@ -2104,7 +2080,7 @@ class CommandHandler {
         }
         
         // Check if this is the first user (becomes admin automatically)
-        const employees = await dataManager.getEmployees();
+        const employees = await dataManager.readFile(DATA_FILES.employees);
         const adminSettings = await dataManager.readFile(DATA_FILES.adminSettings);
         
         if (employees.length === 0 && adminSettings.adminUsers.length === 0) {
@@ -2337,7 +2313,7 @@ class CommandHandler {
                 if (userState.action) {
                     console.log(`📝 Processing workflow input for action: ${userState.action}`);
                     await this.handleWorkflowInput(chatId, text, user);
-                }
+                } else {
                     // Handle unknown button
                     console.log(`❓ Unknown input received: "${text}" from user ${chatId}`);
                     await telegramAPI.sendMessage(chatId, 
@@ -2586,7 +2562,7 @@ class CommandHandler {
             const description = taskText;
             
             try {
-                const employees = await dataManager.getEmployees();
+                const employees = await dataManager.readFile(DATA_FILES.employees);
                 const activeEmployees = employees.filter(emp => emp.role !== 'admin');
                 
                 if (activeEmployees.length === 0) {
@@ -2679,7 +2655,7 @@ class CommandHandler {
             const broadcastText = text.trim();
             
             try {
-                const employees = await dataManager.getEmployees();
+                const employees = await dataManager.readFile(DATA_FILES.employees);
                 const allUsers = employees; // Tüm kullanıcılara gönder (admin dahil)
                 
                 if (allUsers.length === 0) {
@@ -2857,7 +2833,7 @@ class CommandHandler {
                 statsText += `├ ✅ Tamamlanan: ${completedTasks} (%${completionRate})\n`;
                 statsText += `├ ⏳ Bekleyen: ${pendingTasks}\n`;
                 statsText += `└ 🎯 Başarı Oranı: %${completionRate}\n\n`;
-            }
+            } else {
                 statsText += `└ 📝 Henüz görev atanmamış\n\n`;
             }
             
@@ -2884,7 +2860,7 @@ class CommandHandler {
                 if (myTasks.length > 0) {
                     const personalRate = Math.round((myCompleted / myTasks.length) * 100);
                     statsText += `└ 🏆 Başarı Oranım: %${personalRate}\n\n`;
-                }
+                } else {
                     statsText += `└ 📝 Henüz görev atanmamış\n\n`;
                 }
                 
@@ -3085,7 +3061,7 @@ class CommandHandler {
             return;
         }
         
-        const employees = await dataManager.getEmployees();
+        const employees = await dataManager.readFile(DATA_FILES.employees);
         let targetEmployee = null;
         
         // Find employee by username or chatId
@@ -3168,7 +3144,7 @@ class CommandHandler {
         }
         
         try {
-            const employees = await dataManager.getEmployees();
+            const employees = await dataManager.readFile(DATA_FILES.employees);
             const activeEmployees = employees.filter(emp => emp.status === 'active' && Number(emp.chatId) !== Number(chatId));
             
             if (activeEmployees.length === 0) {
@@ -3245,7 +3221,7 @@ class CommandHandler {
     async handleListUsers(chatId, text, from, user, isAdmin) {
         if (!isAdmin) return;
         
-        const employees = await dataManager.getEmployees();
+        const employees = await dataManager.readFile(DATA_FILES.employees);
         
         if (employees.length === 0) {
             await telegramAPI.sendMessage(chatId, "👥 Henüz kayıtlı kullanıcı bulunmuyor.");
@@ -3324,7 +3300,7 @@ class CommandHandler {
                         ]]
                     }
                 );
-            }
+            } else {
                 await telegramAPI.sendMessage(chatId, 
                     `📋 Tüm ürünleri gördünüz. Liste yönetimi:`,
                     {
@@ -3335,7 +3311,7 @@ class CommandHandler {
                     }
                 );
             }
-        }
+        } else {
             // Çalışan için - sadece liste görüntüleme
             let productText = `📦 <b>Eksik Ürün Listesi (${products.length})</b>\n\n`;
             
@@ -3400,7 +3376,7 @@ class CommandHandler {
         
         if (recentActivities.length === 0) {
             activityText += "Henüz aktivite kaydı bulunmuyor.";
-        }
+        } else {
             recentActivities.forEach((activity, index) => {
                 const timeAgo = Math.floor((Date.now() - new Date(activity.timestamp)) / (1000 * 60));
                 activityText += `${index + 1}. ${activity.message}\n`;
@@ -3436,7 +3412,7 @@ class CommandHandler {
         }
         
         try {
-            const employees = await dataManager.getEmployees();
+            const employees = await dataManager.readFile(DATA_FILES.employees);
             const activeEmployees = employees.filter(emp => emp.status === 'active' && Number(emp.chatId) !== Number(chatId));
             
             if (activeEmployees.length === 0) {
@@ -3550,8 +3526,8 @@ class CommandHandler {
     
     async handleTaskManagement(chatId, user) {
         try {
-            const tasks = await dataManager.getTasks();
-            const employees = await dataManager.getEmployees();
+            const tasks = await dataManager.readFile(DATA_FILES.tasks);
+            const employees = await dataManager.readFile(DATA_FILES.employees);
             
             const allTasks = tasks.length;
             const pendingTasks = tasks.filter(task => task.status === 'pending').length;
@@ -3576,7 +3552,7 @@ class CommandHandler {
                 if (activeTasks.length > 5) {
                     taskText += `... ve ${activeTasks.length - 5} görev daha\n\n`;
                 }
-            }
+            } else {
                 taskText += `✅ Şu anda bekleyen görev bulunmuyor.\n\n`;
             }
             
@@ -3610,7 +3586,7 @@ class CommandHandler {
 
     async handlePromoteAdmin(chatId, user) {
         try {
-            const employees = await dataManager.getEmployees();
+            const employees = await dataManager.readFile(DATA_FILES.employees);
             const adminSettings = await dataManager.readFile(DATA_FILES.adminSettings);
             
             // Filter out existing admins
@@ -3670,7 +3646,7 @@ class CommandHandler {
                         resize_keyboard: true
                     }
                 );
-            }
+            } else {
                 await telegramAPI.sendMessage(chatId,
                     `💡 <b>Admin Atama Tamamlandı</b>\n\n` +
                     `Yukarıdaki çalışanlardan admin yapmak istediğinizi seçin.\n` +
@@ -3713,7 +3689,7 @@ class CommandHandler {
         username = username.replace('@', ''); // Remove @ if exists
         
         try {
-            const employees = await dataManager.getEmployees();
+            const employees = await dataManager.readFile(DATA_FILES.employees);
             const adminSettings = await dataManager.readFile(DATA_FILES.adminSettings);
             
             // Find user by username or name
@@ -3811,7 +3787,7 @@ class CommandHandler {
 
     async handleRemoveEmployee(chatId, user) {
         try {
-            const employees = await dataManager.getEmployees();
+            const employees = await dataManager.readFile(DATA_FILES.employees);
             const adminSettings = await dataManager.readFile(DATA_FILES.adminSettings);
             
             // Don't show current admin in removal list
@@ -3890,8 +3866,8 @@ class CommandHandler {
 
     async handleDetailedReports(chatId, user) {
         try {
-            const employees = await dataManager.getEmployees();
-            const tasks = await dataManager.getTasks();
+            const employees = await dataManager.readFile(DATA_FILES.employees);
+            const tasks = await dataManager.readFile(DATA_FILES.tasks);
             const products = await dataManager.readFile(DATA_FILES.missingProducts);
             const activities = await dataManager.readFile(DATA_FILES.activityLog);
             const systemStats = await dataManager.readFile(DATA_FILES.systemStats);
@@ -4456,7 +4432,7 @@ class CallbackQueryHandler {
         const targetChatId = data.replace('promote_admin_', '');
         
         try {
-            const employees = await dataManager.getEmployees();
+            const employees = await dataManager.readFile(DATA_FILES.employees);
             const adminSettings = await dataManager.readFile(DATA_FILES.adminSettings);
             
             // Find target user
@@ -4537,8 +4513,8 @@ class CallbackQueryHandler {
         const targetChatId = data.replace('user_detail_', '');
         
         try {
-            const employees = await dataManager.getEmployees();
-            const tasks = await dataManager.getTasks();
+            const employees = await dataManager.readFile(DATA_FILES.employees);
+            const tasks = await dataManager.readFile(DATA_FILES.tasks);
             const products = await dataManager.readFile(DATA_FILES.missingProducts);
             
             const targetUser = employees.find(emp => Number(emp.chatId) === Number(targetChatId));
@@ -4595,7 +4571,7 @@ class CallbackQueryHandler {
         if (!isAdmin) return;
         
         try {
-            const employees = await dataManager.getEmployees();
+            const employees = await dataManager.readFile(DATA_FILES.employees);
             const regularEmployees = employees.filter(emp => emp.role !== 'admin');
             
             if (regularEmployees.length === 0) {
@@ -4643,7 +4619,7 @@ class CallbackQueryHandler {
         const employeeChatId = data.replace('select_employee_', '');
         
         try {
-            const employees = await dataManager.getEmployees();
+            const employees = await dataManager.readFile(DATA_FILES.employees);
             const selectedEmployee = employees.find(emp => Number(emp.chatId) === Number(employeeChatId));
             
             if (!selectedEmployee) {
@@ -4705,7 +4681,7 @@ class CallbackQueryHandler {
         if (!isAdmin) return;
         
         try {
-            const tasks = await dataManager.getTasks();
+            const tasks = await dataManager.readFile(DATA_FILES.tasks);
             const activeTasks = tasks.filter(task => task.status === 'pending');
             
             if (activeTasks.length === 0) {
@@ -4797,7 +4773,7 @@ class CallbackQueryHandler {
         const targetChatId = data.replace('remove_employee_', '');
         
         try {
-            const employees = await dataManager.getEmployees();
+            const employees = await dataManager.readFile(DATA_FILES.employees);
             const adminSettings = await dataManager.readFile(DATA_FILES.adminSettings);
             
             // Find target user
@@ -4894,7 +4870,7 @@ class CallbackQueryHandler {
         const targetChatId = data.replace('demote_admin_', '');
         
         try {
-            const employees = await dataManager.getEmployees();
+            const employees = await dataManager.readFile(DATA_FILES.employees);
             const adminSettings = await dataManager.readFile(DATA_FILES.adminSettings);
             
             // Find target user
@@ -5400,7 +5376,7 @@ async function initializeServer() {
         
         if (webhookResponse.data.ok) {
             console.log('✅ Webhook set successfully');
-        }
+        } else {
             console.error('❌ Failed to set webhook:', webhookResponse.data);
         }
         
