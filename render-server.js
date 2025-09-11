@@ -382,8 +382,8 @@ class MessageHandler {
                 );
 
                 // Admin'lere bildirim
-                const adminUsers = allEmployees.filter(emp => emp.type === 'admin');
-                for (const admin of adminUsers) {
+                const adminList = allEmployees.filter(emp => emp.type === 'admin');
+                for (const admin of adminList) {
                     try {
                         await this.bot.sendMessage(
                             admin.chatId,
@@ -1240,9 +1240,9 @@ class MessageHandler {
 
                     // Admin'lere bildirim gönder
                     const employees = await this.dataManager.getEmployees();
-                    const adminUsers = employees.filter(emp => emp.type === 'admin');
+                    const adminTeam = employees.filter(emp => emp.type === 'admin');
                     
-                    for (const admin of adminUsers) {
+                    for (const admin of adminTeam) {
                         await this.bot.sendMessage(
                             admin.chatId,
                             `🚨 <b>Yeni Eksik Ürün Raporu</b>\n\n` +
