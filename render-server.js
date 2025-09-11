@@ -173,11 +173,13 @@ class KeyboardGenerator {
             admin: {
                 reply_markup: {
                     keyboard: [
-                        [{ text: "👥 Kullanıcı Yönetimi" }, { text: "📋 Görev Yönetimi" }],
-                        [{ text: "➕ Yeni Görev" }, { text: "📤 Toplu Görev" }],
-                        [{ text: "📦 Ürün Yönetimi" }, { text: "📢 Duyuru Sistemi" }],
-                        [{ text: "➕ Yeni Duyuru" }, { text: "📊 Raporlar" }],
-                        [{ text: "⚙️ Sistem Ayarları" }, { text: "🔔 Bildirimler" }]
+                        [{ text: "👑 YÖNETİCİ PANELİ 👑" }],
+                        [{ text: "👥 Kullanıcı Yönetimi" }, { text: "➕ Yönetici Ekle" }],
+                        [{ text: "📋 Görev Yönetimi" }, { text: "➕ Yeni Görev" }],
+                        [{ text: "📤 Toplu Görev" }, { text: "📦 Ürün Yönetimi" }],
+                        [{ text: "📢 Duyuru Sistemi" }, { text: "➕ Yeni Duyuru" }],
+                        [{ text: "🔔 Bildirimler" }, { text: "📊 Raporlar" }],
+                        [{ text: "⚙️ Sistem Ayarları" }, { text: "ℹ️ Bilgilerim" }]
                     ],
                     resize_keyboard: true
                 }
@@ -185,9 +187,11 @@ class KeyboardGenerator {
             employee: {
                 reply_markup: {
                     keyboard: [
-                        [{ text: "📋 Görevlerim" }, { text: "📦 Ürün Raporla" }],
+                        [{ text: "👨‍💼 ÇALIŞAN PANELİ 👨‍💼" }],
+                        [{ text: "📋 Görevlerim" }, { text: "📦 Eksik Ürün Bildir" }],
                         [{ text: "📢 Duyurular" }, { text: "ℹ️ Bilgilerim" }],
-                        [{ text: "📸 Fotoğraf Gönder" }, { text: "🎤 Ses Gönder" }]
+                        [{ text: "📸 Fotoğraf Gönder" }, { text: "🎤 Ses Kaydı Gönder" }],
+                        [{ text: "📄 Rapor Gönder" }]
                     ],
                     resize_keyboard: true
                 }
@@ -236,6 +240,29 @@ class KeyboardGenerator {
                 reply_markup: {
                     inline_keyboard: [
                         [{ text: "🔙 Ana Menüye Dön", callback_data: "main_menu" }]
+                    ]
+                }
+            },
+            missing_product_actions: {
+                reply_markup: {
+                    inline_keyboard: [
+                        [
+                            { text: "✅ Tedarik Edildi", callback_data: `resolve_missing_${data.productId}` },
+                            { text: "📝 Detay", callback_data: `missing_detail_${data.productId}` }
+                        ]
+                    ]
+                }
+            },
+            admin_task_actions: {
+                reply_markup: {
+                    inline_keyboard: [
+                        [
+                            { text: "✅ Onaylandı", callback_data: `approve_task_${data.taskId}` },
+                            { text: "❌ Reddet", callback_data: `reject_task_${data.taskId}` }
+                        ],
+                        [
+                            { text: "📝 Detay Gör", callback_data: `admin_task_detail_${data.taskId}` }
+                        ]
                     ]
                 }
             }
@@ -823,6 +850,152 @@ class MessageHandler {
         }
     }
 
+    // ➕ YÖNETİCİ EKLEME
+    async handleAddAdmin(chatId) {
+        try {
+            await this.bot.sendMessage(
+                chatId,
+                `➕ <b>Yeni Yönetici Ekle</b>\n\n` +
+                `👤 Yönetici yapmak istediğiniz kişinin:\n` +
+                `💬 <b>Kullanıcı adını</b> (örn: @johndoe)\n` +
+                `📱 <b>Telegram ID'sini</b> (örn: 123456789)\n` +
+                `📛 <b>İsmini</b> (örn: John Doe)\n\n` +
+                `📝 Yukarıdakilerden birini yazınız:\n\n` +
+                `❌ İptal etmek için /cancel yazabilirsiniz.`
+            );
+
+            SessionManager.setUserState(chatId, 'awaiting_admin_info', {
+                requesterAdmin: chatId
+            });
+
+        } catch (error) {
+            console.error('❌ Yönetici ekleme başlatma hatası:', error);
+            await this.bot.sendMessage(chatId, '🚫 Yönetici ekleme başlatılırken hata oluştu.');
+        }
+    }
+
+    // 📄 GENEL RAPOR GÖNDERME
+    async handleGeneralReport(chatId, user) {
+        try {
+            await this.bot.sendMessage(
+                chatId,
+                `📄 <b>Rapor Gönder</b>\n\n` +
+                `📝 Ne rapor etmek istiyorsunuz?\n` +
+                `💡 <i>Detaylı açıklama yapın</i>\n\n` +
+                `📋 <b>Örnek Raporlar:</b>\n` +
+                `• Güvenlik sorunu tespit ettim\n` +
+                `• Ekipman arızası var\n` +
+                `• Süreç iyileştirme önerisi\n` +
+                `• Genel gözlem ve öneri\n\n` +
+                `❌ İptal etmek için /cancel yazabilirsiniz.`
+            );
+
+            SessionManager.setUserState(chatId, 'awaiting_general_report', {
+                reporterName: `${user.first_name} ${user.last_name || ''}`,
+                reporterId: chatId
+            });
+
+        } catch (error) {
+            console.error('❌ Genel rapor başlatma hatası:', error);
+            await this.bot.sendMessage(chatId, '🚫 Rapor başlatılırken hata oluştu.');
+        }
+    }
+
+    // 👑 ADMIN DASHBOARD
+    async handleAdminDashboard(chatId, user) {
+        try {
+            const stats = await this.dataManager.getDatabaseStats();
+            const pendingUsers = await this.dataManager.getPendingUsers();
+            const missingProducts = await this.dataManager.getMissingProducts();
+            const tasks = await this.dataManager.getTasks();
+            
+            let message = `👑 <b>YÖNETİCİ PANELİ</b>\n`;
+            message += `━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n`;
+            
+            message += `👤 <b>Hoş geldiniz, ${user.firstName}!</b>\n`;
+            message += `🕐 ${new Date().toLocaleString('tr-TR')}\n\n`;
+            
+            message += `📊 <b>HIZLI İSTATİSTİKLER</b>\n`;
+            message += `👥 Aktif Kullanıcı: ${stats.employees || 0}\n`;
+            message += `⏳ Onay Bekleyen: ${pendingUsers.length}\n`;
+            message += `📋 Toplam Görev: ${stats.tasks || 0}\n`;
+            message += `📦 Ürün Sayısı: ${stats.products || 0}\n`;
+            message += `🚨 Eksik Ürün Raporu: ${missingProducts.length}\n`;
+            message += `📢 Duyuru: ${stats.announcements || 0}\n\n`;
+            
+            message += `🚨 <b>ACİL DURUMLAR</b>\n`;
+            if (pendingUsers.length > 0) {
+                message += `⚠️ ${pendingUsers.length} kullanıcı onay bekliyor!\n`;
+            }
+            if (missingProducts.length > 0) {
+                message += `⚠️ ${missingProducts.length} eksik ürün raporu var!\n`;
+            }
+            const pendingTasks = tasks.filter(t => t.status === 'pending').length;
+            if (pendingTasks > 0) {
+                message += `⚠️ ${pendingTasks} görev beklemede!\n`;
+            }
+            
+            if (pendingUsers.length === 0 && missingProducts.length === 0 && pendingTasks === 0) {
+                message += `✅ Bekleyen acil durum yok\n`;
+            }
+            
+            message += `\n💡 <i>Menüden yönetim işlemlerinizi seçebilirsiniz.</i>`;
+
+            await this.bot.sendMessage(chatId, message, KeyboardGenerator.getInlineKeyboard('back_to_main'));
+
+        } catch (error) {
+            console.error('❌ Admin dashboard hatası:', error);
+            await this.bot.sendMessage(chatId, '🚫 Dashboard yüklenirken hata oluştu.');
+        }
+    }
+
+    // 👨‍💼 EMPLOYEE DASHBOARD  
+    async handleEmployeeDashboard(chatId, user) {
+        try {
+            const tasks = await this.dataManager.getTasks();
+            const myTasks = tasks.filter(task => task.assignedTo === chatId.toString());
+            const announcements = await this.dataManager.getAnnouncements();
+            
+            let message = `👨‍💼 <b>ÇALIŞAN PANELİ</b>\n`;
+            message += `━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n`;
+            
+            message += `👤 <b>Hoş geldiniz, ${user.firstName}!</b>\n`;
+            message += `🕐 ${new Date().toLocaleString('tr-TR')}\n\n`;
+            
+            message += `📊 <b>GÖREVLERİM</b>\n`;
+            message += `📝 Toplam: ${myTasks.length}\n`;
+            message += `✅ Tamamlanan: ${myTasks.filter(t => t.status === 'completed').length}\n`;
+            message += `🔄 Aktif: ${myTasks.filter(t => t.status === 'active').length}\n`;
+            message += `⏳ Beklemede: ${myTasks.filter(t => t.status === 'pending').length}\n\n`;
+            
+            if (myTasks.filter(t => t.status === 'pending').length > 0) {
+                message += `🎯 <b>BEKLEYEN GÖREVLERİM</b>\n`;
+                myTasks.filter(t => t.status === 'pending').slice(0, 3).forEach(task => {
+                    const priorityIcon = task.priority === 'high' ? '🔥' : task.priority === 'low' ? '💡' : '⚡';
+                    message += `${priorityIcon} ${task.title}\n`;
+                });
+                message += '\n';
+            }
+            
+            message += `📢 <b>SON DUYURULAR</b>\n`;
+            if (announcements.length > 0) {
+                announcements.slice(0, 2).forEach(ann => {
+                    message += `• ${ann.title}\n`;
+                });
+            } else {
+                message += `• Henüz duyuru yok\n`;
+            }
+            
+            message += `\n💡 <i>Menüden işlemlerinizi seçebilirsiniz.</i>`;
+
+            await this.bot.sendMessage(chatId, message, KeyboardGenerator.getInlineKeyboard('back_to_main'));
+
+        } catch (error) {
+            console.error('❌ Employee dashboard hatası:', error);
+            await this.bot.sendMessage(chatId, '🚫 Dashboard yüklenirken hata oluştu.');
+        }
+    }
+
     async handleTextMessage(chatId, messageText, user) {
         try {
             // State kontrolü
@@ -879,6 +1052,7 @@ class MessageHandler {
                     break;
                     
                 case '📦 Ürün Raporla':
+                case '📦 Eksik Ürün Bildir':
                     await this.handleProductReport(chatId, user);
                     break;
                     
@@ -950,6 +1124,7 @@ class MessageHandler {
                     break;
                     
                 case '🎤 Ses Gönder':
+                case '🎤 Ses Kaydı Gönder':
                     await this.bot.sendMessage(
                         chatId,
                         '🎤 <b>Ses Kaydı Gönder</b>\n\n' +
@@ -957,6 +1132,30 @@ class MessageHandler {
                         '🎙️ Mesajınızı kaydedin ve gönderin\n\n' +
                         '🎯 Hızlı raporlama için kullanılabilir'
                     );
+                    break;
+                    
+                case '➕ Yönetici Ekle':
+                    if (currentUser.type === 'admin') {
+                        await this.handleAddAdmin(chatId);
+                    } else {
+                        await this.bot.sendMessage(chatId, '🚫 Bu özellik sadece yöneticiler içindir.');
+                    }
+                    break;
+                    
+                case '📄 Rapor Gönder':
+                    await this.handleGeneralReport(chatId, user);
+                    break;
+                    
+                case '👑 YÖNETİCİ PANELİ 👑':
+                    if (currentUser.type === 'admin') {
+                        await this.handleAdminDashboard(chatId, currentUser);
+                    } else {
+                        await this.bot.sendMessage(chatId, '🚫 Bu özellik sadece yöneticiler içindir.');
+                    }
+                    break;
+                    
+                case '👨‍💼 ÇALIŞAN PANELİ 👨‍💼':
+                    await this.handleEmployeeDashboard(chatId, currentUser);
                     break;
                     
                 default:
@@ -1323,6 +1522,142 @@ class MessageHandler {
                         `🌟 <i>Duyuru herkese ulaştırıldı!</i>`,
                         KeyboardGenerator.getInlineKeyboard('back_to_main')
                     );
+
+                    SessionManager.clearUserSession(chatId);
+                    break;
+
+                // ➕ YÖNETİCİ EKLEME STATES
+                case 'awaiting_admin_info':
+                    const adminInfo = messageText.trim();
+                    let targetUser = null;
+                    
+                    // Farklı formatlarda arama
+                    const allUsers = await this.dataManager.getEmployees();
+                    
+                    // ID ile arama
+                    if (/^\d+$/.test(adminInfo)) {
+                        targetUser = allUsers.find(u => u.chatId === adminInfo);
+                    }
+                    // @username ile arama
+                    else if (adminInfo.startsWith('@')) {
+                        const username = adminInfo.substring(1);
+                        targetUser = allUsers.find(u => u.username?.toLowerCase() === username.toLowerCase());
+                    }
+                    // İsim ile arama
+                    else {
+                        targetUser = allUsers.find(u => 
+                            `${u.firstName} ${u.lastName || ''}`.toLowerCase().includes(adminInfo.toLowerCase()) ||
+                            u.firstName?.toLowerCase().includes(adminInfo.toLowerCase())
+                        );
+                    }
+
+                    if (!targetUser) {
+                        await this.bot.sendMessage(
+                            chatId,
+                            '❌ Kullanıcı bulunamadı!\n\n' +
+                            '💡 Lütfen doğru bilgi girin:\n' +
+                            '• Tam Telegram ID (123456789)\n' +
+                            '• Kullanıcı adı (@johndoe)\n' +
+                            '• İsim (John Doe)'
+                        );
+                        return;
+                    }
+
+                    if (targetUser.type === 'admin') {
+                        await this.bot.sendMessage(
+                            chatId,
+                            `⚠️ <b>${targetUser.firstName} ${targetUser.lastName || ''}</b> zaten yönetici!`
+                        );
+                        SessionManager.clearUserSession(chatId);
+                        return;
+                    }
+
+                    // Kullanıcıyı admin yap
+                    try {
+                        await this.dataManager.addEmployee({
+                            chatId: targetUser.chatId,
+                            username: targetUser.username,
+                            firstName: targetUser.firstName,
+                            lastName: targetUser.lastName,
+                            type: 'admin'
+                        });
+
+                        // Eski employee kaydını sil
+                        await this.dataManager.deleteEmployee(targetUser.chatId);
+
+                        await this.bot.sendMessage(
+                            chatId,
+                            `✅ <b>Yeni Yönetici Eklendi!</b>\n\n` +
+                            `👤 <b>İsim:</b> ${targetUser.firstName} ${targetUser.lastName || ''}\n` +
+                            `💬 <b>Kullanıcı:</b> @${targetUser.username || 'Yok'}\n` +
+                            `🆔 <b>ID:</b> ${targetUser.chatId}\n` +
+                            `👑 <b>Yeni Yetki:</b> Yönetici\n\n` +
+                            `🔔 <i>Kullanıcıya bildirim gönderildi.</i>`,
+                            KeyboardGenerator.getInlineKeyboard('back_to_main')
+                        );
+
+                        // Yeni admin'e bildirim gönder
+                        await this.bot.sendMessage(
+                            targetUser.chatId,
+                            `👑 <b>TEBRİKLER!</b>\n\n` +
+                            `🎉 Yönetici olarak atandınız!\n` +
+                            `⚡ Artık tüm admin yetkilerine sahipsiniz\n` +
+                            `📋 Görev atayabilir, kullanıcı yönetebilirsiniz\n\n` +
+                            `💡 /start komutu ile yeni menünüzü görebilirsiniz`
+                        );
+
+                    } catch (error) {
+                        console.error('❌ Admin yapma hatası:', error);
+                        await this.bot.sendMessage(
+                            chatId,
+                            '🚫 Yönetici atama sırasında hata oluştu.'
+                        );
+                    }
+
+                    SessionManager.clearUserSession(chatId);
+                    break;
+
+                // 📄 GENEL RAPOR STATES
+                case 'awaiting_general_report':
+                    if (messageText.trim().length < 10) {
+                        await this.bot.sendMessage(
+                            chatId,
+                            '❌ Rapor çok kısa! En az 10 karakter yazın.'
+                        );
+                        return;
+                    }
+
+                    // Raporu bildirimi olarak kaydet
+                    await this.dataManager.addNotification({
+                        userId: 'admin',
+                        message: `📄 Genel Rapor: ${messageText.trim()}`,
+                        type: 'general_report'
+                    });
+
+                    await this.bot.sendMessage(
+                        chatId,
+                        `✅ <b>Rapor Gönderildi!</b>\n\n` +
+                        `📄 Raporunuz yöneticilere iletildi\n` +
+                        `👤 <b>Gönderen:</b> ${session.stateData.reporterName}\n` +
+                        `📅 <b>Tarih:</b> ${new Date().toLocaleString('tr-TR')}\n\n` +
+                        `🔔 <i>Yöneticiler en kısa sürede değerlendirecek.</i>`,
+                        KeyboardGenerator.getInlineKeyboard('back_to_main')
+                    );
+
+                    // Admin'lere bildirim gönder
+                    const adminUsers = await this.dataManager.getEmployees();
+                    const admins = adminUsers.filter(u => u.type === 'admin');
+                    
+                    for (const admin of admins) {
+                        await this.bot.sendMessage(
+                            admin.chatId,
+                            `📄 <b>Yeni Genel Rapor</b>\n\n` +
+                            `📝 <b>Rapor:</b> ${messageText.trim()}\n` +
+                            `👤 <b>Gönderen:</b> ${session.stateData.reporterName}\n` +
+                            `📅 <b>Tarih:</b> ${new Date().toLocaleString('tr-TR')}\n\n` +
+                            `💡 <i>Değerlendirmeniz bekleniyor.</i>`
+                        );
+                    }
 
                     SessionManager.clearUserSession(chatId);
                     break;
