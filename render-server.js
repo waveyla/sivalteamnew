@@ -1,6 +1,9 @@
-const express = require('express');
 const TelegramBot = require('node-telegram-bot-api');
+const express = require('express');
 const mongoose = require('mongoose');
+const cors = require('cors');
+const helmet = require('helmet');
+const { RateLimiterMemory } = require('rate-limiter-flexible');
 require('dotenv').config();
 
 // Environment variables with fallbacks
@@ -11,7 +14,16 @@ const PORT = process.env.PORT || 10000;
 
 // ==================== EXPRESS SETUP ====================
 const app = express();
-app.use(express.json());
+app.use(helmet());
+app.use(cors());
+app.use(express.json({ limit: '10mb' }));
+
+// Rate limiting
+const rateLimiter = new RateLimiterMemory({
+    keyPrefix: 'sivalteam_bot',
+    points: 50, // Number of requests
+    duration: 60, // Per 60 seconds
+});
 
 // ==================== MONGODB SCHEMAS ====================
 const userSchema = new mongoose.Schema({
@@ -21,127 +33,250 @@ const userSchema = new mongoose.Schema({
     lastName: String,
     role: { type: String, enum: ['admin', 'employee'], default: 'employee' },
     isActive: { type: Boolean, default: true },
-    createdAt: { type: Date, default: Date.now }
+    department: String,
+    registeredAt: { type: Date, default: Date.now },
+    lastActive: { type: Date, default: Date.now }
 });
 
 const taskSchema = new mongoose.Schema({
-    title: String,
+    title: { type: String, required: true },
     description: String,
-    assignedTo: [String],
+    assignedTo: [String], // chatId array
     assignedBy: String,
-    status: { type: String, enum: ['pending', 'completed'], default: 'pending' },
+    priority: { type: String, enum: ['low', 'medium', 'high'], default: 'medium' },
+    status: { type: String, enum: ['pending', 'in_progress', 'completed'], default: 'pending' },
     createdAt: { type: Date, default: Date.now },
-    completedAt: Date
+    completedAt: Date,
+    deadline: Date
 });
 
 const missingProductSchema = new mongoose.Schema({
-    productName: String,
-    quantity: Number,
+    productName: { type: String, required: true },
+    quantity: { type: Number, required: true },
     reportedBy: String,
     reportedByName: String,
     resolved: { type: Boolean, default: false },
+    createdAt: { type: Date, default: Date.now },
+    resolvedAt: Date
+});
+
+const announcementSchema = new mongoose.Schema({
+    title: String,
+    content: { type: String, required: true },
+    createdBy: String,
+    targetAudience: { type: String, enum: ['all', 'admins', 'employees'], default: 'all' },
     createdAt: { type: Date, default: Date.now }
 });
 
+// MongoDB Models
 const User = mongoose.model('User', userSchema);
 const Task = mongoose.model('Task', taskSchema);
 const MissingProduct = mongoose.model('MissingProduct', missingProductSchema);
-
-// ==================== BOT SETUP ====================
-const bot = new TelegramBot(BOT_TOKEN);
-
-// Set webhook
-bot.setWebHook(`${WEBHOOK_URL}/webhook/${BOT_TOKEN}`);
-
-// User states
-const userStates = new Map();
-
-// ==================== KEYBOARDS ====================
-const adminKeyboard = {
-    reply_markup: {
-        keyboard: [
-            ['📋 Görev Ver', '👥 Kullanıcılar'],
-            ['📦 Eksik Ürünler', '📢 Duyuru Yap'],
-            ['📊 Raporlar']
-        ],
-        resize_keyboard: true
-    }
-};
-
-const employeeKeyboard = {
-    reply_markup: {
-        keyboard: [
-            ['📋 Görevlerim', '📦 Eksik Ürün Bildir'],
-            ['📢 Duyurular', 'ℹ️ Bilgilerim']
-        ],
-        resize_keyboard: true
-    }
-};
+const Announcement = mongoose.model('Announcement', announcementSchema);
 
 // ==================== DATABASE CONNECTION ====================
 async function connectDB() {
     try {
-        await mongoose.connect(MONGODB_URI);
-        console.log('✅ MongoDB connected');
+        await mongoose.connect(MONGODB_URI, {
+            serverSelectionTimeoutMS: 5000,
+            socketTimeoutMS: 45000,
+        });
+        console.log('✅ MongoDB Atlas connected');
     } catch (error) {
         console.error('❌ MongoDB connection error:', error);
         process.exit(1);
     }
 }
 
-// ==================== HELPER FUNCTIONS ====================
-async function getUser(chatId) {
-    return await User.findOne({ chatId: String(chatId) });
+// ==================== SIVALTEAM BOT CLASS ====================
+class SivalTeamBot {
+    constructor() {
+        this.bot = new TelegramBot(BOT_TOKEN);
+        this.userStates = new Map(); // chatId -> state
+        this.setupWebhook();
+        this.setupHandlers();
+        
+        console.log('🤖 SivalTeam Bot initialized with security features');
+    }
+    
+    // Webhook setup for Render
+    setupWebhook() {
+        this.bot.setWebHook(`${WEBHOOK_URL}/webhook/${BOT_TOKEN}`);
+        console.log(`🔗 Webhook set: ${WEBHOOK_URL}/webhook/${BOT_TOKEN}`);
+    }
+    
+    // Bot handlers
+    setupHandlers() {
+        // Rate limiting middleware
+        this.bot.on('message', async (msg) => {
+            try {
+                await rateLimiter.consume(msg.chat.id);
+            } catch (rejRes) {
+                console.log(`⚡ Rate limit exceeded for ${msg.chat.id}`);
+                return;
+            }
+            
+            // Spam filter
+            if (this.isSpamMessage(msg)) {
+                console.log(`🚫 Spam blocked from ${msg.chat.id}: ${msg.text}`);
+                await this.bot.deleteMessage(msg.chat.id, msg.message_id).catch(() => {});
+                return;
+            }
+            
+            // Forward mesajlarını engelle
+            if (msg.forward_from || msg.forward_from_chat) {
+                await this.bot.deleteMessage(msg.chat.id, msg.message_id).catch(() => {});
+                this.bot.sendMessage(msg.chat.id, '⚠️ Forward mesajlar engellendi.');
+                return;
+            }
+        });
+        
+        console.log('🛡️ Security handlers initialized');
+    }
+    
+    // Spam detection
+    isSpamMessage(msg) {
+        if (!msg.text) return false;
+        
+        const spamPatterns = [
+            /t\.me\/[a-zA-Z0-9_]+/i,
+            /(?:https?:\/\/)?(?:www\.)?[a-zA-Z0-9-]+\.[a-zA-Z]{2,}/i,
+            /@[a-zA-Z0-9_]{5,}/i,
+            /kazanç|para kazan|zengin ol|reklam|casino|bet|crypto/i,
+            /\+90\s?\d{3}\s?\d{3}\s?\d{2}\s?\d{2}/
+        ];
+        
+        const text = msg.text.toLowerCase();
+        return spamPatterns.some(pattern => pattern.test(text));
+    }
+    
+    // User management
+    async getUser(chatId) {
+        return await User.findOne({ chatId: String(chatId) });
+    }
+    
+    async isAdmin(chatId) {
+        const user = await this.getUser(chatId);
+        return user && user.role === 'admin';
+    }
+    
+    // State management
+    setState(chatId, state, data = {}) {
+        this.userStates.set(chatId, { state, data });
+    }
+    
+    getState(chatId) {
+        return this.userStates.get(chatId);
+    }
+    
+    clearState(chatId) {
+        this.userStates.delete(chatId);
+    }
+    
+    // Send message with security
+    async sendSecureMessage(chatId, message, options = {}) {
+        try {
+            return await this.bot.sendMessage(chatId, message, {
+                parse_mode: 'HTML',
+                disable_web_page_preview: true,
+                ...options
+            });
+        } catch (error) {
+            console.error(`❌ Failed to send message to ${chatId}:`, error);
+            return false;
+        }
+    }
 }
 
-async function isAdmin(chatId) {
-    const user = await getUser(chatId);
-    return user && user.role === 'admin';
-}
+// Bot instance
+const sivalBot = new SivalTeamBot();
 
-function clearState(chatId) {
-    userStates.delete(chatId);
-}
+// ==================== KEYBOARDS ====================
+const getMainKeyboard = (role) => {
+    if (role === 'admin') {
+        return {
+            reply_markup: {
+                keyboard: [
+                    ['📋 Görev Ver', '👥 Kullanıcılar'],
+                    ['📦 Eksik Ürünler', '📢 Duyuru Yap'],
+                    ['📊 Raporlar', '⚙️ Ayarlar'],
+                    ['ℹ️ Bilgilerim']
+                ],
+                resize_keyboard: true
+            }
+        };
+    } else {
+        return {
+            reply_markup: {
+                keyboard: [
+                    ['📋 Görevlerim', '📦 Eksik Ürün Bildir'],
+                    ['📢 Duyurular', 'ℹ️ Bilgilerim'],
+                    ['🆘 Yardım']
+                ],
+                resize_keyboard: true
+            }
+        };
+    }
+};
 
-function setState(chatId, state, data = {}) {
-    userStates.set(chatId, { state, data });
-}
-
-function getState(chatId) {
-    return userStates.get(chatId);
-}
-
-// ==================== SPAM/AD PROTECTION ====================
-const spamPatterns = [
-    /t\.me\/[a-zA-Z0-9_]+/i,
-    /(?:https?:\/\/)?(?:www\.)?[a-zA-Z0-9-]+\.[a-zA-Z]{2,}/i,
-    /@[a-zA-Z0-9_]{5,}/i,
-    /kazanç|para kazan|zengin ol/i,
-    /bitcoin|crypto|forex/i,
-    /\+90\s?\d{3}\s?\d{3}\s?\d{2}\s?\d{2}/
-];
-
-function containsSpam(text) {
-    if (!text) return false;
-    return spamPatterns.some(pattern => pattern.test(text));
-}
+const getInlineKeyboard = (type, data = {}) => {
+    const keyboards = {
+        task_actions: {
+            reply_markup: {
+                inline_keyboard: [
+                    [
+                        { text: '✅ Tamamla', callback_data: `complete_task_${data.taskId}` },
+                        { text: '📝 Detay', callback_data: `detail_task_${data.taskId}` }
+                    ]
+                ]
+            }
+        },
+        task_assignment: {
+            reply_markup: {
+                inline_keyboard: [
+                    [{ text: '👥 Herkese', callback_data: 'assign_all' }],
+                    ...data.users.map(user => [
+                        { text: `👤 ${user.firstName}`, callback_data: `assign_${user.chatId}` }
+                    ])
+                ]
+            }
+        },
+        missing_product_actions: {
+            reply_markup: {
+                inline_keyboard: [
+                    [{ text: '✅ Tedarik Edildi', callback_data: `resolve_product_${data.productId}` }]
+                ]
+            }
+        }
+    };
+    
+    return keyboards[type] || { reply_markup: { inline_keyboard: [] } };
+};
 
 // ==================== MESSAGE HANDLERS ====================
 async function handleStart(msg) {
     const chatId = msg.chat.id;
-    const user = await getUser(chatId);
+    const user = await sivalBot.getUser(chatId);
     
     if (user) {
-        const keyboard = user.role === 'admin' ? adminKeyboard : employeeKeyboard;
-        bot.sendMessage(chatId, 
-            `Hoş geldin ${user.firstName}!\n` +
-            `Rol: ${user.role === 'admin' ? '👑 Yönetici' : '👷 Çalışan'}`,
+        // Existing user
+        user.lastActive = new Date();
+        await user.save();
+        
+        const keyboard = getMainKeyboard(user.role);
+        await sivalBot.sendSecureMessage(chatId, 
+            `🏢 <b>SivalTeam Yönetim Sistemi</b>\n\n` +
+            `👋 Hoş geldin ${user.firstName}!\n` +
+            `👤 Rol: ${user.role === 'admin' ? '👑 Yönetici' : '👷 Çalışan'}\n\n` +
+            `🚀 Menüden işleminizi seçebilirsiniz:`,
             keyboard
         );
     } else {
+        // New user
         const totalUsers = await User.countDocuments();
         
         if (totalUsers === 0) {
+            // First user becomes admin
             const newAdmin = new User({
                 chatId: String(chatId),
                 username: msg.from.username,
@@ -151,11 +286,16 @@ async function handleStart(msg) {
             });
             await newAdmin.save();
             
-            bot.sendMessage(chatId, 
-                '🎉 Tebrikler! İlk kullanıcı olarak yönetici oldunuz.',
-                adminKeyboard
+            await sivalBot.sendSecureMessage(chatId, 
+                `🎉 <b>İlk Yönetici Olarak Kayıt Oldunuz!</b>\n\n` +
+                `👑 Sistem yöneticisi yetkileriniz aktif\n` +
+                `🔐 Güvenlik sistemi aktif\n` +
+                `🛡️ Spam koruması etkin\n\n` +
+                `🚀 Başlamak için aşağıdaki menüyü kullanın:`,
+                getMainKeyboard('admin')
             );
         } else {
+            // Other users need approval
             const newUser = new User({
                 chatId: String(chatId),
                 username: msg.from.username,
@@ -166,19 +306,25 @@ async function handleStart(msg) {
             });
             await newUser.save();
             
-            const admins = await User.find({ role: 'admin' });
+            // Notify admins
+            const admins = await User.find({ role: 'admin', isActive: true });
             for (const admin of admins) {
-                bot.sendMessage(admin.chatId,
-                    `🆕 Yeni kullanıcı kaydı:\n` +
-                    `İsim: ${msg.from.first_name}\n` +
-                    `Username: @${msg.from.username}\n\n` +
-                    `Onaylamak için: /approve_${chatId}\n` +
-                    `Reddetmek için: /reject_${chatId}`
+                await sivalBot.sendSecureMessage(admin.chatId,
+                    `🆕 <b>Yeni Kullanıcı Kaydı</b>\n\n` +
+                    `👤 <b>İsim:</b> ${msg.from.first_name} ${msg.from.last_name || ''}\n` +
+                    `💬 <b>Username:</b> @${msg.from.username || 'N/A'}\n` +
+                    `🆔 <b>ID:</b> ${chatId}\n\n` +
+                    `✅ Onaylamak için: /approve_${chatId}\n` +
+                    `❌ Reddetmek için: /reject_${chatId}`
                 );
             }
             
-            bot.sendMessage(chatId, 
-                '📋 Kaydınız alındı. Yönetici onayı bekleniyor...'
+            await sivalBot.sendSecureMessage(chatId, 
+                `🏢 <b>SivalTeam Sistemine Hoş Geldiniz!</b>\n\n` +
+                `📋 Kaydınız alındı ve yönetici onayına gönderildi\n` +
+                `⏳ Lütfen onay sürecini bekleyin\n` +
+                `📱 Sonuç bilgisi bu sohbet üzerinden gelecektir\n\n` +
+                `💡 Sorularınız için yöneticinizle iletişime geçebilirsiniz.`
             );
         }
     }
@@ -187,32 +333,48 @@ async function handleStart(msg) {
 async function handleApprove(msg, targetId) {
     const chatId = msg.chat.id;
     
-    if (!await isAdmin(chatId)) {
-        return bot.sendMessage(chatId, '❌ Bu komutu kullanma yetkiniz yok.');
+    if (!await sivalBot.isAdmin(chatId)) {
+        return sivalBot.sendSecureMessage(chatId, '❌ Bu komutu kullanma yetkiniz yok.');
     }
     
-    await User.updateOne({ chatId: targetId }, { isActive: true });
+    const user = await User.findOne({ chatId: targetId });
+    if (!user) {
+        return sivalBot.sendSecureMessage(chatId, '❌ Kullanıcı bulunamadı.');
+    }
     
-    bot.sendMessage(targetId, 
-        '✅ Kaydınız onaylandı! Sistemi kullanabilirsiniz.\n' +
-        'Başlamak için /start yazın.',
-        employeeKeyboard
+    user.isActive = true;
+    await user.save();
+    
+    await sivalBot.sendSecureMessage(targetId, 
+        `✅ <b>Kaydınız Onaylandı!</b>\n\n` +
+        `🎉 SivalTeam sistemine hoş geldiniz\n` +
+        `🚀 Tüm özelliklere erişim aktif\n` +
+        `📱 Başlamak için /start yazın`,
+        getMainKeyboard('employee')
     );
     
-    bot.sendMessage(chatId, '✅ Kullanıcı onaylandı.');
+    await sivalBot.sendSecureMessage(chatId, `✅ ${user.firstName} onaylandı ve sisteme eklendi.`);
 }
 
 async function handleReject(msg, targetId) {
     const chatId = msg.chat.id;
     
-    if (!await isAdmin(chatId)) {
-        return bot.sendMessage(chatId, '❌ Bu komutu kullanma yetkiniz yok.');
+    if (!await sivalBot.isAdmin(chatId)) {
+        return sivalBot.sendSecureMessage(chatId, '❌ Bu komutu kullanma yetkiniz yok.');
     }
     
-    await User.deleteOne({ chatId: targetId });
+    const user = await User.findOneAndDelete({ chatId: targetId });
+    if (!user) {
+        return sivalBot.sendSecureMessage(chatId, '❌ Kullanıcı bulunamadı.');
+    }
     
-    bot.sendMessage(targetId, '❌ Kaydınız reddedildi.');
-    bot.sendMessage(chatId, '✅ Kullanıcı reddedildi.');
+    await sivalBot.sendSecureMessage(targetId, 
+        `❌ <b>Kaydınız Reddedildi</b>\n\n` +
+        `🚫 SivalTeam sistemine erişim reddedildi\n` +
+        `📞 Bilgi için yöneticinizle iletişime geçin`
+    );
+    
+    await sivalBot.sendSecureMessage(chatId, `❌ ${user.firstName} reddedildi ve sistemden kaldırıldı.`);
 }
 
 async function handleMessage(msg) {
@@ -236,72 +398,47 @@ async function handleMessage(msg) {
         return handleReject(msg, rejectMatch[1]);
     }
     
-    const user = await getUser(chatId);
+    const user = await sivalBot.getUser(chatId);
     if (!user || !user.isActive) return;
     
-    // Check for spam
-    if (user.role !== 'admin' && containsSpam(text)) {
-        await bot.deleteMessage(chatId, msg.message_id);
-        bot.sendMessage(chatId, '⚠️ Reklam ve link paylaşımı yasaktır!');
-        
-        const admins = await User.find({ role: 'admin' });
-        for (const admin of admins) {
-            bot.sendMessage(admin.chatId,
-                `⚠️ SPAM/REKLAM TESPİT EDİLDİ\n\n` +
-                `👤 Kullanıcı: ${user.firstName}\n` +
-                `📝 Mesaj: ${text.substring(0, 100)}...`
-            );
-        }
-        return;
-    }
+    // Update last active
+    user.lastActive = new Date();
+    await user.save();
     
-    const state = getState(chatId);
+    const state = sivalBot.getState(chatId);
     
     // Handle state-based responses
     if (state) {
         switch (state.state) {
             case 'awaiting_task_title':
-                setState(chatId, 'awaiting_task_description', { title: text });
-                bot.sendMessage(chatId, '📝 Görev açıklamasını yazın:');
-                return;
+                sivalBot.setState(chatId, 'awaiting_task_description', { title: text });
+                return sivalBot.sendSecureMessage(chatId, '📝 <b>Görev açıklamasını yazın:</b>');
                 
             case 'awaiting_task_description':
-                setState(chatId, 'awaiting_task_assignment', { 
+                const employees = await User.find({ role: 'employee', isActive: true });
+                if (employees.length === 0) {
+                    sivalBot.clearState(chatId);
+                    return sivalBot.sendSecureMessage(chatId, '❌ Aktif çalışan bulunamadı.');
+                }
+                
+                sivalBot.setState(chatId, 'awaiting_task_assignment', { 
                     ...state.data, 
                     description: text 
                 });
                 
-                const employees = await User.find({ role: 'employee', isActive: true });
-                if (employees.length === 0) {
-                    bot.sendMessage(chatId, '❌ Aktif çalışan bulunamadı.');
-                    clearState(chatId);
-                    return;
-                }
-                
-                let keyboard = {
-                    reply_markup: {
-                        inline_keyboard: [
-                            [{ text: '👥 Herkese', callback_data: 'task_all' }],
-                            ...employees.map(emp => [
-                                { text: `👤 ${emp.firstName}`, callback_data: `task_${emp.chatId}` }
-                            ])
-                        ]
-                    }
-                };
-                
-                bot.sendMessage(chatId, '👥 Kime atanacak?', keyboard);
-                return;
+                return sivalBot.sendSecureMessage(chatId, 
+                    '👥 <b>Kime atanacak?</b>',
+                    getInlineKeyboard('task_assignment', { users: employees })
+                );
                 
             case 'awaiting_product_name':
-                setState(chatId, 'awaiting_product_quantity', { productName: text });
-                bot.sendMessage(chatId, '📊 Kaç adet eksik? (Sadece sayı yazın)');
-                return;
+                sivalBot.setState(chatId, 'awaiting_product_quantity', { productName: text });
+                return sivalBot.sendSecureMessage(chatId, '📊 <b>Kaç adet eksik?</b> (Sadece sayı yazın)');
                 
             case 'awaiting_product_quantity':
                 const quantity = parseInt(text);
                 if (isNaN(quantity) || quantity <= 0) {
-                    bot.sendMessage(chatId, '❌ Geçerli bir sayı girin.');
-                    return;
+                    return sivalBot.sendSecureMessage(chatId, '❌ Geçerli bir sayı girin.');
                 }
                 
                 const missingProduct = new MissingProduct({
@@ -312,180 +449,193 @@ async function handleMessage(msg) {
                 });
                 await missingProduct.save();
                 
-                const admins = await User.find({ role: 'admin' });
+                // Notify admins
+                const admins = await User.find({ role: 'admin', isActive: true });
                 for (const admin of admins) {
-                    bot.sendMessage(admin.chatId,
-                        `🚨 Eksik Ürün Bildirimi!\n\n` +
-                        `📦 Ürün: ${state.data.productName}\n` +
-                        `📊 Miktar: ${quantity}\n` +
-                        `👤 Bildiren: ${user.firstName}`,
-                        {
-                            reply_markup: {
-                                inline_keyboard: [[
-                                    { text: '✅ Tedarik Edildi', callback_data: `resolve_${missingProduct._id}` }
-                                ]]
-                            }
-                        }
+                    await sivalBot.sendSecureMessage(admin.chatId,
+                        `🚨 <b>Yeni Eksik Ürün Bildirimi!</b>\n\n` +
+                        `📦 <b>Ürün:</b> ${state.data.productName}\n` +
+                        `📊 <b>Miktar:</b> ${quantity} adet\n` +
+                        `👤 <b>Bildiren:</b> ${user.firstName}\n` +
+                        `📅 <b>Tarih:</b> ${new Date().toLocaleString('tr-TR')}`,
+                        getInlineKeyboard('missing_product_actions', { productId: missingProduct._id })
                     );
                 }
                 
-                bot.sendMessage(chatId, '✅ Eksik ürün bildirimi yapıldı.');
-                clearState(chatId);
+                await sivalBot.sendSecureMessage(chatId, 
+                    `✅ <b>Eksik ürün bildirimi gönderildi!</b>\n\n` +
+                    `📦 ${state.data.productName} - ${quantity} adet\n` +
+                    `👑 Yöneticilere bildirim yapıldı`
+                );
+                sivalBot.clearState(chatId);
                 return;
                 
             case 'awaiting_announcement':
-                const announcement = text;
+                const announcement = new Announcement({
+                    content: text,
+                    createdBy: user.firstName
+                });
+                await announcement.save();
+                
                 const allUsers = await User.find({ isActive: true });
                 let sentCount = 0;
                 
                 for (const targetUser of allUsers) {
                     if (targetUser.chatId !== String(chatId)) {
-                        try {
-                            await bot.sendMessage(targetUser.chatId,
-                                `📢 DUYURU\n\n${announcement}\n\n` +
-                                `👤 Gönderen: ${user.firstName}`
-                            );
-                            sentCount++;
-                        } catch (err) {
-                            console.log(`Failed to send to ${targetUser.chatId}`);
-                        }
+                        const success = await sivalBot.sendSecureMessage(targetUser.chatId,
+                            `📢 <b>DUYURU</b>\n\n${text}\n\n` +
+                            `👤 <b>Gönderen:</b> ${user.firstName}\n` +
+                            `📅 <b>Tarih:</b> ${new Date().toLocaleString('tr-TR')}`
+                        );
+                        if (success) sentCount++;
                     }
                 }
                 
-                bot.sendMessage(chatId, `✅ Duyuru ${sentCount} kişiye gönderildi.`);
-                clearState(chatId);
+                await sivalBot.sendSecureMessage(chatId, 
+                    `✅ <b>Duyuru gönderildi!</b>\n\n` +
+                    `📡 ${sentCount} kişiye ulaştırıldı\n` +
+                    `📅 ${new Date().toLocaleString('tr-TR')}`
+                );
+                sivalBot.clearState(chatId);
                 return;
         }
     }
     
-    // Handle button commands
+    // Handle menu commands
     switch (text) {
         case '📋 Görev Ver':
             if (user.role !== 'admin') {
-                bot.sendMessage(chatId, '❌ Bu özellik sadece yöneticiler içindir.');
-                return;
+                return sivalBot.sendSecureMessage(chatId, '❌ Bu özellik sadece yöneticiler içindir.');
             }
-            setState(chatId, 'awaiting_task_title');
-            bot.sendMessage(chatId, '📝 Görev başlığını yazın:');
-            break;
+            sivalBot.setState(chatId, 'awaiting_task_title');
+            return sivalBot.sendSecureMessage(chatId, '📝 <b>Görev başlığını yazın:</b>');
             
         case '📋 Görevlerim':
             const myTasks = await Task.find({ 
                 assignedTo: String(chatId),
-                status: 'pending'
-            });
+                status: { $in: ['pending', 'in_progress'] }
+            }).sort({ createdAt: -1 });
             
             if (myTasks.length === 0) {
-                bot.sendMessage(chatId, '✅ Bekleyen göreviniz yok.');
-                return;
+                return sivalBot.sendSecureMessage(chatId, '✅ Bekleyen göreviniz yok.');
             }
             
-            for (const task of myTasks) {
-                bot.sendMessage(chatId,
-                    `📋 GÖREV\n\n` +
-                    `📌 ${task.title}\n` +
-                    `📝 ${task.description}\n` +
-                    `📅 ${task.createdAt.toLocaleDateString('tr-TR')}`,
-                    {
-                        reply_markup: {
-                            inline_keyboard: [[
-                                { text: '✅ Tamamla', callback_data: `complete_${task._id}` }
-                            ]]
-                        }
-                    }
+            for (const task of myTasks.slice(0, 5)) {
+                await sivalBot.sendSecureMessage(chatId,
+                    `📋 <b>GÖREV</b>\n\n` +
+                    `📌 <b>Başlık:</b> ${task.title}\n` +
+                    `📝 <b>Açıklama:</b> ${task.description}\n` +
+                    `⏰ <b>Durum:</b> ${task.status}\n` +
+                    `📅 <b>Tarih:</b> ${task.createdAt.toLocaleDateString('tr-TR')}`,
+                    getInlineKeyboard('task_actions', { taskId: task._id })
                 );
             }
             break;
             
         case '📦 Eksik Ürün Bildir':
-            setState(chatId, 'awaiting_product_name');
-            bot.sendMessage(chatId, '📦 Eksik ürünün adını yazın:');
-            break;
+            sivalBot.setState(chatId, 'awaiting_product_name');
+            return sivalBot.sendSecureMessage(chatId, '📦 <b>Eksik ürünün adını yazın:</b>');
             
         case '📦 Eksik Ürünler':
             if (user.role !== 'admin') {
-                bot.sendMessage(chatId, '❌ Bu özellik sadece yöneticiler içindir.');
-                return;
+                return sivalBot.sendSecureMessage(chatId, '❌ Bu özellik sadece yöneticiler içindir.');
             }
             
-            const missingProducts = await MissingProduct.find({ resolved: false });
-            
+            const missingProducts = await MissingProduct.find({ resolved: false })
+                .sort({ createdAt: -1 })
+                .limit(10);
+                
             if (missingProducts.length === 0) {
-                bot.sendMessage(chatId, '✅ Eksik ürün bildirimi yok.');
-                return;
+                return sivalBot.sendSecureMessage(chatId, '✅ Eksik ürün bildirimi yok.');
             }
             
             for (const product of missingProducts) {
-                bot.sendMessage(chatId,
-                    `📦 ${product.productName}\n` +
-                    `📊 Miktar: ${product.quantity}\n` +
-                    `👤 Bildiren: ${product.reportedByName}\n` +
-                    `📅 ${product.createdAt.toLocaleDateString('tr-TR')}`,
-                    {
-                        reply_markup: {
-                            inline_keyboard: [[
-                                { text: '✅ Tedarik Edildi', callback_data: `resolve_${product._id}` }
-                            ]]
-                        }
-                    }
+                await sivalBot.sendSecureMessage(chatId,
+                    `📦 <b>EKSİK ÜRÜN</b>\n\n` +
+                    `📌 <b>Ürün:</b> ${product.productName}\n` +
+                    `📊 <b>Miktar:</b> ${product.quantity} adet\n` +
+                    `👤 <b>Bildiren:</b> ${product.reportedByName}\n` +
+                    `📅 <b>Tarih:</b> ${product.createdAt.toLocaleDateString('tr-TR')}`,
+                    getInlineKeyboard('missing_product_actions', { productId: product._id })
                 );
             }
             break;
             
         case '📢 Duyuru Yap':
             if (user.role !== 'admin') {
-                bot.sendMessage(chatId, '❌ Bu özellik sadece yöneticiler içindir.');
-                return;
+                return sivalBot.sendSecureMessage(chatId, '❌ Bu özellik sadece yöneticiler içindir.');
             }
-            setState(chatId, 'awaiting_announcement');
-            bot.sendMessage(chatId, '📢 Duyuru mesajınızı yazın:');
-            break;
+            sivalBot.setState(chatId, 'awaiting_announcement');
+            return sivalBot.sendSecureMessage(chatId, '📢 <b>Duyuru mesajınızı yazın:</b>');
             
         case '👥 Kullanıcılar':
             if (user.role !== 'admin') {
-                bot.sendMessage(chatId, '❌ Bu özellik sadece yöneticiler içindir.');
-                return;
+                return sivalBot.sendSecureMessage(chatId, '❌ Bu özellik sadece yöneticiler içindir.');
             }
             
-            const users = await User.find({ isActive: true });
-            let userList = '👥 KULLANICILAR\n\n';
+            const users = await User.find({ isActive: true }).sort({ registeredAt: -1 });
+            let userList = `👥 <b>KULLANICI LİSTESİ</b>\n\n`;
             
-            for (const u of users) {
-                userList += `${u.role === 'admin' ? '👑' : '👷'} ${u.firstName} (@${u.username})\n`;
-            }
+            users.forEach((u, index) => {
+                userList += `${index + 1}. ${u.role === 'admin' ? '👑' : '👷'} ${u.firstName} ${u.lastName || ''}\n`;
+                userList += `   💬 @${u.username || 'N/A'}\n`;
+                userList += `   📅 ${u.registeredAt.toLocaleDateString('tr-TR')}\n\n`;
+            });
             
-            bot.sendMessage(chatId, userList);
-            break;
+            return sivalBot.sendSecureMessage(chatId, userList);
             
         case '📊 Raporlar':
             if (user.role !== 'admin') {
-                bot.sendMessage(chatId, '❌ Bu özellik sadece yöneticiler içindir.');
-                return;
+                return sivalBot.sendSecureMessage(chatId, '❌ Bu özellik sadece yöneticiler içindir.');
             }
             
             const totalUsers = await User.countDocuments({ isActive: true });
             const totalTasks = await Task.countDocuments();
             const pendingTasks = await Task.countDocuments({ status: 'pending' });
+            const completedTasks = await Task.countDocuments({ status: 'completed' });
             const missingCount = await MissingProduct.countDocuments({ resolved: false });
             
-            bot.sendMessage(chatId,
-                `📊 SİSTEM RAPORU\n\n` +
-                `👥 Toplam Kullanıcı: ${totalUsers}\n` +
-                `📋 Toplam Görev: ${totalTasks}\n` +
-                `⏳ Bekleyen Görev: ${pendingTasks}\n` +
-                `📦 Eksik Ürün: ${missingCount}`
+            return sivalBot.sendSecureMessage(chatId,
+                `📊 <b>SİSTEM RAPORU</b>\n\n` +
+                `👥 <b>Kullanıcılar:</b> ${totalUsers}\n` +
+                `📋 <b>Toplam Görev:</b> ${totalTasks}\n` +
+                `⏳ <b>Bekleyen Görev:</b> ${pendingTasks}\n` +
+                `✅ <b>Tamamlanan:</b> ${completedTasks}\n` +
+                `📦 <b>Eksik Ürün:</b> ${missingCount}\n\n` +
+                `📅 <b>Rapor Tarihi:</b> ${new Date().toLocaleString('tr-TR')}\n` +
+                `🛡️ <b>Güvenlik:</b> Aktif\n` +
+                `⚡ <b>Rate Limit:</b> Aktif`
             );
-            break;
             
         case 'ℹ️ Bilgilerim':
-            bot.sendMessage(chatId,
-                `👤 KULLANICI BİLGİLERİ\n\n` +
-                `İsim: ${user.firstName} ${user.lastName || ''}\n` +
-                `Username: @${user.username}\n` +
-                `Rol: ${user.role === 'admin' ? '👑 Yönetici' : '👷 Çalışan'}\n` +
-                `Kayıt: ${user.createdAt.toLocaleDateString('tr-TR')}`
+            return sivalBot.sendSecureMessage(chatId,
+                `👤 <b>KULLANICI BİLGİLERİ</b>\n\n` +
+                `👤 <b>İsim:</b> ${user.firstName} ${user.lastName || ''}\n` +
+                `💬 <b>Username:</b> @${user.username || 'N/A'}\n` +
+                `🏷️ <b>Rol:</b> ${user.role === 'admin' ? '👑 Yönetici' : '👷 Çalışan'}\n` +
+                `📅 <b>Kayıt:</b> ${user.registeredAt.toLocaleDateString('tr-TR')}\n` +
+                `🕐 <b>Son Aktif:</b> ${user.lastActive.toLocaleDateString('tr-TR')}\n` +
+                `🆔 <b>Chat ID:</b> ${chatId}`
             );
-            break;
+            
+        case '🆘 Yardım':
+            const helpMsg = user.role === 'admin' ? 
+                `🆘 <b>YÖNETİCİ YARDIM</b>\n\n` +
+                `📋 <b>Görev Ver</b> - Çalışanlara görev atama\n` +
+                `👥 <b>Kullanıcılar</b> - Kullanıcı listesi\n` +
+                `📦 <b>Eksik Ürünler</b> - Ürün raporları\n` +
+                `📢 <b>Duyuru Yap</b> - Toplu mesaj gönder\n` +
+                `📊 <b>Raporlar</b> - Sistem istatistikleri\n\n` +
+                `⚙️ <b>Komutlar:</b>\n` +
+                `/approve_ID - Kullanıcı onayla\n` +
+                `/reject_ID - Kullanıcı reddet` :
+                `🆘 <b>ÇALIŞAN YARDIM</b>\n\n` +
+                `📋 <b>Görevlerim</b> - Atanan görevler\n` +
+                `📦 <b>Eksik Ürün Bildir</b> - Ürün eksikliği\n` +
+                `📢 <b>Duyurular</b> - Sistem duyuruları\n` +
+                `ℹ️ <b>Bilgilerim</b> - Hesap bilgileri`;
+                
+            return sivalBot.sendSecureMessage(chatId, helpMsg);
     }
 }
 
@@ -494,112 +644,160 @@ async function handleCallbackQuery(query) {
     const messageId = query.message.message_id;
     const data = query.data;
     
-    const user = await getUser(chatId);
-    if (!user) return;
+    const user = await sivalBot.getUser(chatId);
+    if (!user || !user.isActive) return;
     
-    // Task assignment
-    if (data.startsWith('task_')) {
-        const state = getState(chatId);
-        if (!state || state.state !== 'awaiting_task_assignment') return;
-        
-        const targetId = data === 'task_all' ? 'all' : data.replace('task_', '');
-        
-        if (targetId === 'all') {
-            const employees = await User.find({ role: 'employee', isActive: true });
-            const task = new Task({
-                title: state.data.title,
-                description: state.data.description,
-                assignedTo: employees.map(e => e.chatId),
-                assignedBy: String(chatId)
-            });
-            await task.save();
+    try {
+        if (data.startsWith('complete_task_')) {
+            const taskId = data.replace('complete_task_', '');
             
-            for (const emp of employees) {
-                bot.sendMessage(emp.chatId,
-                    `📋 YENİ GÖREV!\n\n` +
-                    `📌 ${state.data.title}\n` +
-                    `📝 ${state.data.description}`
+            await Task.updateOne(
+                { _id: taskId },
+                { 
+                    status: 'completed', 
+                    completedAt: new Date() 
+                }
+            );
+            
+            await sivalBot.bot.editMessageText(
+                `✅ <b>Görev tamamlandı!</b>\n\n` +
+                `👤 <b>Tamamlayan:</b> ${user.firstName}\n` +
+                `📅 <b>Tamamlama:</b> ${new Date().toLocaleString('tr-TR')}`,
+                { 
+                    chat_id: chatId, 
+                    message_id: messageId,
+                    parse_mode: 'HTML'
+                }
+            );
+            
+            // Notify admin
+            const task = await Task.findById(taskId);
+            if (task && task.assignedBy) {
+                await sivalBot.sendSecureMessage(task.assignedBy,
+                    `✅ <b>Görev Tamamlandı!</b>\n\n` +
+                    `📋 <b>Görev:</b> ${task.title}\n` +
+                    `👤 <b>Tamamlayan:</b> ${user.firstName}\n` +
+                    `📅 <b>Tarih:</b> ${new Date().toLocaleString('tr-TR')}`
+                );
+            }
+        }
+        
+        else if (data.startsWith('assign_')) {
+            const state = sivalBot.getState(chatId);
+            if (!state || state.state !== 'awaiting_task_assignment') return;
+            
+            const targetId = data === 'assign_all' ? 'all' : data.replace('assign_', '');
+            
+            if (targetId === 'all') {
+                const employees = await User.find({ role: 'employee', isActive: true });
+                
+                const task = new Task({
+                    title: state.data.title,
+                    description: state.data.description,
+                    assignedTo: employees.map(e => e.chatId),
+                    assignedBy: String(chatId)
+                });
+                await task.save();
+                
+                // Notify all employees
+                for (const emp of employees) {
+                    await sivalBot.sendSecureMessage(emp.chatId,
+                        `📋 <b>YENİ GÖREV ATANDI!</b>\n\n` +
+                        `📌 <b>Başlık:</b> ${state.data.title}\n` +
+                        `📝 <b>Açıklama:</b> ${state.data.description}\n` +
+                        `👤 <b>Atayan:</b> ${user.firstName}`,
+                        getInlineKeyboard('task_actions', { taskId: task._id })
+                    );
+                }
+                
+                await sivalBot.bot.editMessageText(
+                    `✅ <b>Toplu Görev Atandı!</b>\n\n` +
+                    `📋 ${state.data.title}\n` +
+                    `👥 ${employees.length} çalışana gönderildi`,
+                    { 
+                        chat_id: chatId, 
+                        message_id: messageId,
+                        parse_mode: 'HTML'
+                    }
+                );
+            } else {
+                const task = new Task({
+                    title: state.data.title,
+                    description: state.data.description,
+                    assignedTo: [targetId],
+                    assignedBy: String(chatId)
+                });
+                await task.save();
+                
+                const targetUser = await User.findOne({ chatId: targetId });
+                
+                await sivalBot.sendSecureMessage(targetId,
+                    `📋 <b>YENİ GÖREV ATANDI!</b>\n\n` +
+                    `📌 <b>Başlık:</b> ${state.data.title}\n` +
+                    `📝 <b>Açıklama:</b> ${state.data.description}\n` +
+                    `👤 <b>Atayan:</b> ${user.firstName}`,
+                    getInlineKeyboard('task_actions', { taskId: task._id })
+                );
+                
+                await sivalBot.bot.editMessageText(
+                    `✅ <b>Görev Atandı!</b>\n\n` +
+                    `📋 ${state.data.title}\n` +
+                    `👤 ${targetUser.firstName} kullanıcısına atandı`,
+                    { 
+                        chat_id: chatId, 
+                        message_id: messageId,
+                        parse_mode: 'HTML'
+                    }
                 );
             }
             
-            bot.editMessageText(
-                `✅ Görev ${employees.length} kişiye atandı.`,
-                { chat_id: chatId, message_id: messageId }
-            );
-        } else {
-            const task = new Task({
-                title: state.data.title,
-                description: state.data.description,
-                assignedTo: [targetId],
-                assignedBy: String(chatId)
-            });
-            await task.save();
+            sivalBot.clearState(chatId);
+        }
+        
+        else if (data.startsWith('resolve_product_')) {
+            const productId = data.replace('resolve_product_', '');
             
-            bot.sendMessage(targetId,
-                `📋 YENİ GÖREV!\n\n` +
-                `📌 ${state.data.title}\n` +
-                `📝 ${state.data.description}`
+            await MissingProduct.updateOne(
+                { _id: productId },
+                { 
+                    resolved: true, 
+                    resolvedAt: new Date() 
+                }
             );
             
-            bot.editMessageText(
-                `✅ Görev atandı.`,
-                { chat_id: chatId, message_id: messageId }
+            await sivalBot.bot.editMessageText(
+                `✅ <b>Ürün Tedarik Edildi!</b>\n\n` +
+                `👤 <b>İşlem Yapan:</b> ${user.firstName}\n` +
+                `📅 <b>Çözüm Tarihi:</b> ${new Date().toLocaleString('tr-TR')}`,
+                { 
+                    chat_id: chatId, 
+                    message_id: messageId,
+                    parse_mode: 'HTML'
+                }
             );
         }
         
-        clearState(chatId);
+        await sivalBot.bot.answerCallbackQuery(query.id);
+        
+    } catch (error) {
+        console.error('Callback query error:', error);
+        await sivalBot.bot.answerCallbackQuery(query.id, { text: '❌ İşlem başarısız' });
     }
-    
-    // Complete task
-    if (data.startsWith('complete_')) {
-        const taskId = data.replace('complete_', '');
-        
-        await Task.updateOne(
-            { _id: taskId },
-            { status: 'completed', completedAt: new Date() }
-        );
-        
-        bot.editMessageText(
-            '✅ Görev tamamlandı!',
-            { chat_id: chatId, message_id: messageId }
-        );
-        
-        const task = await Task.findById(taskId);
-        if (task && task.assignedBy) {
-            bot.sendMessage(task.assignedBy,
-                `✅ Görev tamamlandı!\n\n` +
-                `📌 ${task.title}\n` +
-                `👤 Tamamlayan: ${user.firstName}`
-            );
-        }
-    }
-    
-    // Resolve missing product
-    if (data.startsWith('resolve_')) {
-        const productId = data.replace('resolve_', '');
-        
-        await MissingProduct.updateOne(
-            { _id: productId },
-            { resolved: true }
-        );
-        
-        bot.editMessageText(
-            '✅ Ürün tedarik edildi olarak işaretlendi.',
-            { chat_id: chatId, message_id: messageId }
-        );
-    }
-    
-    bot.answerCallbackQuery(query.id);
 }
 
 // ==================== EXPRESS ROUTES ====================
 app.get('/', (req, res) => {
-    res.send('🤖 SivalTeam Bot v2.0 - Running on Render!');
+    res.json({
+        name: '🏢 SivalTeam Management Bot',
+        version: '2.0',
+        status: 'active',
+        features: ['Security', 'Rate Limiting', 'Spam Protection', 'MongoDB'],
+        timestamp: new Date().toISOString()
+    });
 });
 
 app.post(`/webhook/${BOT_TOKEN}`, async (req, res) => {
     try {
-        console.log('Webhook received:', JSON.stringify(req.body, null, 2));
         const { message, callback_query } = req.body;
         
         if (message) {
@@ -617,24 +815,63 @@ app.post(`/webhook/${BOT_TOKEN}`, async (req, res) => {
     }
 });
 
+// Health check endpoint
+app.get('/api/health', async (req, res) => {
+    try {
+        const totalUsers = await User.countDocuments();
+        const activeUsers = await User.countDocuments({ isActive: true });
+        const totalTasks = await Task.countDocuments();
+        const pendingTasks = await Task.countDocuments({ status: 'pending' });
+        
+        res.json({
+            status: 'healthy',
+            database: 'connected',
+            bot: 'active',
+            security: 'enabled',
+            stats: {
+                totalUsers,
+                activeUsers,
+                totalTasks,
+                pendingTasks
+            },
+            timestamp: new Date().toISOString()
+        });
+    } catch (error) {
+        res.status(500).json({
+            status: 'error',
+            error: error.message,
+            timestamp: new Date().toISOString()
+        });
+    }
+});
+
 // ==================== START SERVER ====================
 connectDB().then(() => {
     app.listen(PORT, async () => {
-        console.log(`🚀 Server running on port ${PORT}`);
+        console.log(`🚀 SivalTeam Bot Server running on port ${PORT}`);
         console.log(`📌 Base URL: ${WEBHOOK_URL}`);
         console.log(`🔗 Full Webhook: ${WEBHOOK_URL}/webhook/${BOT_TOKEN}`);
         console.log(`🤖 Bot Token: ${BOT_TOKEN ? 'SET ✅' : 'NOT SET ❌'}`);
-        console.log(`🗄️ MongoDB: ${MONGODB_URI ? 'Connected to Atlas ✅' : 'NOT SET ❌'}`);
+        console.log(`🗄️ MongoDB: ${MONGODB_URI ? 'Atlas Connected ✅' : 'NOT SET ❌'}`);
+        console.log(`🛡️ Security Features: Rate Limiting ✅ | Spam Filter ✅ | Helmet ✅`);
         
-        // Set webhook info
+        // Webhook info
         try {
-            const webhookInfo = await bot.getWebHookInfo();
-            console.log('📡 Current Webhook:', webhookInfo.url);
+            const webhookInfo = await sivalBot.bot.getWebHookInfo();
+            console.log('📡 Webhook Status:', webhookInfo.url ? 'Active ✅' : 'Not Set ❌');
         } catch (error) {
-            console.log('⚠️ Could not get webhook info:', error.message);
+            console.log('⚠️ Webhook info error:', error.message);
         }
         
-        console.log('✅ Bot ready for Render deployment');
-        console.log('🛡️ Spam protection enabled');
+        console.log('✅ SivalTeam Bot v2.0 - Professional Edition Ready!');
     });
 });
+
+// Graceful shutdown
+process.on('SIGTERM', () => {
+    console.log('🛑 Shutting down SivalTeam Bot...');
+    mongoose.connection.close();
+    process.exit(0);
+});
+
+module.exports = { app, sivalBot };

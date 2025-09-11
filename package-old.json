@@ -1,0 +1,81 @@
+{
+  "name": "sivalteam-telegram-bot",
+  "version": "3.0.0",
+  "description": "SivalTeam Professional - Enterprise-Grade Team Management Telegram Bot System",
+  "main": "render-server.js",
+  "scripts": {
+    "start": "node render-server.js",
+    "desktop": "node sivalteam-desktop.js",
+    "electron": "electron .",
+    "electron-dev": "electron . --dev",
+    "build": "electron-builder",
+    "build-win": "electron-builder --win",
+    "dist": "npm run build-win",
+    "pack": "electron-builder --dir",
+    "pkg": "pkg sivalteam-desktop.js --targets node18-win-x64 --output dist/SivalTeam.exe"
+  },
+  "build": {
+    "appId": "com.sivalteam.desktop",
+    "productName": "SivalTeam Desktop",
+    "directories": {
+      "output": "dist"
+    },
+    "files": [
+      "**/*",
+      "!**/*.md",
+      "!.git",
+      "!dist",
+      "!node_modules/.cache"
+    ],
+    "win": {
+      "target": "nsis"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "allowElevation": true,
+      "deleteAppDataOnUninstall": true,
+      "runAfterFinish": true,
+      "shortcutName": "SivalTeam Desktop"
+    }
+  },
+  "keywords": [
+    "telegram",
+    "bot",
+    "team-management",
+    "task-management",
+    "employee-management"
+  ],
+  "author": "SivalTeam",
+  "license": "MIT",
+  "dependencies": {
+    "axios": "^1.6.0",
+    "body-parser": "^1.20.2",
+    "cors": "^2.8.5",
+    "dotenv": "^17.2.2",
+    "electron-fetch": "^1.9.1",
+    "express": "^4.18.2",
+    "fs-extra": "^11.1.1",
+    "mongoose": "^8.18.1",
+    "node-cron": "^3.0.2",
+    "node-fetch": "^2.6.7",
+    "node-telegram-bot-api": "^0.66.0",
+    "path": "^0.12.7",
+    "pkg": "^5.8.1"
+  },
+  "devDependencies": {
+    "electron": "^28.0.0",
+    "electron-builder": "^24.13.3",
+    "nodemon": "^3.0.1"
+  },
+  "engines": {
+    "node": ">=16.0.0",
+    "npm": ">=8.0.0"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/waveyla/sivalteamnew.git"
+  }
+}
