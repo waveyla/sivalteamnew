@@ -3,10 +3,15 @@ const TelegramBot = require('node-telegram-bot-api');
 const mongoose = require('mongoose');
 require('dotenv').config();
 
+// Environment variables with fallbacks
+const BOT_TOKEN = process.env.BOT_TOKEN || '8229159175:AAGRFoLpK9ma5ekPiaaCdI8EKJeca14XoOg';
+const MONGODB_URI = process.env.MONGODB_URI || 'mongodb+srv://serkser2_db_user:4K9JpoVC9U90UtmI@cluster0.pixopf1.mongodb.net/sivalteam?retryWrites=true&w=majority';
+const WEBHOOK_URL = process.env.WEBHOOK_URL || 'https://sivalteam-bot.onrender.com';
+const PORT = process.env.PORT || 10000;
+
 // ==================== EXPRESS SETUP ====================
 const app = express();
 app.use(express.json());
-const PORT = process.env.PORT || 10000;
 
 // ==================== MONGODB SCHEMAS ====================
 const userSchema = new mongoose.Schema({
@@ -43,11 +48,10 @@ const Task = mongoose.model('Task', taskSchema);
 const MissingProduct = mongoose.model('MissingProduct', missingProductSchema);
 
 // ==================== BOT SETUP ====================
-const bot = new TelegramBot(process.env.BOT_TOKEN);
+const bot = new TelegramBot(BOT_TOKEN);
 
 // Set webhook
-const WEBHOOK_URL = process.env.WEBHOOK_URL || `https://sivalteam-bot.onrender.com`;
-bot.setWebHook(`${WEBHOOK_URL}/webhook/${process.env.BOT_TOKEN}`);
+bot.setWebHook(`${WEBHOOK_URL}/webhook/${BOT_TOKEN}`);
 
 // User states
 const userStates = new Map();
@@ -77,7 +81,7 @@ const employeeKeyboard = {
 // ==================== DATABASE CONNECTION ====================
 async function connectDB() {
     try {
-        await mongoose.connect(process.env.MONGODB_URI);
+        await mongoose.connect(MONGODB_URI);
         console.log('✅ MongoDB connected');
     } catch (error) {
         console.error('❌ MongoDB connection error:', error);
@@ -593,7 +597,7 @@ app.get('/', (req, res) => {
     res.send('🤖 SivalTeam Bot v2.0 - Running on Render!');
 });
 
-app.post(`/webhook/${process.env.BOT_TOKEN}`, async (req, res) => {
+app.post(`/webhook/${BOT_TOKEN}`, async (req, res) => {
     try {
         console.log('Webhook received:', JSON.stringify(req.body, null, 2));
         const { message, callback_query } = req.body;
@@ -618,9 +622,9 @@ connectDB().then(() => {
     app.listen(PORT, async () => {
         console.log(`🚀 Server running on port ${PORT}`);
         console.log(`📌 Base URL: ${WEBHOOK_URL}`);
-        console.log(`🔗 Full Webhook: ${WEBHOOK_URL}/webhook/${process.env.BOT_TOKEN}`);
-        console.log(`🤖 Bot Token: ${process.env.BOT_TOKEN ? 'SET ✅' : 'NOT SET ❌'}`);
-        console.log(`🗄️ MongoDB: ${process.env.MONGODB_URI ? 'SET ✅' : 'NOT SET ❌'}`);
+        console.log(`🔗 Full Webhook: ${WEBHOOK_URL}/webhook/${BOT_TOKEN}`);
+        console.log(`🤖 Bot Token: ${BOT_TOKEN ? 'SET ✅' : 'NOT SET ❌'}`);
+        console.log(`🗄️ MongoDB: ${MONGODB_URI ? 'Connected to Atlas ✅' : 'NOT SET ❌'}`);
         
         // Set webhook info
         try {
