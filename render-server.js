@@ -1166,7 +1166,11 @@ class TaskManager {
         // Toplu görevlerde herkes tamamlayabilir, kişisel görevlerde sadece atanan kişi
         // Eski görevlerde type field yoksa 'individual' olarak kabul et
         const taskType = task.type || 'individual';
+        
+        console.log(`🔍 Task completion debug - Task ID: ${taskId}, Type: ${taskType}, AssignedTo: ${task.assignedTo}, CompletedBy: ${completedBy}`);
+        
         if (taskType !== 'bulk' && String(task.assignedTo) !== String(completedBy)) {
+            console.log(`❌ Task ownership mismatch - AssignedTo: ${task.assignedTo} (type: ${typeof task.assignedTo}), CompletedBy: ${completedBy} (type: ${typeof completedBy})`);
             throw new Error('Bu görev size ait değil');
         }
         
@@ -1992,6 +1996,21 @@ class CommandHandler {
         const wasDeleted = deletedEmployees.find(emp => Number(emp.chatId) === Number(chatId));
         
         if (wasDeleted) {
+            // Check if already pending for re-approval
+            const pendingUsers = await dataManager.readFile(DATA_FILES.pendingUsers);
+            const alreadyPending = pendingUsers.find(u => Number(u.chatId) === Number(chatId));
+            
+            if (alreadyPending) {
+                await telegramAPI.sendMessage(chatId,
+                    `⏳ <b>Onay Bekleniyor</b>\n\n` +
+                    `Tekrar kayıt talebiniz daha önce admin onayına gönderildi.\n` +
+                    `📅 İstek tarihi: ${new Date(alreadyPending.timestamp).toLocaleString('tr-TR')}\n\n` +
+                    `⌛ Lütfen admin onayını bekleyiniz.\n` +
+                    `🔔 Onaylandığınızda otomatik bildirim alacaksınız.`
+                );
+                return;
+            }
+            
             // User was previously deleted - require re-approval
             await telegramAPI.sendMessage(chatId,
                 `🚫 <b>Hesabınız Daha Önce Silindi</b>\n\n` +
@@ -2002,17 +2021,23 @@ class CommandHandler {
                 `⏳ Lütfen admin onayını bekleyiniz...`
             );
             
-            // Create pending approval for deleted user
-            const pendingUser = await userManager.setPendingApproval({
-                chatId,
-                firstName: from.first_name,
-                lastName: from.last_name,
-                username: from.username,
+            // Create pending approval for deleted user with special flag
+            const deletedPendingUser = {
+                chatId: Number(chatId),
+                firstName: turkishHandler.protect(from.first_name),
+                lastName: turkishHandler.protect(from.last_name || ''),
+                username: from.username || 'kullanici_' + Date.now(),
+                timestamp: new Date().toISOString(),
+                status: 'pending',
                 wasDeleted: true,
                 originalName: wasDeleted.name,
                 deletedAt: wasDeleted.deletedAt,
-                deletedBy: wasDeleted.deletedByName
-            });
+                deletedBy: wasDeleted.deletedByName,
+                requestIP: null
+            };
+            
+            pendingUsers.push(deletedPendingUser);
+            await dataManager.writeFile(DATA_FILES.pendingUsers, pendingUsers);
             
             // Notify admins about re-entry attempt with action buttons
             const adminSettings = await dataManager.readFile(DATA_FILES.adminSettings);
