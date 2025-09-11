@@ -1413,10 +1413,10 @@ class MessageHandler {
                 case 'awaiting_bulk_task_description':
                     // Tüm çalışanlara toplu görev gönder
                     const allEmployees = await this.dataManager.getEmployees();
-                    const employees = allEmployees.filter(emp => emp.type === 'employee');
+                    const employeeList = allEmployees.filter(emp => emp.type === 'employee');
                     
                     let taskCount = 0;
-                    for (const employee of employees) {
+                    for (const employee of employeeList) {
                         try {
                             await this.dataManager.addTask({
                                 title: session.stateData.taskTitle,
