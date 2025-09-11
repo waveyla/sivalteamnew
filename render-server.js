@@ -174,8 +174,10 @@ class KeyboardGenerator {
                 reply_markup: {
                     keyboard: [
                         [{ text: "👥 Kullanıcı Yönetimi" }, { text: "📋 Görev Yönetimi" }],
+                        [{ text: "➕ Yeni Görev" }, { text: "📤 Toplu Görev" }],
                         [{ text: "📦 Ürün Yönetimi" }, { text: "📢 Duyuru Sistemi" }],
-                        [{ text: "📊 Raporlar" }, { text: "⚙️ Sistem Ayarları" }]
+                        [{ text: "➕ Yeni Duyuru" }, { text: "📊 Raporlar" }],
+                        [{ text: "⚙️ Sistem Ayarları" }, { text: "🔔 Bildirimler" }]
                     ],
                     resize_keyboard: true
                 }
@@ -184,7 +186,8 @@ class KeyboardGenerator {
                 reply_markup: {
                     keyboard: [
                         [{ text: "📋 Görevlerim" }, { text: "📦 Ürün Raporla" }],
-                        [{ text: "📢 Duyurular" }, { text: "ℹ️ Bilgilerim" }]
+                        [{ text: "📢 Duyurular" }, { text: "ℹ️ Bilgilerim" }],
+                        [{ text: "📸 Fotoğraf Gönder" }, { text: "🎤 Ses Gönder" }]
                     ],
                     resize_keyboard: true
                 }
@@ -709,6 +712,117 @@ class MessageHandler {
         }
     }
 
+    // ➕ YENİ GÖREV OLUŞTURMA
+    async handleNewTask(chatId) {
+        try {
+            await this.bot.sendMessage(
+                chatId,
+                `➕ <b>Yeni Görev Oluştur</b>\n\n` +
+                `📝 Görev başlığını yazınız:\n` +
+                `💡 <i>Örnek: "Envanter sayımı yapılacak"</i>\n\n` +
+                `❌ İptal etmek için /cancel yazabilirsiniz.`
+            );
+
+            SessionManager.setUserState(chatId, 'awaiting_task_title', {
+                adminId: chatId
+            });
+
+        } catch (error) {
+            console.error('❌ Yeni görev başlatma hatası:', error);
+            await this.bot.sendMessage(chatId, '🚫 Görev oluşturma başlatılırken hata oluştu.');
+        }
+    }
+
+    // 📤 TOPLU GÖREV GÖNDERME
+    async handleBulkTask(chatId) {
+        try {
+            await this.bot.sendMessage(
+                chatId,
+                `📤 <b>Toplu Görev Gönder</b>\n\n` +
+                `👥 Tüm çalışanlara aynı görevi göndereceksiniz\n` +
+                `📝 Görev başlığını yazınız:\n\n` +
+                `💡 <i>Örnek: "Haftalık temizlik yapılacak"</i>\n\n` +
+                `❌ İptal etmek için /cancel yazabilirsiniz.`
+            );
+
+            SessionManager.setUserState(chatId, 'awaiting_bulk_task_title', {
+                adminId: chatId
+            });
+
+        } catch (error) {
+            console.error('❌ Toplu görev başlatma hatası:', error);
+            await this.bot.sendMessage(chatId, '🚫 Toplu görev başlatılırken hata oluştu.');
+        }
+    }
+
+    // ➕ YENİ DUYURU OLUŞTURMA
+    async handleNewAnnouncement(chatId) {
+        try {
+            await this.bot.sendMessage(
+                chatId,
+                `➕ <b>Yeni Duyuru Oluştur</b>\n\n` +
+                `📢 Duyuru başlığını yazınız:\n` +
+                `💡 <i>Örnek: "Yeni çalışma saatleri"</i>\n\n` +
+                `❌ İptal etmek için /cancel yazabilirsiniz.`
+            );
+
+            SessionManager.setUserState(chatId, 'awaiting_announcement_title', {
+                adminId: chatId
+            });
+
+        } catch (error) {
+            console.error('❌ Yeni duyuru başlatma hatası:', error);
+            await this.bot.sendMessage(chatId, '🚫 Duyuru oluşturma başlatılırken hata oluştu.');
+        }
+    }
+
+    // 🔔 BİLDİRİMLERİ GÖRÜNTÜLEME
+    async handleNotifications(chatId) {
+        try {
+            const notifications = await this.dataManager.getNotifications(chatId);
+            const missingProducts = await this.dataManager.getMissingProducts();
+            const pendingUsers = await this.dataManager.getPendingUsers();
+            
+            let message = `🔔 <b>Bildirim Merkezi</b>\n\n`;
+            
+            message += `📊 <b>Bekleyen İşler:</b>\n`;
+            message += `👥 Onay Bekleyen: ${pendingUsers.length}\n`;
+            message += `📦 Eksik Ürün Raporu: ${missingProducts.length}\n`;
+            message += `🔔 Okunmamış Bildirim: ${notifications.length}\n\n`;
+
+            if (notifications.length > 0) {
+                message += `📋 <b>Son Bildirimler:</b>\n`;
+                notifications.slice(0, 5).forEach(notif => {
+                    message += `• ${notif.message}\n`;
+                });
+                message += '\n';
+            }
+
+            if (missingProducts.length > 0) {
+                message += `📦 <b>Son Eksik Ürün Raporları:</b>\n`;
+                missingProducts.slice(0, 3).forEach(product => {
+                    message += `• ${product.productName} (${product.quantity} adet)\n`;
+                    message += `  👤 ${product.reportedBy}\n`;
+                });
+                message += '\n';
+            }
+
+            if (pendingUsers.length > 0) {
+                message += `👥 <b>Onay Bekleyen Kullanıcılar:</b>\n`;
+                pendingUsers.slice(0, 3).forEach(user => {
+                    message += `• ${user.firstName} ${user.lastName || ''}\n`;
+                    message += `  💬 @${user.username || 'N/A'}\n`;
+                });
+            }
+
+            await this.bot.sendMessage(chatId, message, KeyboardGenerator.getInlineKeyboard('back_to_main'));
+
+        } catch (error) {
+            console.error('❌ Bildirimler hatası:', error);
+            await this.bot.sendMessage(chatId, '🚫 Bildirimler yüklenirken hata oluştu.');
+        }
+    }
+
     async handleTextMessage(chatId, messageText, user) {
         try {
             // State kontrolü
@@ -791,6 +905,58 @@ class MessageHandler {
                     
                 case 'ℹ️ Bilgilerim':
                     await this.handleMyInfo(chatId);
+                    break;
+                    
+                case '➕ Yeni Görev':
+                    if (currentUser.type === 'admin') {
+                        await this.handleNewTask(chatId);
+                    } else {
+                        await this.bot.sendMessage(chatId, '🚫 Bu özellik sadece yöneticiler içindir.');
+                    }
+                    break;
+                    
+                case '📤 Toplu Görev':
+                    if (currentUser.type === 'admin') {
+                        await this.handleBulkTask(chatId);
+                    } else {
+                        await this.bot.sendMessage(chatId, '🚫 Bu özellik sadece yöneticiler içindir.');
+                    }
+                    break;
+                    
+                case '➕ Yeni Duyuru':
+                    if (currentUser.type === 'admin') {
+                        await this.handleNewAnnouncement(chatId);
+                    } else {
+                        await this.bot.sendMessage(chatId, '🚫 Bu özellik sadece yöneticiler içindir.');
+                    }
+                    break;
+                    
+                case '🔔 Bildirimler':
+                    if (currentUser.type === 'admin') {
+                        await this.handleNotifications(chatId);
+                    } else {
+                        await this.bot.sendMessage(chatId, '🚫 Bu özellik sadece yöneticiler içindir.');
+                    }
+                    break;
+                    
+                case '📸 Fotoğraf Gönder':
+                    await this.bot.sendMessage(
+                        chatId,
+                        '📸 <b>Fotoğraf Gönder</b>\n\n' +
+                        '📱 Telefonunuzdan fotoğraf çekip gönderin\n' +
+                        '💡 Açıklama ekleyebilirsiniz\n\n' +
+                        '🎯 Fotoğraf raporlama için kullanılabilir'
+                    );
+                    break;
+                    
+                case '🎤 Ses Gönder':
+                    await this.bot.sendMessage(
+                        chatId,
+                        '🎤 <b>Ses Kaydı Gönder</b>\n\n' +
+                        '📱 Telegram\'da ses kaydı tuşuna basın\n' +
+                        '🎙️ Mesajınızı kaydedin ve gönderin\n\n' +
+                        '🎯 Hızlı raporlama için kullanılabilir'
+                    );
                     break;
                     
                 default:
@@ -888,6 +1054,275 @@ class MessageHandler {
                             `💡 <i>Stok teminini değerlendiriniz.</i>`
                         );
                     }
+
+                    SessionManager.clearUserSession(chatId);
+                    break;
+
+                // ➕ YENİ GÖREV OLUŞTURMA STATES
+                case 'awaiting_task_title':
+                    if (messageText.trim().length < 3) {
+                        await this.bot.sendMessage(
+                            chatId,
+                            '❌ Görev başlığı çok kısa! En az 3 karakter girmelisiniz.'
+                        );
+                        return;
+                    }
+
+                    await this.bot.sendMessage(
+                        chatId,
+                        `📝 <b>Görev Başlığı:</b> ${messageText}\n\n` +
+                        `📄 Şimdi görev açıklamasını yazınız:\n` +
+                        `💡 <i>Detaylı açıklama yapın</i>`
+                    );
+
+                    SessionManager.setUserState(chatId, 'awaiting_task_description', {
+                        ...session.stateData,
+                        taskTitle: messageText.trim()
+                    });
+                    break;
+
+                case 'awaiting_task_description':
+                    await this.bot.sendMessage(
+                        chatId,
+                        `📋 <b>Görev:</b> ${session.stateData.taskTitle}\n` +
+                        `📝 <b>Açıklama:</b> ${messageText}\n\n` +
+                        `👥 Kime atanacak?\n` +
+                        `💡 <i>Kullanıcı adını yazın veya "herkese" yazın</i>`
+                    );
+
+                    SessionManager.setUserState(chatId, 'awaiting_task_assignment', {
+                        ...session.stateData,
+                        taskDescription: messageText.trim()
+                    });
+                    break;
+
+                case 'awaiting_task_assignment':
+                    const taskAssignment = messageText.trim().toLowerCase();
+                    let assignedTo = [];
+                    
+                    if (taskAssignment === 'herkese' || taskAssignment === 'all') {
+                        // Herkese görev
+                        const employees = await this.dataManager.getEmployees();
+                        assignedTo = employees.filter(emp => emp.type === 'employee');
+                        
+                        for (const employee of assignedTo) {
+                            await this.dataManager.addTask({
+                                title: session.stateData.taskTitle,
+                                description: session.stateData.taskDescription,
+                                assignedTo: employee.chatId,
+                                assignedBy: chatId.toString(),
+                                priority: 'medium',
+                                type: 'bulk'
+                            });
+
+                            // Çalışana bildirim gönder
+                            await this.bot.sendMessage(
+                                employee.chatId,
+                                `📋 <b>Yeni Görev Atandı!</b>\n\n` +
+                                `🎯 <b>Başlık:</b> ${session.stateData.taskTitle}\n` +
+                                `📝 <b>Açıklama:</b> ${session.stateData.taskDescription}\n` +
+                                `👤 <b>Atayan:</b> Yönetici\n` +
+                                `📅 <b>Tarih:</b> ${new Date().toLocaleString('tr-TR')}`,
+                                KeyboardGenerator.getInlineKeyboard('task_actions', { taskId: 'latest' })
+                            );
+                        }
+
+                        await this.bot.sendMessage(
+                            chatId,
+                            `✅ <b>Toplu Görev Oluşturuldu!</b>\n\n` +
+                            `📋 <b>Başlık:</b> ${session.stateData.taskTitle}\n` +
+                            `👥 <b>Atanan Kişi Sayısı:</b> ${assignedTo.length}\n` +
+                            `📅 <b>Tarih:</b> ${new Date().toLocaleString('tr-TR')}\n\n` +
+                            `🔔 <i>Tüm çalışanlara bildirim gönderildi.</i>`,
+                            KeyboardGenerator.getInlineKeyboard('back_to_main')
+                        );
+
+                    } else {
+                        // Belirli kişiye görev
+                        const employees = await this.dataManager.getEmployees();
+                        const targetEmployee = employees.find(emp => 
+                            emp.username?.toLowerCase() === taskAssignment ||
+                            emp.firstName?.toLowerCase().includes(taskAssignment) ||
+                            emp.chatId === taskAssignment
+                        );
+
+                        if (!targetEmployee) {
+                            await this.bot.sendMessage(
+                                chatId,
+                                '❌ Kullanıcı bulunamadı! Lütfen doğru kullanıcı adı yazın veya "herkese" yazın.'
+                            );
+                            return;
+                        }
+
+                        await this.dataManager.addTask({
+                            title: session.stateData.taskTitle,
+                            description: session.stateData.taskDescription,
+                            assignedTo: targetEmployee.chatId,
+                            assignedBy: chatId.toString(),
+                            priority: 'medium',
+                            type: 'individual'
+                        });
+
+                        // Çalışana bildirim gönder
+                        await this.bot.sendMessage(
+                            targetEmployee.chatId,
+                            `📋 <b>Yeni Görev Atandı!</b>\n\n` +
+                            `🎯 <b>Başlık:</b> ${session.stateData.taskTitle}\n` +
+                            `📝 <b>Açıklama:</b> ${session.stateData.taskDescription}\n` +
+                            `👤 <b>Atayan:</b> Yönetici\n` +
+                            `📅 <b>Tarih:</b> ${new Date().toLocaleString('tr-TR')}`,
+                            KeyboardGenerator.getInlineKeyboard('task_actions', { taskId: 'latest' })
+                        );
+
+                        await this.bot.sendMessage(
+                            chatId,
+                            `✅ <b>Görev Oluşturuldu!</b>\n\n` +
+                            `📋 <b>Başlık:</b> ${session.stateData.taskTitle}\n` +
+                            `👤 <b>Atanan:</b> ${targetEmployee.firstName} ${targetEmployee.lastName || ''}\n` +
+                            `📅 <b>Tarih:</b> ${new Date().toLocaleString('tr-TR')}\n\n` +
+                            `🔔 <i>Çalışana bildirim gönderildi.</i>`,
+                            KeyboardGenerator.getInlineKeyboard('back_to_main')
+                        );
+                    }
+
+                    SessionManager.clearUserSession(chatId);
+                    break;
+
+                // 📤 TOPLU GÖREV STATES  
+                case 'awaiting_bulk_task_title':
+                    if (messageText.trim().length < 3) {
+                        await this.bot.sendMessage(
+                            chatId,
+                            '❌ Görev başlığı çok kısa! En az 3 karakter girmelisiniz.'
+                        );
+                        return;
+                    }
+
+                    await this.bot.sendMessage(
+                        chatId,
+                        `📤 <b>Toplu Görev:</b> ${messageText}\n\n` +
+                        `📄 Görev açıklamasını yazınız:\n` +
+                        `💡 <i>Tüm çalışanlara gönderilecek</i>`
+                    );
+
+                    SessionManager.setUserState(chatId, 'awaiting_bulk_task_description', {
+                        ...session.stateData,
+                        taskTitle: messageText.trim()
+                    });
+                    break;
+
+                case 'awaiting_bulk_task_description':
+                    // Tüm çalışanlara toplu görev gönder
+                    const allEmployees = await this.dataManager.getEmployees();
+                    const employees = allEmployees.filter(emp => emp.type === 'employee');
+                    
+                    let taskCount = 0;
+                    for (const employee of employees) {
+                        try {
+                            await this.dataManager.addTask({
+                                title: session.stateData.taskTitle,
+                                description: messageText.trim(),
+                                assignedTo: employee.chatId,
+                                assignedBy: chatId.toString(),
+                                priority: 'medium',
+                                type: 'bulk'
+                            });
+
+                            // Çalışana bildirim gönder
+                            await this.bot.sendMessage(
+                                employee.chatId,
+                                `📤 <b>Toplu Görev!</b>\n\n` +
+                                `🎯 <b>Başlık:</b> ${session.stateData.taskTitle}\n` +
+                                `📝 <b>Açıklama:</b> ${messageText.trim()}\n` +
+                                `👥 <b>Görev Tipi:</b> Tüm Çalışanlara\n` +
+                                `📅 <b>Tarih:</b> ${new Date().toLocaleString('tr-TR')}`,
+                                KeyboardGenerator.getInlineKeyboard('task_actions', { taskId: 'latest' })
+                            );
+                            taskCount++;
+                        } catch (error) {
+                            console.error('❌ Toplu görev gönderme hatası:', error);
+                        }
+                    }
+
+                    await this.bot.sendMessage(
+                        chatId,
+                        `✅ <b>Toplu Görev Gönderildi!</b>\n\n` +
+                        `📤 <b>Başlık:</b> ${session.stateData.taskTitle}\n` +
+                        `👥 <b>Gönderilen Kişi:</b> ${taskCount} çalışan\n` +
+                        `📅 <b>Tarih:</b> ${new Date().toLocaleString('tr-TR')}\n\n` +
+                        `🎯 <i>Tüm çalışanlara bildirim gönderildi.</i>`,
+                        KeyboardGenerator.getInlineKeyboard('back_to_main')
+                    );
+
+                    SessionManager.clearUserSession(chatId);
+                    break;
+
+                // ➕ DUYURU OLUŞTURMA STATES
+                case 'awaiting_announcement_title':
+                    if (messageText.trim().length < 3) {
+                        await this.bot.sendMessage(
+                            chatId,
+                            '❌ Duyuru başlığı çok kısa! En az 3 karakter girmelisiniz.'
+                        );
+                        return;
+                    }
+
+                    await this.bot.sendMessage(
+                        chatId,
+                        `📢 <b>Duyuru Başlığı:</b> ${messageText}\n\n` +
+                        `📝 Duyuru içeriğini yazınız:\n` +
+                        `💡 <i>Detaylı bilgi verin</i>`
+                    );
+
+                    SessionManager.setUserState(chatId, 'awaiting_announcement_content', {
+                        ...session.stateData,
+                        announcementTitle: messageText.trim()
+                    });
+                    break;
+
+                case 'awaiting_announcement_content':
+                    const adminName = (await this.dataManager.getEmployees())
+                        .find(emp => emp.chatId === chatId.toString())?.firstName || 'Admin';
+
+                    // Duyuruyu kaydet
+                    await this.dataManager.addAnnouncement({
+                        title: session.stateData.announcementTitle,
+                        content: messageText.trim(),
+                        createdBy: adminName,
+                        targetAudience: ['all']
+                    });
+
+                    // Tüm kullanıcılara duyuru gönder
+                    const allUsers = await this.dataManager.getEmployees();
+                    let sentCount = 0;
+                    
+                    for (const employee of allUsers) {
+                        if (employee.chatId !== chatId.toString()) { // Admin'e gönderme
+                            try {
+                                await this.bot.sendMessage(
+                                    employee.chatId,
+                                    `📢 <b>YENİ DUYURU</b>\n\n` +
+                                    `🏷️ <b>${session.stateData.announcementTitle}</b>\n\n` +
+                                    `📝 ${messageText.trim()}\n\n` +
+                                    `👤 <b>Yayınlayan:</b> ${adminName}\n` +
+                                    `📅 <b>Tarih:</b> ${new Date().toLocaleString('tr-TR')}`
+                                );
+                                sentCount++;
+                            } catch (error) {
+                                console.error('❌ Duyuru gönderme hatası:', error);
+                            }
+                        }
+                    }
+
+                    await this.bot.sendMessage(
+                        chatId,
+                        `✅ <b>Duyuru Yayınlandı!</b>\n\n` +
+                        `📢 <b>Başlık:</b> ${session.stateData.announcementTitle}\n` +
+                        `👥 <b>Ulaşan Kişi:</b> ${sentCount} kişi\n` +
+                        `📅 <b>Tarih:</b> ${new Date().toLocaleString('tr-TR')}\n\n` +
+                        `🌟 <i>Duyuru herkese ulaştırıldı!</i>`,
+                        KeyboardGenerator.getInlineKeyboard('back_to_main')
+                    );
 
                     SessionManager.clearUserSession(chatId);
                     break;
