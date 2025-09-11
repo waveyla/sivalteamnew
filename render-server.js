@@ -276,114 +276,116 @@ class MessageHandler {
 
     async handleStart(chatId, user) {
         try {
-            // Mevcut kullanıcı kontrolü
-            const existingUser = await this.dataManager.getEmployees();
-            const currentUser = existingUser.find(emp => emp.chatId === chatId.toString());
+            // Önce tüm kullanıcıları al
+            const allEmployees = await this.dataManager.getEmployees();
+            const currentUser = allEmployees.find(emp => emp.chatId === chatId.toString());
             
+            // MEVCUT KULLANICI - Giriş yaptırılır
             if (currentUser) {
-                // Mevcut kullanıcı giriş yaptı
                 await this.bot.sendMessage(
                     chatId,
-                    `🎉 <b>Hoş geldiniz, ${currentUser.firstName || 'Değerli Kullanıcı'}!</b>\n\n` +
-                    `✨ SivalTeam Bot v${CONFIG.VERSION} sistemi aktif\n` +
+                    `🎉 <b>Tekrar hoş geldiniz, ${currentUser.firstName || 'Değerli Kullanıcı'}!</b>\n\n` +
+                    `✨ SivalTeam Bot v${CONFIG.VERSION} aktif\n` +
                     `👤 Durum: ${currentUser.type === 'admin' ? '👑 Yönetici' : '👨‍💼 Çalışan'}\n` +
-                    `📅 Kayıt Tarihi: ${new Date(currentUser.registeredDate).toLocaleDateString('tr-TR')}\n\n` +
-                    `🚀 Aşağıdaki menüden işleminizi seçebilirsiniz:`,
+                    `📅 Kayıt: ${new Date(currentUser.registeredDate).toLocaleDateString('tr-TR')}\n\n` +
+                    `🚀 Menüden işleminizi seçebilirsiniz:`,
                     KeyboardGenerator.getMainKeyboard(currentUser.type)
                 );
                 
-                // Kullanıcı aktivitesini güncelle
+                // Son aktiviteyi güncelle
                 await this.dataManager.setUserState(chatId, { lastActive: new Date() });
                 return;
             }
 
-            // Yeni kullanıcı kaydı
-            const employees = await this.dataManager.getEmployees();
-            
-            if (employees.length === 0) {
-                // İlk admin kaydı
+            // YENİ KULLANICI - Hiç kayıtlı kullanıcı yoksa ilk admin olur
+            if (allEmployees.length === 0) {
                 try {
-                    const adminUser = await this.dataManager.addEmployee({
+                    const newAdmin = await this.dataManager.addEmployee({
                         chatId: chatId.toString(),
                         username: user.username || 'admin',
                         firstName: user.first_name || 'Admin',
-                        lastName: user.last_name || 'User',
+                        lastName: user.last_name || '',
                         type: 'admin'
                     });
 
                     await this.bot.sendMessage(
                         chatId,
-                        `🎊 <b>İlk Admin Kaydı Tamamlandı!</b>\n\n` +
-                        `👑 Siz sistemin ilk yöneticisisiniz\n` +
+                        `🎊 <b>İlk Admin Olarak Kayıt Oldunuz!</b>\n\n` +
+                        `👑 Sistemin ilk yöneticisisiniz\n` +
                         `🔑 Tüm yetkilere sahipsiniz\n` +
-                        `📋 Sistemi yönetmeye başlayabilirsiniz\n\n` +
-                        `✨ <i>SivalTeam Bot v${CONFIG.VERSION} başarıyla kuruldu!</i>`,
+                        `✨ SivalTeam Bot v${CONFIG.VERSION} hazır\n\n` +
+                        `🚀 Menüden başlayabilirsiniz:`,
                         KeyboardGenerator.getMainKeyboard('admin')
                     );
 
-                    console.log(`✅ İlk admin kaydedildi: ${user.first_name} (${chatId})`);
+                    console.log(`✅ İlk admin: ${user.first_name} (${chatId})`);
+                    return;
                     
-                } catch (error) {
-                    if (error.code === 11000) {
-                        // Duplicate key error - kullanıcı zaten var
-                        const existingUser = await this.dataManager.getEmployees();
-                        const currentUser = existingUser.find(emp => emp.chatId === chatId.toString());
-                        
-                        if (currentUser) {
-                            await this.bot.sendMessage(
-                                chatId,
-                                `✅ Zaten kayıtlısınız! Hoş geldiniz ${currentUser.firstName}`,
-                                KeyboardGenerator.getMainKeyboard(currentUser.type)
-                            );
-                        }
-                    } else {
-                        throw error;
-                    }
+                } catch (dbError) {
+                    // Veritabanı hatası durumunda
+                    console.error('❌ Admin kayıt hatası:', dbError);
+                    await this.bot.sendMessage(
+                        chatId,
+                        '🚫 Kayıt sırasında hata oluştu. Lütfen tekrar deneyin.'
+                    );
+                    return;
                 }
-            } else {
-                // Onay bekleyen yeni kullanıcı
-                await this.bot.sendMessage(
-                    chatId,
-                    `👋 <b>Merhaba ${user.first_name || 'Değerli Kullanıcı'}!</b>\n\n` +
-                    `🔐 SivalTeam sistemine erişim için admin onayı gerekiyor\n` +
-                    `⏳ Kaydınız yöneticilere gönderildi\n` +
-                    `📱 Onay sonucunu buradan öğreneceksiniz\n\n` +
-                    `💡 <i>Lütfen sabırlı olun...</i>`
-                );
+            }
 
-                // Pending user olarak ekle
+            // YENİ KULLANICI - Admin onayı gerekli
+            try {
                 await this.dataManager.addPendingUser({
                     chatId: chatId.toString(),
-                    username: user.username,
-                    firstName: user.first_name,
-                    lastName: user.last_name,
+                    username: user.username || 'unknown',
+                    firstName: user.first_name || 'Anonim',
+                    lastName: user.last_name || '',
                     requestDate: new Date()
                 });
 
-                // Admin'lere bildirim gönder
-                const adminUsers = employees.filter(emp => emp.type === 'admin');
+                await this.bot.sendMessage(
+                    chatId,
+                    `👋 <b>Merhaba ${user.first_name || 'Yeni Kullanıcı'}!</b>\n\n` +
+                    `🔐 SivalTeam sistemine katılmak için admin onayı gerekiyor\n` +
+                    `⏳ Başvurunuz yöneticilere iletildi\n` +
+                    `📱 Sonucu buradan öğreneceksiniz\n\n` +
+                    `💡 <i>Lütfen bekleyin...</i>`
+                );
+
+                // Admin'lere bildirim
+                const adminUsers = allEmployees.filter(emp => emp.type === 'admin');
                 for (const admin of adminUsers) {
-                    await this.bot.sendMessage(
-                        admin.chatId,
-                        `🔔 <b>Yeni Kullanıcı Onay Talebi</b>\n\n` +
-                        `👤 <b>Kullanıcı:</b> ${user.first_name} ${user.last_name || ''}\n` +
-                        `💬 <b>Kullanıcı Adı:</b> @${user.username || 'Yok'}\n` +
-                        `🆔 <b>Chat ID:</b> <code>${chatId}</code>\n` +
-                        `📅 <b>Talep Zamanı:</b> ${new Date().toLocaleString('tr-TR')}`,
-                        KeyboardGenerator.getInlineKeyboard('user_approval', { userId: chatId })
-                    );
+                    try {
+                        await this.bot.sendMessage(
+                            admin.chatId,
+                            `🔔 <b>Yeni Üyelik Başvurusu</b>\n\n` +
+                            `👤 <b>Ad:</b> ${user.first_name} ${user.last_name || ''}\n` +
+                            `💬 <b>Kullanıcı:</b> @${user.username || 'Yok'}\n` +
+                            `🆔 <b>ID:</b> ${chatId}\n` +
+                            `📅 <b>Tarih:</b> ${new Date().toLocaleString('tr-TR')}`,
+                            KeyboardGenerator.getInlineKeyboard('user_approval', { userId: chatId })
+                        );
+                    } catch (notifError) {
+                        console.error('❌ Admin bildirim hatası:', notifError);
+                    }
                 }
 
-                console.log(`📝 Yeni kullanıcı onay bekliyor: ${user.first_name} (${chatId})`);
+                console.log(`📝 Onay bekliyor: ${user.first_name} (${chatId})`);
+
+            } catch (pendingError) {
+                console.error('❌ Pending user hatası:', pendingError);
+                await this.bot.sendMessage(
+                    chatId,
+                    '🚫 Başvuru kaydında hata oluştu. Lütfen tekrar deneyin.'
+                );
             }
 
         } catch (error) {
-            console.error('❌ Start komutu hatası:', error);
+            console.error('❌ Start genel hata:', error);
             await this.bot.sendMessage(
                 chatId,
-                `🚫 <b>Sistem Hatası!</b>\n\n` +
-                `⚠️ Bir hata oluştu, lütfen daha sonra tekrar deneyin\n` +
-                `🔧 Hata kodu: ${error.message}`
+                `🚫 <b>Sistem Hatası</b>\n\n` +
+                `⚠️ Beklenmeyen bir hata oluştu\n` +
+                `🔧 Lütfen daha sonra tekrar deneyin`
             );
         }
     }
