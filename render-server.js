@@ -3872,7 +3872,7 @@ class CallbackQueryHandler {
             // Butonları kaldır ve mesajı güncelle
             try {
                 await telegramAPI.editMessageText(chatId, message.message_id,
-                    `✅ <b>ONAYLAND</b>\n\n` +
+                    `✅ <b>ONAYLANDI</b>\n\n` +
                     message.text || `👤 ${approvedUser.name} başarıyla sisteme eklendi.`
                 );
                 await telegramAPI.editMessageReplyMarkup(chatId, message.message_id, {
