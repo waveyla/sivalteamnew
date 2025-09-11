@@ -967,15 +967,25 @@ class MessageHandler {
 
             if (approved) {
                 // Kullanıcıyı onayla ve sisteme ekle
-                await this.dataManager.addEmployee({
-                    chatId: userId,
-                    username: pendingUser.username,
-                    firstName: pendingUser.firstName,
-                    lastName: pendingUser.lastName,
-                    type: 'employee'
-                });
+                try {
+                    await this.dataManager.addEmployee({
+                        chatId: userId,
+                        username: pendingUser.username,
+                        firstName: pendingUser.firstName,
+                        lastName: pendingUser.lastName,
+                        type: 'employee'
+                    });
 
-                await this.dataManager.removePendingUser(userId);
+                    await this.dataManager.removePendingUser(userId);
+                } catch (addError) {
+                    if (addError.code === 11000) {
+                        // Zaten kayıtlı
+                        console.log(`⚠️ Kullanıcı zaten kayıtlı: ${userId}`);
+                        await this.dataManager.removePendingUser(userId);
+                    } else {
+                        throw addError;
+                    }
+                }
 
                 await this.bot.editMessage(
                     chatId,
