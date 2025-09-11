@@ -68,6 +68,7 @@ const DATA_FILES = {
     categories: 'categories.json',
     adminSettings: 'admin_settings.json',
     pendingUsers: 'pending_users.json',
+    blockedUsers: 'blocked_users.json',
     backups: 'backups/',
     systemStats: 'system_stats.json',
     userSessions: 'user_sessions.json',
@@ -1891,6 +1892,28 @@ class CommandHandler {
             'info'
         );
         
+        // Check if user is permanently blocked
+        let blockedUsers = [];
+        try {
+            blockedUsers = await dataManager.readFile(DATA_FILES.blockedUsers);
+            const isBlocked = blockedUsers.find(blocked => Number(blocked.chatId) === Number(chatId));
+            
+            if (isBlocked) {
+                await telegramAPI.sendMessage(chatId,
+                    `🚫 <b>Hesabınız Kalıcı Olarak Engellenmiş</b>\n\n` +
+                    `⛔ Sisteme erişim hakkınız kalıcı olarak iptal edilmiştir.\n\n` +
+                    `📋 <b>Engelleme Bilgileri:</b>\n` +
+                    `• Engelleme Tarihi: ${new Date(isBlocked.blockedAt).toLocaleString('tr-TR')}\n` +
+                    `• Engelleyen: ${isBlocked.blockedByName}\n\n` +
+                    `🚨 <b>Bu işlem geri alınamaz.</b>\n` +
+                    `📞 Sadece fiziksel olarak yöneticinizle görüşebilirsiniz.`
+                );
+                return;
+            }
+        } catch (error) {
+            // Blocked users file doesn't exist yet, continue
+        }
+
         // Check if user was previously deleted
         const deletedEmployees = await dataManager.readFile(DATA_FILES.deletedEmployees);
         const wasDeleted = deletedEmployees.find(emp => Number(emp.chatId) === Number(chatId));
@@ -1918,7 +1941,7 @@ class CommandHandler {
                 deletedBy: wasDeleted.deletedByName
             });
             
-            // Notify admins about re-entry attempt
+            // Notify admins about re-entry attempt with action buttons
             const adminSettings = await dataManager.readFile(DATA_FILES.adminSettings);
             for (const adminChatId of adminSettings.adminUsers) {
                 await telegramAPI.sendMessage(adminChatId,
@@ -1935,8 +1958,11 @@ class CommandHandler {
                     {
                         inline_keyboard: [
                             [
-                                { text: "✅ Tekrar Onay Ver", callback_data: `approve_deleted_${chatId}` },
+                                { text: "✅ Tekrar Kabul Et", callback_data: `approve_deleted_${chatId}` },
                                 { text: "❌ Reddet", callback_data: `reject_deleted_${chatId}` }
+                            ],
+                            [
+                                { text: "🚫 Engelle (Kalıcı)", callback_data: `block_deleted_${chatId}` }
                             ]
                         ]
                     }
@@ -3887,6 +3913,7 @@ class CallbackQueryHandler {
         this.handlers.set('demote_admin_', this.handleDemoteAdminCallback.bind(this));
         this.handlers.set('approve_deleted_', this.handleApproveDeletedCallback.bind(this));
         this.handlers.set('reject_deleted_', this.handleRejectDeletedCallback.bind(this));
+        this.handlers.set('block_deleted_', this.handleBlockDeletedCallback.bind(this));
     }
     
     async handleCallback(callbackQuery) {
@@ -3924,7 +3951,7 @@ class CallbackQueryHandler {
             for (const [prefix, handler] of this.handlers.entries()) {
                 if (data.startsWith(prefix) || data === prefix) {
                     // For deleted user callbacks, pass null user but still allow execution
-                    const passUser = (data.startsWith('approve_deleted_') || data.startsWith('reject_deleted_')) ? (user || { name: 'Admin', chatId }) : user;
+                    const passUser = (data.startsWith('approve_deleted_') || data.startsWith('reject_deleted_') || data.startsWith('block_deleted_')) ? (user || { name: 'Admin', chatId }) : user;
                     await handler(data, chatId, from, message, passUser, isAdmin);
                     handled = true;
                     break;
@@ -3961,7 +3988,7 @@ class CallbackQueryHandler {
             try {
                 await telegramAPI.editMessageText(chatId, message.message_id,
                     `✅ <b>ONAYLANDI</b>\n\n` +
-                    message.text || `👤 ${approvedUser.name} başarıyla sisteme eklendi.`
+                    (message.text || `👤 ${approvedUser.name} başarıyla sisteme eklendi.`)
                 );
                 await telegramAPI.editMessageReplyMarkup(chatId, message.message_id, {
                     inline_keyboard: []
@@ -4015,7 +4042,7 @@ class CallbackQueryHandler {
             try {
                 await telegramAPI.editMessageText(chatId, message.message_id,
                     `❌ <b>REDDEDİLDİ</b>\n\n` +
-                    message.text || `👤 ${rejectedUser.firstName} ${rejectedUser.lastName} kayıt talebi reddedildi.`
+                    (message.text || `👤 ${rejectedUser.firstName} ${rejectedUser.lastName} kayıt talebi reddedildi.`)
                 );
                 await telegramAPI.editMessageReplyMarkup(chatId, message.message_id, {
                     inline_keyboard: []
@@ -4948,6 +4975,96 @@ class CallbackQueryHandler {
         } catch (error) {
             console.error('❌ Reject deleted user error:', error);
             await telegramAPI.sendMessage(chatId, "❌ Kullanıcı reddedilirken hata oluştu.");
+        }
+    }
+
+    async handleBlockDeletedCallback(data, chatId, from, message, user, isAdmin) {
+        if (!isAdmin) {
+            await telegramAPI.sendMessage(chatId, "❌ Bu işlem sadece adminler tarafından yapılabilir.");
+            return;
+        }
+        
+        const targetChatId = data.replace('block_deleted_', '');
+        
+        try {
+            // Find in pending users
+            const pendingUsers = await dataManager.readFile(DATA_FILES.pendingUsers);
+            const pendingUser = pendingUsers.find(u => Number(u.chatId) === Number(targetChatId));
+            
+            if (!pendingUser) {
+                await telegramAPI.sendMessage(chatId, "❌ Bekleyen kullanıcı bulunamadı.");
+                return;
+            }
+            
+            // Remove from pending users
+            const updatedPendingUsers = pendingUsers.filter(u => Number(u.chatId) !== Number(targetChatId));
+            await dataManager.writeFile(DATA_FILES.pendingUsers, updatedPendingUsers);
+            
+            // Add to blocked users list (create if not exists)
+            let blockedUsers = [];
+            try {
+                blockedUsers = await dataManager.readFile(DATA_FILES.blockedUsers);
+            } catch (error) {
+                // File doesn't exist, create empty array
+                blockedUsers = [];
+            }
+            
+            // Add user to blocked list
+            const blockedUser = {
+                chatId: Number(targetChatId),
+                firstName: pendingUser.firstName,
+                lastName: pendingUser.lastName,
+                username: pendingUser.username,
+                blockedAt: new Date().toISOString(),
+                blockedBy: Number(chatId),
+                blockedByName: user.name,
+                reason: 'Silinen kullanıcı - kalıcı engelleme'
+            };
+            
+            blockedUsers.push(blockedUser);
+            await dataManager.writeFile(DATA_FILES.blockedUsers, blockedUsers);
+            
+            // Remove button by editing message
+            try {
+                await telegramAPI.editMessageText(chatId, message.message_id,
+                    `🚫 <b>KALICI ENGELLENDİ</b>\n\n` +
+                    message.text || `👤 ${pendingUser.firstName} kalıcı olarak engellenmiştir.`
+                );
+                await telegramAPI.editMessageReplyMarkup(chatId, message.message_id, {
+                    inline_keyboard: []
+                });
+            } catch (editError) {
+                console.log('Could not edit block message');
+            }
+            
+            // Notify admin
+            await telegramAPI.sendMessage(chatId,
+                `🚫 <b>Silinen Kullanıcı Kalıcı Engellendi!</b>\n\n` +
+                `👤 <b>Kullanıcı:</b> ${pendingUser.firstName}\n` +
+                `📅 <b>Engelleme Tarihi:</b> ${new Date().toLocaleString('tr-TR')}\n\n` +
+                `🔒 Kullanıcı artık sisteme asla erişemeyecek ve bildirim alamayacak.`
+            );
+            
+            // Notify blocked user
+            await telegramAPI.sendMessage(Number(targetChatId),
+                `🚫 <b>Sisteme Erişiminiz Kalıcı Engellendi</b>\n\n` +
+                `⛔ Daha önce sistemden silindiğiniz için artık kalıcı olarak engellendiniz.\n` +
+                `👤 <b>Engelleyen Admin:</b> ${user.name}\n` +
+                `📅 <b>Engelleme Tarihi:</b> ${new Date().toLocaleString('tr-TR')}\n\n` +
+                `🚨 <b>ÖNEMLİ:</b> Bu işlem geri alınamaz. Artık bu sisteme erişemeyeceksiniz.\n` +
+                `📞 Itiraz için sadece fiziksel olarak yöneticinizle görüşün.`
+            );
+            
+            await activityLogger.log(
+                `🚫 Silinen kullanıcı kalıcı engellendi: ${pendingUser.firstName} (${user.name} tarafından)`,
+                chatId,
+                user.name,
+                'critical'
+            );
+            
+        } catch (error) {
+            console.error('❌ Block deleted user error:', error);
+            await telegramAPI.sendMessage(chatId, "❌ Kullanıcı engellenirken hata oluştu.");
         }
     }
 
