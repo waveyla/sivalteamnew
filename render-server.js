@@ -1067,7 +1067,7 @@ class TaskManager {
         const task = tasks[taskIndex];
         
         // Toplu görevlerde herkes tamamlayabilir, kişisel görevlerde sadece atanan kişi
-        if (task.type !== 'bulk' && Number(task.assignedToChatId) !== Number(completedBy)) {
+        if (task.type !== 'bulk' && Number(task.assignedTo) !== Number(completedBy)) {
             throw new Error('Bu görev size ait değil');
         }
         
@@ -2627,46 +2627,96 @@ class CommandHandler {
     }
     
     async handleStats(chatId, text, from, user, isAdmin) {
-        const employees = await dataManager.readFile(DATA_FILES.employees);
-        const tasks = await dataManager.readFile(DATA_FILES.tasks);
-        const products = await dataManager.readFile(DATA_FILES.missingProducts);
-        const activities = await dataManager.readFile(DATA_FILES.activityLog);
-        
-        const totalTasks = tasks.length;
-        const completedTasks = tasks.filter(t => t.status === 'completed').length;
-        const pendingTasks = tasks.filter(t => t.status === 'pending').length;
-        
-        let statsText = `📊 <b>Sistem İstatistikleri</b>\n\n`;
-        statsText += `👥 <b>Kullanıcılar:</b> ${employees.length}\n`;
-        statsText += `📋 <b>Toplam Görev:</b> ${totalTasks}\n`;
-        statsText += `✅ <b>Tamamlanan:</b> ${completedTasks}\n`;
-        statsText += `⏳ <b>Bekleyen:</b> ${pendingTasks}\n`;
-        statsText += `📦 <b>Eksik Ürün:</b> ${products.length}\n`;
-        statsText += `📝 <b>Aktivite:</b> ${activities.length}\n\n`;
-        
-        if (totalTasks > 0) {
-            const completionRate = Math.round((completedTasks / totalTasks) * 100);
-            statsText += `🎯 <b>Başarı Oranı:</b> ${completionRate}%\n\n`;
-        }
-        
-        if (user) {
-            const userTasks = await taskManager.getUserTasks(chatId);
-            const userCompleted = userTasks.filter(t => t.status === 'completed').length;
+        try {
+            // MongoDB'den gerçek veriler al
+            const stats = await dataManager.getDatabaseStats();
             
-            statsText += `👤 <b>Kişisel İstatistikleriniz:</b>\n`;
-            statsText += `📋 Toplam Görevim: ${userTasks.length}\n`;
-            statsText += `✅ Tamamladığım: ${userCompleted}\n`;
+            let statsText = `📊 <b>SivalTeam Sistem İstatistikleri</b>\n\n`;
             
-            if (userTasks.length > 0) {
-                const personalRate = Math.round((userCompleted / userTasks.length) * 100);
-                statsText += `🏆 Başarı Oranım: ${personalRate}%\n`;
+            // Sistem geneli veriler
+            statsText += `👥 <b>Kullanıcı İstatistikleri:</b>\n`;
+            statsText += `├ 📋 Toplam Kullanıcı: ${stats.users || 0}\n`;
+            statsText += `├ 👷 Aktif Çalışan: ${stats.employees || 0}\n`;
+            statsText += `└ 👑 Admin: ${stats.users - stats.employees || 0}\n\n`;
+            
+            statsText += `📋 <b>Görev İstatistikleri:</b>\n`;
+            statsText += `├ 📊 Toplam Görev: ${stats.tasks || 0}\n`;
+            
+            if (stats.tasks > 0) {
+                // Gerçek görev durumlarını hesapla
+                const tasks = await dataManager.getTasks();
+                const completedTasks = tasks.filter(t => t.status === 'completed').length;
+                const pendingTasks = tasks.filter(t => t.status === 'pending').length;
+                const completionRate = Math.round((completedTasks / stats.tasks) * 100);
+                
+                statsText += `├ ✅ Tamamlanan: ${completedTasks} (%${completionRate})\n`;
+                statsText += `├ ⏳ Bekleyen: ${pendingTasks}\n`;
+                statsText += `└ 🎯 Başarı Oranı: %${completionRate}\n\n`;
+            } else {
+                statsText += `└ 📝 Henüz görev atanmamış\n\n`;
             }
+            
+            statsText += `📦 <b>Ürün İstatistikleri:</b>\n`;
+            statsText += `├ 🏪 Toplam Ürün: ${stats.products || 0}\n`;
+            statsText += `├ 🔴 Eksik Ürün: ${stats.missingProducts || 0}\n`;
+            statsText += `└ 📢 Duyuru: ${stats.announcements || 0}\n\n`;
+            
+            statsText += `📊 <b>Sistem Durumu:</b>\n`;
+            statsText += `├ 🔔 Aktif Bildirim: ${stats.notifications || 0}\n`;
+            statsText += `├ 🎬 Medya Dosyası: ${stats.media || 0}\n`;
+            statsText += `└ 💾 Veri Boyutu: ${stats.totalSize || 0} MB\n\n`;
+            
+            // Kişisel istatistikler
+            if (user) {
+                const userTasks = await dataManager.getTasks();
+                const myTasks = userTasks.filter(t => Number(t.assignedTo) === Number(chatId));
+                const myCompleted = myTasks.filter(t => t.status === 'completed').length;
+                
+                statsText += `👤 <b>Kişisel Performansınız:</b>\n`;
+                statsText += `├ 📋 Atanan Görevim: ${myTasks.length}\n`;
+                statsText += `├ ✅ Tamamladığım: ${myCompleted}\n`;
+                
+                if (myTasks.length > 0) {
+                    const personalRate = Math.round((myCompleted / myTasks.length) * 100);
+                    statsText += `└ 🏆 Başarı Oranım: %${personalRate}\n\n`;
+                } else {
+                    statsText += `└ 📝 Henüz görev atanmamış\n\n`;
+                }
+                
+                // Admin için ek bilgiler
+                if (isAdmin) {
+                    const recentTasks = myTasks.filter(t => {
+                        const taskDate = new Date(t.createdAt);
+                        const weekAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
+                        return taskDate > weekAgo;
+                    });
+                    
+                    statsText += `👑 <b>Admin İstatistikleri:</b>\n`;
+                    statsText += `├ 📊 Bu hafta atanan görev: ${recentTasks.length}\n`;
+                    statsText += `└ 📈 Toplam yönetilen görev: ${myTasks.length}\n`;
+                }
+            }
+            
+            // Performans uyarıları
+            if (stats.totalSize > 400) {
+                statsText += `\n⚠️ <b>Uyarı:</b> Veri boyutu 512MB limitine yaklaşıyor!\n`;
+            }
+            
+            if (stats.notifications > 100) {
+                statsText += `📢 <b>Info:</b> Eski bildirimler 90 gün sonra otomatik silinecek.\n`;
+            }
+            
+            await telegramAPI.sendMessage(chatId, statsText, {
+                keyboard: this.getKeyboard('main', isAdmin),
+                resize_keyboard: true
+            });
+            
+        } catch (error) {
+            console.error('❌ Stats error:', error);
+            await telegramAPI.sendMessage(chatId, 
+                "❌ İstatistikler yüklenirken hata oluştu. MongoDB bağlantısını kontrol edin."
+            );
         }
-        
-        await telegramAPI.sendMessage(chatId, statsText, {
-            keyboard: this.getKeyboard('main', isAdmin),
-            resize_keyboard: true
-        });
     }
     
     async handleDebug(chatId, text, from, user, isAdmin) {
@@ -3766,6 +3816,19 @@ class CallbackQueryHandler {
         try {
             const approvedUser = await userManager.approveUser(Number(targetChatId), chatId);
             
+            // Butonları kaldır ve mesajı güncelle
+            try {
+                await telegramAPI.editMessageText(chatId, message.message_id,
+                    `✅ <b>ONAYLAND</b>\n\n` +
+                    message.text || `👤 ${approvedUser.name} başarıyla sisteme eklendi.`
+                );
+                await telegramAPI.editMessageReplyMarkup(chatId, message.message_id, {
+                    inline_keyboard: []
+                });
+            } catch (editError) {
+                console.log('Could not edit approval message');
+            }
+            
             // Notify admin
             await telegramAPI.sendMessage(chatId,
                 `✅ <b>Kullanıcı Onaylandı!</b>\n\n` +
@@ -3807,6 +3870,19 @@ class CallbackQueryHandler {
         try {
             const rejectedUser = await userManager.rejectUser(Number(targetChatId), chatId, 'Admin tarafından reddedildi');
             
+            // Butonları kaldır ve mesajı güncelle
+            try {
+                await telegramAPI.editMessageText(chatId, message.message_id,
+                    `❌ <b>REDDEDİLDİ</b>\n\n` +
+                    message.text || `👤 ${rejectedUser.firstName} ${rejectedUser.lastName} kayıt talebi reddedildi.`
+                );
+                await telegramAPI.editMessageReplyMarkup(chatId, message.message_id, {
+                    inline_keyboard: []
+                });
+            } catch (editError) {
+                console.log('Could not edit rejection message');
+            }
+            
             // Notify admin
             await telegramAPI.sendMessage(chatId,
                 `❌ <b>Kullanıcı Reddedildi!</b>\n\n` +
@@ -3846,18 +3922,21 @@ class CallbackQueryHandler {
             const endTime = new Date(completedTask.completedAt);
             const timeTaken = Math.round((endTime - startTime) / (1000 * 60 * 60)); // hours
             
-            // Remove button from original message
+            // Butonları kaldır ve mesajı güncelle
             try {
+                await telegramAPI.editMessageText(chatId, message.message_id,
+                    `✅ <b>GÖREV TAMAMLANDI</b>\n\n` +
+                    `🎯 <b>${completedTask.title}</b>\n` +
+                    `📝 ${completedTask.description}\n\n` +
+                    `✅ Görev başarıyla tamamlandı\n` +
+                    `👤 Tamamlayan: ${user.name}\n` +
+                    `📅 ${new Date().toLocaleString('tr-TR')}`
+                );
+                
+                // Butonları kaldır
                 await telegramAPI.editMessageReplyMarkup(chatId, message.message_id, {
                     inline_keyboard: []
                 });
-                
-                await telegramAPI.editMessageText(chatId, message.message_id,
-                    `✅ <b>TAMAMLANDI</b>\n\n` +
-                    `🎯 ${completedTask.title}\n` +
-                    `📝 ${completedTask.description}\n\n` +
-                    `✅ <b>Görev tamamlandı</b> - 📅 ${new Date().toLocaleString('tr-TR')}`
-                );
             } catch (editError) {
                 console.log('Could not edit task message, sending new one');
                 // Fallback to new message  
@@ -3951,19 +4030,19 @@ class CallbackQueryHandler {
         try {
             const completedProduct = await productManager.completeProduct(productId, chatId);
             
-            // Remove button from original message
+            // Butonları kaldır ve mesajı güncelle
             try {
-                await telegramAPI.editMessageReplyMarkup(chatId, message.message_id, {
-                    inline_keyboard: []
-                });
-                
                 await telegramAPI.editMessageText(chatId, message.message_id,
-                    `✅ <b>TAMAMLANDI</b>\n\n` +
+                    `✅ <b>ÜRÜN TEMİN EDİLDİ</b>\n\n` +
                     `📦 ${completedProduct.product}\n` +
                     `🏷️ ${completedProduct.category}\n` +
                     `👤 Bildiren: ${completedProduct.reportedBy}\n\n` +
                     `✅ <b>Temin edildi</b> - 📅 ${new Date().toLocaleString('tr-TR')}`
                 );
+                
+                await telegramAPI.editMessageReplyMarkup(chatId, message.message_id, {
+                    inline_keyboard: []
+                });
             } catch (editError) {
                 console.log('Could not edit message, sending new one');
                 await telegramAPI.sendMessage(chatId,
@@ -4472,6 +4551,22 @@ class CallbackQueryHandler {
                 user.name,
                 'warning'
             );
+            
+            // Butonları kaldır ve mesajı güncelle
+            try {
+                await telegramAPI.editMessageText(chatId, message.message_id,
+                    `🗑️ <b>SİLİNDİ</b>\n\n` +
+                    `👤 ${targetUser.name}\n` +
+                    `🏢 ${targetUser.department}\n\n` +
+                    `✅ Çalışan sistemden kaldırıldı - 📅 ${new Date().toLocaleString('tr-TR')}`
+                );
+                
+                await telegramAPI.editMessageReplyMarkup(chatId, message.message_id, {
+                    inline_keyboard: []
+                });
+            } catch (editError) {
+                console.log('Could not edit employee removal message');
+            }
             
             // Notify the admin who removed
             await telegramAPI.sendMessage(chatId,
