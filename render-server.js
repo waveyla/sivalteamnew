@@ -2572,6 +2572,12 @@ app.get('/', (req, res) => {
 
 async function startApplication() {
     try {
+        // Debug environment variables
+        console.log('🔍 Environment Debug:');
+        console.log(`BOT_TOKEN: ${CONFIG.BOT_TOKEN ? 'Set' : 'Missing'}`);
+        console.log(`WEBHOOK_URL: ${CONFIG.WEBHOOK_URL}`);
+        console.log(`MONGODB_URI: ${process.env.MONGODB_URI ? 'Set' : 'Missing'}`);
+        
         // Initialize data manager
         await dataManager.initialize();
         
@@ -2581,6 +2587,7 @@ async function startApplication() {
         console.log('🔗 Setting up Telegram webhook...');
         const webhookURL = `${CONFIG.WEBHOOK_URL}/webhook`;
         console.log(`🌐 Webhook URL: ${webhookURL}`);
+        
         const webhookResponse = await axios.post(
             `https://api.telegram.org/bot${CONFIG.BOT_TOKEN}/setWebhook`,
             { url: webhookURL }
