@@ -48,7 +48,7 @@ class MongoDataManager {
                 username: employeeData.username,
                 firstName: employeeData.firstName,
                 lastName: employeeData.lastName,
-                type: 'employee',
+                type: employeeData.type || 'employee', // Allow custom type (admin/employee)
                 isActive: true,
                 registeredDate: new Date()
             });

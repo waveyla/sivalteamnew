@@ -2080,23 +2080,17 @@ class CommandHandler {
         }
         
         // Check if this is the first user (becomes admin automatically)
-        const employees = await dataManager.readFile(DATA_FILES.employees);
-        const adminSettings = await dataManager.readFile(DATA_FILES.adminSettings);
+        const employees = await dataManager.getEmployees();
         
-        if (employees.length === 0 && adminSettings.adminUsers.length === 0) {
-            // First user becomes admin
-            const firstAdmin = await userManager.addUser({
-                chatId,
-                name: turkishHandler.protect(from.first_name || 'Admin'),
-                username: from.username,
-                department: 'Yönetim',
-                role: 'admin',
-                permissions: ['all_access']
+        if (employees.length === 0) {
+            // First user becomes admin - directly add to MongoDB with admin type
+            const firstAdmin = await dataManager.addEmployee({
+                chatId: String(chatId),
+                firstName: turkishHandler.protect(from.first_name || 'Admin'),
+                lastName: turkishHandler.protect(from.last_name || ''),
+                username: from.username || 'admin_' + Date.now(),
+                type: 'admin'  // Set as admin type in MongoDB
             });
-            
-            // Add to admin list
-            adminSettings.adminUsers.push(Number(chatId));
-            await dataManager.writeFile(DATA_FILES.adminSettings, adminSettings);
             
             await telegramAPI.sendMessage(chatId,
                 `👑 <b>Hoşgeldin İlk Admin!</b>\n\n` +
@@ -2114,7 +2108,7 @@ class CommandHandler {
                 }
             );
             
-            await activityLogger.log(`İlk admin otomatik olarak eklendi: ${firstAdmin.name}`, chatId, firstAdmin.name);
+            await activityLogger.log(`İlk admin otomatik olarak eklendi: ${turkishHandler.protect(from.first_name || 'Admin')}`, chatId, from.first_name);
             return;
         }
         
