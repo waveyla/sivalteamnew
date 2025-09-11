@@ -1,4 +1,4 @@
-const { User, Task, Product, Notification, Session } = require('./database');
+const { User, Task, Product, Notification, Session, MissingProduct, Announcement, Media } = require('./database');
 const fs = require('fs').promises;
 const path = require('path');
 const crypto = require('crypto');
@@ -10,8 +10,25 @@ class MongoDataManager {
             tasks: Task,
             products: Product,
             notifications: Notification,
-            sessions: Session
+            sessions: Session,
+            missingProducts: MissingProduct,
+            announcements: Announcement,
+            media: Media
         };
+        this.initializeCleanupIndexes();
+    }
+
+    async initializeCleanupIndexes() {
+        try {
+            // MongoDB TTL index'leri otomatik temizlik için
+            await Notification.collection.createIndex({ "createdAt": 1 }, { expireAfterSeconds: 7776000 });
+            await MissingProduct.collection.createIndex({ "createdAt": 1 }, { expireAfterSeconds: 7776000 });
+            await Announcement.collection.createIndex({ "createdAt": 1 }, { expireAfterSeconds: 7776000 });
+            await Media.collection.createIndex({ "createdAt": 1 }, { expireAfterSeconds: 7776000 });
+            console.log('✅ TTL indexes created for automatic cleanup after 90 days');
+        } catch (error) {
+            console.log('⚠️ TTL indexes might already exist:', error.message);
+        }
     }
 
     async getEmployees() {
@@ -305,6 +322,134 @@ class MongoDataManager {
         } catch (error) {
             console.error('Error importing data:', error);
             throw error;
+        }
+    }
+
+    // Eksik Ürün Metodları
+    async addMissingProduct(productData) {
+        try {
+            const missingProduct = new MissingProduct({
+                productId: productData.productId,
+                productName: productData.productName,
+                reportedBy: productData.reportedBy,
+                quantity: productData.quantity
+            });
+            await missingProduct.save();
+            return missingProduct;
+        } catch (error) {
+            console.error('Error adding missing product:', error);
+            throw error;
+        }
+    }
+
+    async getMissingProducts() {
+        try {
+            const products = await MissingProduct.find().sort({ createdAt: -1 }).lean();
+            return products || [];
+        } catch (error) {
+            console.error('Error getting missing products:', error);
+            return [];
+        }
+    }
+
+    // Duyuru Metodları
+    async addAnnouncement(announcementData) {
+        try {
+            const announcement = new Announcement({
+                announcementId: announcementData.announcementId || crypto.randomBytes(16).toString('hex'),
+                title: announcementData.title,
+                content: announcementData.content,
+                createdBy: announcementData.createdBy,
+                targetAudience: announcementData.targetAudience || ['all']
+            });
+            await announcement.save();
+            return announcement;
+        } catch (error) {
+            console.error('Error adding announcement:', error);
+            throw error;
+        }
+    }
+
+    async getAnnouncements() {
+        try {
+            const announcements = await Announcement.find().sort({ createdAt: -1 }).lean();
+            return announcements || [];
+        } catch (error) {
+            console.error('Error getting announcements:', error);
+            return [];
+        }
+    }
+
+    // Medya Metodları
+    async addMedia(mediaData) {
+        try {
+            const media = new Media({
+                mediaId: mediaData.mediaId || crypto.randomBytes(16).toString('hex'),
+                fileId: mediaData.fileId,
+                type: mediaData.type,
+                caption: mediaData.caption,
+                uploadedBy: mediaData.uploadedBy,
+                relatedTo: mediaData.relatedTo
+            });
+            await media.save();
+            return media;
+        } catch (error) {
+            console.error('Error adding media:', error);
+            throw error;
+        }
+    }
+
+    async getMedia(relatedTo) {
+        try {
+            const media = await Media.find({ relatedTo }).sort({ createdAt: -1 }).lean();
+            return media || [];
+        } catch (error) {
+            console.error('Error getting media:', error);
+            return [];
+        }
+    }
+
+    // Veritabanı İstatistikleri
+    async getDatabaseStats() {
+        try {
+            const stats = {
+                users: await User.countDocuments(),
+                employees: await User.countDocuments({ type: 'employee' }),
+                tasks: await Task.countDocuments(),
+                products: await Product.countDocuments(),
+                notifications: await Notification.countDocuments(),
+                missingProducts: await MissingProduct.countDocuments(),
+                announcements: await Announcement.countDocuments(),
+                media: await Media.countDocuments(),
+                totalSize: await this.getCollectionsSizeInMB()
+            };
+            return stats;
+        } catch (error) {
+            console.error('Error getting database stats:', error);
+            return {};
+        }
+    }
+
+    async getCollectionsSizeInMB() {
+        try {
+            // Bu metod yaklaşık bir tahmin verir
+            const collections = ['users', 'tasks', 'products', 'notifications', 'missingproducts', 'announcements', 'media'];
+            let totalSize = 0;
+            
+            for (const coll of collections) {
+                try {
+                    const stats = await this.models[coll]?.collection.stats();
+                    if (stats) {
+                        totalSize += stats.size;
+                    }
+                } catch (e) {
+                    // Collection henüz oluşmamış olabilir
+                }
+            }
+            
+            return (totalSize / (1024 * 1024)).toFixed(2); // MB cinsinden
+        } catch (error) {
+            return 0;
         }
     }
 }

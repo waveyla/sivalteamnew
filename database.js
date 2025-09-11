@@ -62,7 +62,7 @@ const notificationSchema = new mongoose.Schema({
     message: String,
     type: String,
     isRead: { type: Boolean, default: false },
-    createdAt: { type: Date, default: Date.now }
+    createdAt: { type: Date, default: Date.now, expires: 7776000 } // 90 gün sonra otomatik silinir (90*24*60*60)
 }, { timestamps: true });
 
 const sessionSchema = new mongoose.Schema({
@@ -72,11 +72,41 @@ const sessionSchema = new mongoose.Schema({
     expiresAt: Date
 }, { timestamps: true });
 
+const missingProductSchema = new mongoose.Schema({
+    productId: { type: String, required: true },
+    productName: String,
+    reportedBy: String,
+    quantity: Number,
+    createdAt: { type: Date, default: Date.now, expires: 7776000 } // 90 gün sonra otomatik silinir
+}, { timestamps: true });
+
+const announcementSchema = new mongoose.Schema({
+    announcementId: { type: String, required: true, unique: true },
+    title: String,
+    content: String,
+    createdBy: String,
+    targetAudience: [String], // ['all', 'employees', 'admins']
+    createdAt: { type: Date, default: Date.now, expires: 7776000 } // 90 gün sonra otomatik silinir
+}, { timestamps: true });
+
+const mediaSchema = new mongoose.Schema({
+    mediaId: { type: String, required: true, unique: true },
+    fileId: String, // Telegram file ID
+    type: { type: String, enum: ['photo', 'document', 'video'] },
+    caption: String,
+    uploadedBy: String,
+    relatedTo: String, // task, product, announcement ID
+    createdAt: { type: Date, default: Date.now, expires: 7776000 } // 90 gün sonra otomatik silinir
+}, { timestamps: true });
+
 const User = mongoose.model('User', userSchema);
 const Task = mongoose.model('Task', taskSchema);
 const Product = mongoose.model('Product', productSchema);
 const Notification = mongoose.model('Notification', notificationSchema);
 const Session = mongoose.model('Session', sessionSchema);
+const MissingProduct = mongoose.model('MissingProduct', missingProductSchema);
+const Announcement = mongoose.model('Announcement', announcementSchema);
+const Media = mongoose.model('Media', mediaSchema);
 
 module.exports = {
     connectDB,
@@ -84,5 +114,8 @@ module.exports = {
     Task,
     Product,
     Notification,
-    Session
+    Session,
+    MissingProduct,
+    Announcement,
+    Media
 };
