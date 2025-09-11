@@ -46,8 +46,8 @@ const MissingProduct = mongoose.model('MissingProduct', missingProductSchema);
 const bot = new TelegramBot(process.env.BOT_TOKEN);
 
 // Set webhook
-const WEBHOOK_URL = process.env.WEBHOOK_URL || `https://sivalteam-bot.onrender.com/webhook`;
-bot.setWebHook(`${WEBHOOK_URL}/${process.env.BOT_TOKEN}`);
+const WEBHOOK_URL = process.env.WEBHOOK_URL || `https://sivalteam-bot.onrender.com`;
+bot.setWebHook(`${WEBHOOK_URL}/webhook/${process.env.BOT_TOKEN}`);
 
 // User states
 const userStates = new Map();
@@ -595,6 +595,7 @@ app.get('/', (req, res) => {
 
 app.post(`/webhook/${process.env.BOT_TOKEN}`, async (req, res) => {
     try {
+        console.log('Webhook received:', JSON.stringify(req.body, null, 2));
         const { message, callback_query } = req.body;
         
         if (message) {
@@ -614,9 +615,21 @@ app.post(`/webhook/${process.env.BOT_TOKEN}`, async (req, res) => {
 
 // ==================== START SERVER ====================
 connectDB().then(() => {
-    app.listen(PORT, () => {
+    app.listen(PORT, async () => {
         console.log(`🚀 Server running on port ${PORT}`);
-        console.log(`📌 Webhook URL: ${WEBHOOK_URL}`);
+        console.log(`📌 Base URL: ${WEBHOOK_URL}`);
+        console.log(`🔗 Full Webhook: ${WEBHOOK_URL}/webhook/${process.env.BOT_TOKEN}`);
+        console.log(`🤖 Bot Token: ${process.env.BOT_TOKEN ? 'SET ✅' : 'NOT SET ❌'}`);
+        console.log(`🗄️ MongoDB: ${process.env.MONGODB_URI ? 'SET ✅' : 'NOT SET ❌'}`);
+        
+        // Set webhook info
+        try {
+            const webhookInfo = await bot.getWebHookInfo();
+            console.log('📡 Current Webhook:', webhookInfo.url);
+        } catch (error) {
+            console.log('⚠️ Could not get webhook info:', error.message);
+        }
+        
         console.log('✅ Bot ready for Render deployment');
         console.log('🛡️ Spam protection enabled');
     });
