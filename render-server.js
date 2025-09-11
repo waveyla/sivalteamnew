@@ -835,42 +835,11 @@ class BotCommandHandler {
             return;
         }
         
-        // Check if this is the first user (becomes admin automatically)
-        const employees = await dataManager.getEmployees();
-        
-        if (employees.length === 0) {
-            const firstAdmin = await userManager.addUser({
-                chatId,
-                name: turkishHandler.protect(from.first_name || 'Admin'),
-                lastName: turkishHandler.protect(from.last_name || ''),
-                username: from.username || 'admin_' + Date.now(),
-                type: 'admin'
-            });
-            
-            await telegramAPI.sendMessage(chatId,
-                `👑 <b>Hoşgeldin İlk Admin!</b>\n\n` +
-                `🎉 Sen bu sistemin ilk kullanıcısısın ve otomatik olarak <b>Admin</b> oldun!\n\n` +
-                `👑 <b>Admin Yetkilerin:</b>\n` +
-                `• Yeni kullanıcıları onaylama\n` +
-                `• Çalışan bilgilerini düzenleme\n` +
-                `• Görev atama ve yönetimi\n` +
-                `• Sistem istatistikleri\n` +
-                `• Toplu duyuru gönderme\n\n` +
-                `✅ Artık sistemi tam yetkilerle kullanabilirsin!`,
-                {
-                    reply_markup: this.getKeyboard('main', true)
-                }
-            );
-            
-            await activityLogger.log(`İlk admin otomatik eklendi: ${firstAdmin.firstName}`, chatId);
-            return;
-        }
-        
-        // Existing user login
+        // Existing user login - CHECK THIS FIRST!
         if (user) {
             const isUserAdmin = await userManager.isAdmin(chatId);
             const welcomeText = `🎉 <b>Tekrar Hoşgeldin ${user.firstName}!</b>\n\n` +
-                               `👤 Kullanıcı Adı: @${user.username}\n` +
+                               `👤 Kullanıcı Adı: @${user.username || 'none'}\n` +
                                `${isUserAdmin ? '👑 Yetki: Admin\n' : ''}` +
                                `⏰ Son Aktivite: ${new Date(user.lastActive || user.registeredDate).toLocaleString('tr-TR')}\n\n` +
                                `✅ Giriş başarılı - Sistemi kullanmaya devam edebilirsin.`;
@@ -881,6 +850,57 @@ class BotCommandHandler {
             
             await activityLogger.log(`${user.firstName} sisteme tekrar giriş yaptı`, chatId);
             return;
+        }
+        
+        // Check if this is the first user (becomes admin automatically)
+        const employees = await dataManager.getEmployees();
+        
+        if (employees.length === 0) {
+            try {
+                const firstAdmin = await userManager.addUser({
+                    chatId,
+                    name: turkishHandler.protect(from.first_name || 'Admin'),
+                    lastName: turkishHandler.protect(from.last_name || ''),
+                    username: from.username || 'admin_' + Date.now(),
+                    type: 'admin'
+                });
+                
+                await telegramAPI.sendMessage(chatId,
+                    `👑 <b>Hoşgeldin İlk Admin!</b>\n\n` +
+                    `🎉 Sen bu sistemin ilk kullanıcısısın ve otomatik olarak <b>Admin</b> oldun!\n\n` +
+                    `👑 <b>Admin Yetkilerin:</b>\n` +
+                    `• Yeni kullanıcıları onaylama\n` +
+                    `• Çalışan bilgilerini düzenleme\n` +
+                    `• Görev atama ve yönetimi\n` +
+                    `• Sistem istatistikleri\n` +
+                    `• Toplu duyuru gönderme\n\n` +
+                    `✅ Artık sistemi tam yetkilerle kullanabilirsin!`,
+                    {
+                        reply_markup: this.getKeyboard('main', true)
+                    }
+                );
+                
+                await activityLogger.log(`İlk admin otomatik eklendi: ${firstAdmin.firstName}`, chatId);
+                return;
+            } catch (error) {
+                // If duplicate key error, user already exists
+                if (error.code === 11000) {
+                    console.log('⚠️ User already exists in database, redirecting to existing user flow');
+                    // Force refresh user data
+                    const existingUser = await userManager.findUser(chatId);
+                    if (existingUser) {
+                        const isUserAdmin = await userManager.isAdmin(chatId);
+                        const welcomeText = `🎉 <b>Tekrar Hoşgeldin ${existingUser.firstName}!</b>\n\n` +
+                                           `✅ Sisteme tekrar giriş yaptınız.`;
+                        
+                        await telegramAPI.sendMessage(chatId, welcomeText, {
+                            reply_markup: this.getKeyboard('main', isUserAdmin)
+                        });
+                        return;
+                    }
+                }
+                throw error;
+            }
         }
         
         // New user - check if already pending
