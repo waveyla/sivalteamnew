@@ -593,6 +593,28 @@ app.post('/api/register-user', async (req, res) => {
     }
 });
 
+// Admin role update endpoint  
+app.post('/api/make-admin', async (req, res) => {
+    try {
+        const { chatId } = req.body;
+        
+        const user = await User.findOneAndUpdate(
+            { chatId: chatId.toString() },
+            { role: 'admin' },
+            { new: true }
+        );
+        
+        if (user) {
+            res.json({ success: true, message: 'User updated to admin successfully' });
+        } else {
+            res.status(404).json({ error: 'User not found' });
+        }
+    } catch (error) {
+        console.error('Admin update error:', error);
+        res.status(500).json({ error: error.message });
+    }
+});
+
 // ==================== SERVER START ====================
 async function startServer() {
     await connectMongoDB();
