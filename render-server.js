@@ -259,6 +259,7 @@ const turkishHandler = new TurkishCharacterHandler();
 class DataManager extends MongoDataManager {
     constructor() {
         super();
+        this.mongoConnected = false;
         this.initializeDatabase();
         this.startAutoBackup();
     }
@@ -274,11 +275,13 @@ class DataManager extends MongoDataManager {
             }
             
             console.log('💾 MongoDB data management system initialized successfully');
+            this.mongoConnected = true;
         } catch (error) {
             console.error('❌ Failed to initialize MongoDB:', error);
             // Fallback to local files if MongoDB fails
             console.log('⚠️ Falling back to local file storage...');
-            this.initializeLocalFiles();
+            this.mongoConnected = false;
+            await this.initializeLocalFiles();
         }
     }
     
@@ -290,7 +293,7 @@ class DataManager extends MongoDataManager {
                 
                 if (!fsSync.existsSync(filename)) {
                     const initialData = this.getInitialData(key);
-                    await this.writeFile(filename, initialData);
+                    await this.writeFileLocal(filename, initialData);
                     console.log(`✅ Initialized local file: ${filename}`);
                 }
             }
@@ -299,6 +302,58 @@ class DataManager extends MongoDataManager {
         } catch (error) {
             console.error('❌ Failed to initialize local files:', error);
             process.exit(1);
+        }
+    }
+
+    // MongoDB yokken local file metodları
+    async writeFileLocal(filename, data) {
+        try {
+            const protectedData = this.protectDataTurkishChars(data);
+            await fs.writeFile(filename, JSON.stringify(protectedData, null, 2), 'utf8');
+            cache.set(filename, protectedData);
+            return true;
+        } catch (error) {
+            console.error(`❌ Error writing ${filename}:`, error);
+            return false;
+        }
+    }
+
+    // MongoDB bağlantı durumuna göre metodları override et
+    async getTasks() {
+        if (this.mongoConnected) {
+            return await super.getTasks();
+        } else {
+            return await this.readFile(DATA_FILES.tasks);
+        }
+    }
+
+    async addTask(taskData) {
+        if (this.mongoConnected) {
+            return await super.addTask(taskData);
+        } else {
+            const tasks = await this.readFile(DATA_FILES.tasks);
+            const newTask = {
+                id: Date.now() + Math.random(),
+                taskId: taskData.taskId || crypto.randomBytes(16).toString('hex'),
+                title: taskData.title,
+                description: taskData.description,
+                assignedTo: taskData.assignedTo,
+                assignedBy: taskData.assignedBy,
+                status: 'pending',
+                createdAt: new Date().toISOString(),
+                priority: taskData.priority || 'medium'
+            };
+            tasks.push(newTask);
+            await this.writeFileLocal(DATA_FILES.tasks, tasks);
+            return newTask;
+        }
+    }
+
+    async getEmployees() {
+        if (this.mongoConnected) {
+            return await super.getEmployees();
+        } else {
+            return await this.readFile(DATA_FILES.employees);
         }
     }
     
