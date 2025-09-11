@@ -33,8 +33,8 @@ const MongoDataManager = require('./dataManager');
 // 🚀 Application Configuration
 const CONFIG = {
     PORT: process.env.PORT || 10000,
-    BOT_TOKEN: process.env.BOT_TOKEN,
-    WEBHOOK_URL: process.env.WEBHOOK_URL,
+    BOT_TOKEN: process.env.BOT_TOKEN || '8229159175:AAGRFoLpK9ma5ekPiaaCdI8EKJeca14XoOg',
+    WEBHOOK_URL: process.env.WEBHOOK_URL || 'https://sivalteam-bot.onrender.com',
     VERSION: '4.0.0',
     ENVIRONMENT: process.env.NODE_ENV || 'production',
     
@@ -2579,9 +2579,11 @@ async function startApplication() {
         
         // Set webhook
         console.log('🔗 Setting up Telegram webhook...');
+        const webhookURL = `${CONFIG.WEBHOOK_URL}/webhook`;
+        console.log(`🌐 Webhook URL: ${webhookURL}`);
         const webhookResponse = await axios.post(
             `https://api.telegram.org/bot${CONFIG.BOT_TOKEN}/setWebhook`,
-            { url: CONFIG.WEBHOOK_URL }
+            { url: webhookURL }
         );
         
         if (webhookResponse.data.ok) {
