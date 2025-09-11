@@ -37,6 +37,7 @@ const taskSchema = new mongoose.Schema({
     assignedBy: String,
     priority: { type: String, enum: ['low', 'medium', 'high'], default: 'medium' },
     status: { type: String, enum: ['pending', 'active', 'completed', 'cancelled'], default: 'pending' },
+    type: { type: String, enum: ['individual', 'bulk'], default: 'individual' },
     deadline: Date,
     createdAt: { type: Date, default: Date.now },
     completedAt: Date,

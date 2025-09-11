@@ -1071,6 +1071,7 @@ class TaskManager {
                 assignedTo: String(user.chatId),
                 assignedBy: String(taskData.assignedBy),
                 priority: taskData.priority || 'medium',
+                type: 'bulk',
                 deadline: taskData.dueDate || null,
                 tags: taskData.tags || []
             });
@@ -1911,7 +1912,15 @@ class CommandHandler {
                 return;
             }
         } catch (error) {
-            // Blocked users file doesn't exist yet, continue
+            // File doesn't exist yet, create empty array and continue
+            if (error.code === 'ENOENT') {
+                blockedUsers = [];
+                try {
+                    await dataManager.writeFile(DATA_FILES.blockedUsers, blockedUsers);
+                } catch (writeError) {
+                    console.log('Could not create blocked_users.json file');
+                }
+            }
         }
 
         // Check if user was previously deleted
@@ -4591,7 +4600,7 @@ class CallbackQueryHandler {
                     "✅ Şu anda bekleyen görev bulunmuyor!\n\n" +
                     "Yeni görev atamak için yukarıdaki butonları kullanın.",
                     {
-                        keyboard: this.getKeyboard('admin_panel'),
+                        keyboard: commandHandler.getKeyboard('admin_panel'),
                         resize_keyboard: true
                     }
                 );
@@ -4841,7 +4850,7 @@ class CallbackQueryHandler {
                 `🔄 Artık normal çalışan statüsündesiniz.\n` +
                 `📋 Görevlerinizi takip edebilir ve ürün bildirimde bulunabilirsiniz.`,
                 {
-                    keyboard: this.getKeyboard('main', false),
+                    keyboard: commandHandler.getKeyboard('main', false),
                     resize_keyboard: true
                 }
             );

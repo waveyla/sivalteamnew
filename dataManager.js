@@ -90,6 +90,7 @@ class MongoDataManager {
                 assignedBy: taskData.assignedBy,
                 priority: taskData.priority || 'medium',
                 status: 'pending',
+                type: taskData.type || 'individual',
                 deadline: taskData.deadline,
                 tags: taskData.tags || []
             });
