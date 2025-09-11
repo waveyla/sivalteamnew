@@ -453,6 +453,94 @@ class MongoDataManager {
             return 0;
         }
     }
+
+    // Blocked Users Methods
+    async getBlockedUsers() {
+        try {
+            // For now, return empty array - implement if BlockedUser collection exists
+            return [];
+        } catch (error) {
+            console.error('Error getting blocked users:', error);
+            return [];
+        }
+    }
+
+    async addBlockedUser(userData) {
+        try {
+            // For now, just log - implement if BlockedUser collection exists
+            console.log('User blocked:', userData);
+            return true;
+        } catch (error) {
+            console.error('Error adding blocked user:', error);
+            return false;
+        }
+    }
+
+    // Pending Users Methods
+    async getPendingUsers() {
+        try {
+            // For now, return empty array - implement if PendingUser collection exists
+            return [];
+        } catch (error) {
+            console.error('Error getting pending users:', error);
+            return [];
+        }
+    }
+
+    async addPendingUser(userData) {
+        try {
+            // For now, just log - implement if PendingUser collection exists
+            console.log('Pending user added:', userData);
+            return userData;
+        } catch (error) {
+            console.error('Error adding pending user:', error);
+            throw error;
+        }
+    }
+
+    async removePendingUser(chatId) {
+        try {
+            // For now, just log - implement if PendingUser collection exists
+            console.log('Pending user removed:', chatId);
+            return true;
+        } catch (error) {
+            console.error('Error removing pending user:', error);
+            return false;
+        }
+    }
+
+    // Deleted Employees Methods
+    async getDeletedEmployees() {
+        try {
+            // For now, return empty array - implement if DeletedEmployee collection exists
+            return [];
+        } catch (error) {
+            console.error('Error getting deleted employees:', error);
+            return [];
+        }
+    }
+
+    async addDeletedEmployee(userData) {
+        try {
+            // For now, just log - implement if DeletedEmployee collection exists
+            console.log('Deleted employee added:', userData);
+            return userData;
+        } catch (error) {
+            console.error('Error adding deleted employee:', error);
+            throw error;
+        }
+    }
+
+    async removeDeletedEmployee(chatId) {
+        try {
+            // For now, just log - implement if DeletedEmployee collection exists
+            console.log('Deleted employee removed:', chatId);
+            return true;
+        } catch (error) {
+            console.error('Error removing deleted employee:', error);
+            return false;
+        }
+    }
 }
 
 module.exports = MongoDataManager;
