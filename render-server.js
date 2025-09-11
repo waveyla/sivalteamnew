@@ -1102,7 +1102,9 @@ class TaskManager {
         }
         
         // Toplu görevlerde herkes tamamlayabilir, kişisel görevlerde sadece atanan kişi
-        if (task.type !== 'bulk' && String(task.assignedTo) !== String(completedBy)) {
+        // Eski görevlerde type field yoksa 'individual' olarak kabul et
+        const taskType = task.type || 'individual';
+        if (taskType !== 'bulk' && String(task.assignedTo) !== String(completedBy)) {
             throw new Error('Bu görev size ait değil');
         }
         
@@ -1897,20 +1899,6 @@ class CommandHandler {
         let blockedUsers = [];
         try {
             blockedUsers = await dataManager.readFile(DATA_FILES.blockedUsers);
-            const isBlocked = blockedUsers.find(blocked => Number(blocked.chatId) === Number(chatId));
-            
-            if (isBlocked) {
-                await telegramAPI.sendMessage(chatId,
-                    `🚫 <b>Hesabınız Kalıcı Olarak Engellenmiş</b>\n\n` +
-                    `⛔ Sisteme erişim hakkınız kalıcı olarak iptal edilmiştir.\n\n` +
-                    `📋 <b>Engelleme Bilgileri:</b>\n` +
-                    `• Engelleme Tarihi: ${new Date(isBlocked.blockedAt).toLocaleString('tr-TR')}\n` +
-                    `• Engelleyen: ${isBlocked.blockedByName}\n\n` +
-                    `🚨 <b>Bu işlem geri alınamaz.</b>\n` +
-                    `📞 Sadece fiziksel olarak yöneticinizle görüşebilirsiniz.`
-                );
-                return;
-            }
         } catch (error) {
             // File doesn't exist yet, create empty array and continue
             if (error.code === 'ENOENT') {
@@ -1921,6 +1909,20 @@ class CommandHandler {
                     console.log('Could not create blocked_users.json file');
                 }
             }
+        }
+        
+        const isBlocked = blockedUsers.find(blocked => Number(blocked.chatId) === Number(chatId));
+        if (isBlocked) {
+            await telegramAPI.sendMessage(chatId,
+                `🚫 <b>Hesabınız Kalıcı Olarak Engellenmiş</b>\n\n` +
+                `⛔ Sisteme erişim hakkınız kalıcı olarak iptal edilmiştir.\n\n` +
+                `📋 <b>Engelleme Bilgileri:</b>\n` +
+                `• Engelleme Tarihi: ${new Date(isBlocked.blockedAt).toLocaleString('tr-TR')}\n` +
+                `• Engelleyen: ${isBlocked.blockedByName}\n\n` +
+                `🚨 <b>Bu işlem geri alınamaz.</b>\n` +
+                `📞 Sadece fiziksel olarak yöneticinizle görüşebilirsiniz.`
+            );
+            return;
         }
 
         // Check if user was previously deleted
@@ -3481,7 +3483,6 @@ class CommandHandler {
                             { text: "👥 Herkese Görev Ata", callback_data: "assign_all_task" }
                         ],
                         [
-                            { text: "📋 Görev Şablonu Seç", callback_data: "task_template" },
                             { text: "📋 Aktif Görevleri Gör", callback_data: "show_active_tasks" }
                         ]
                     ]
