@@ -1024,39 +1024,31 @@ class TaskManager {
     }
     
     async createTask(taskData) {
-        const tasks = await dataManager.readFile(DATA_FILES.tasks);
-        
-        const newTask = {
-            id: Date.now() + Math.random(),
+        // MongoDB ile görev oluştur
+        const newTask = await dataManager.addTask({
             title: turkishHandler.protect(taskData.title),
             description: turkishHandler.protect(taskData.description),
             assignedTo: Number(taskData.assignedTo),
             assignedToName: turkishHandler.protect(taskData.assignedToName),
             assignedBy: Number(taskData.assignedBy),
             assignedByName: turkishHandler.protect(taskData.assignedByName),
-            createdAt: new Date().toISOString(),
-            updatedAt: new Date().toISOString(),
-            status: 'pending',
-            priority: taskData.priority || 'normal',
+            priority: taskData.priority || 'medium',
             type: taskData.type || 'individual',
             bulkId: taskData.bulkId || null,
-            dueDate: taskData.dueDate || null,
+            deadline: taskData.dueDate || null,
             category: taskData.category || 'general',
-            tags: taskData.tags || [],
-            completedAt: null,
-            completedBy: null,
-            estimatedTime: taskData.estimatedTime || null,
-            actualTime: null
-        };
+            tags: taskData.tags || []
+        });
         
-        tasks.push(newTask);
-        await dataManager.writeFile(DATA_FILES.tasks, tasks);
+        if (!newTask) {
+            throw new Error('Görev oluşturulamadı');
+        }
         
         // Update user task count
         await this.updateUserTaskStats(newTask.assignedTo);
         
         await activityLogger.log(
-            `Yeni görev atandı: "${newTask.title}" → ${newTask.assignedToName}`,
+            `Yeni görev atandı: "${newTask.title}" → ${taskData.assignedToName}`,
             taskData.assignedBy,
             taskData.assignedByName,
             'info'
@@ -1066,7 +1058,6 @@ class TaskManager {
     }
     
     async createBulkTasks(taskData, targetUsers) {
-        const tasks = await dataManager.readFile(DATA_FILES.tasks);
         const bulkId = Date.now();
         const createdTasks = [];
         
@@ -1114,14 +1105,13 @@ class TaskManager {
     }
     
     async completeTask(taskId, completedBy, completionNotes = null) {
-        const tasks = await dataManager.readFile(DATA_FILES.tasks);
-        const taskIndex = tasks.findIndex(t => t.id == taskId);
+        // MongoDB'den görevleri al
+        const tasks = await dataManager.getTasks();
+        const task = tasks.find(t => t.id == taskId || t.taskId == taskId);
         
-        if (taskIndex === -1) {
+        if (!task) {
             throw new Error('Görev bulunamadı');
         }
-        
-        const task = tasks[taskIndex];
         
         // Toplu görevlerde herkes tamamlayabilir, kişisel görevlerde sadece atanan kişi
         if (task.type !== 'bulk' && Number(task.assignedTo) !== Number(completedBy)) {
@@ -1137,17 +1127,15 @@ class TaskManager {
         const endTime = new Date(completionTime);
         const actualTime = Math.round((endTime - startTime) / (1000 * 60)); // minutes
         
-        tasks[taskIndex] = {
-            ...task,
+        // MongoDB ile görev güncelle
+        const updatedTask = await dataManager.updateTask(task.taskId || task.id, {
             status: 'completed',
             completedAt: completionTime,
             completedBy: Number(completedBy),
             actualTime: actualTime,
             completionNotes: completionNotes ? turkishHandler.protect(completionNotes) : null,
             updatedAt: completionTime
-        };
-        
-        await dataManager.writeFile(DATA_FILES.tasks, tasks);
+        });
         
         // Update user task stats
         await this.updateUserTaskStats(task.assignedTo);
@@ -1162,12 +1150,20 @@ class TaskManager {
             'success'
         );
         
-        return tasks[taskIndex];
+        return updatedTask || {
+            ...task,
+            status: 'completed',
+            completedAt: completionTime,
+            completedBy: Number(completedBy),
+            actualTime: actualTime,
+            completionNotes: completionNotes ? turkishHandler.protect(completionNotes) : null,
+            updatedAt: completionTime
+        };
     }
     
     async getUserTasks(chatId, status = null) {
-        const tasks = await dataManager.readFile(DATA_FILES.tasks);
-        let userTasks = tasks.filter(task => Number(task.assignedToChatId) === Number(chatId));
+        const tasks = await dataManager.getTasks();
+        let userTasks = tasks.filter(task => Number(task.assignedTo) === Number(chatId));
         
         if (status) {
             userTasks = userTasks.filter(task => task.status === status);
