@@ -265,6 +265,22 @@ class KeyboardGenerator {
                         ]
                     ]
                 }
+            },
+            user_selection: {
+                reply_markup: {
+                    inline_keyboard: data.users ? data.users.map(user => [
+                        { text: `👤 ${user.firstName} ${user.lastName || ''}`, callback_data: `select_user_${user.chatId}` }
+                    ]) : [[{ text: "👥 Herkese Gönder", callback_data: "select_all_users" }]]
+                }
+            },
+            task_assignment_options: {
+                reply_markup: {
+                    inline_keyboard: [
+                        [{ text: "👤 Tek Kişiye", callback_data: "task_individual" }],
+                        [{ text: "👥 Herkese", callback_data: "task_everyone" }],
+                        [{ text: "🔙 İptal", callback_data: "main_menu" }]
+                    ]
+                }
             }
         };
         
@@ -327,8 +343,9 @@ class MessageHandler {
                 return;
             }
 
-            // YENİ KULLANICI - Hiç kayıtlı kullanıcı yoksa ilk admin olur
-            if (allEmployees.length === 0) {
+            // YENİ KULLANICI - Hiç admin yoksa ilk admin olur
+            const existingAdmins = allEmployees.filter(emp => emp.type === 'admin');
+            if (existingAdmins.length === 0) {
                 try {
                     const newAdmin = await this.dataManager.addEmployee({
                         chatId: chatId.toString(),
@@ -750,7 +767,7 @@ class MessageHandler {
                 `❌ İptal etmek için /cancel yazabilirsiniz.`
             );
 
-            SessionManager.setUserState(chatId, 'awaiting_task_title', {
+            SessionManager.setUserState(chatId, 'awaiting_task_title_new', {
                 adminId: chatId
             });
 
@@ -787,13 +804,13 @@ class MessageHandler {
         try {
             await this.bot.sendMessage(
                 chatId,
-                `➕ <b>Yeni Duyuru Oluştur</b>\n\n` +
-                `📢 Duyuru başlığını yazınız:\n` +
-                `💡 <i>Örnek: "Yeni çalışma saatleri"</i>\n\n` +
+                `📢 <b>Duyuru Gönder</b>\n\n` +
+                `📝 Duyuru mesajınızı doğrudan yazın:\n` +
+                `💡 <i>Mesajınız tüm kullanıcılara gönderilecek</i>\n\n` +
                 `❌ İptal etmek için /cancel yazabilirsiniz.`
             );
 
-            SessionManager.setUserState(chatId, 'awaiting_announcement_title', {
+            SessionManager.setUserState(chatId, 'awaiting_announcement_direct', {
                 adminId: chatId
             });
 
