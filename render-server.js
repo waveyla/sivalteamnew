@@ -27,12 +27,15 @@ const fsSync = require('fs');
 const path = require('path');
 const axios = require('axios');
 const crypto = require('crypto');
+require('dotenv').config();
+const { connectDB, User, Task, Product, Notification, Session } = require('./database');
+const MongoDataManager = require('./dataManager');
 
 // 🚀 Application Configuration
 const CONFIG = {
     PORT: process.env.PORT || 10000,
-    BOT_TOKEN: '8229159175:AAGRFoLpK9ma5ekPiaaCdI8EKJeca14XoOg',
-    WEBHOOK_URL: 'https://sivalteam-bot.onrender.com/webhook',
+    BOT_TOKEN: process.env.BOT_TOKEN || '8229159175:AAGRFoLpK9ma5ekPiaaCdI8EKJeca14XoOg',
+    WEBHOOK_URL: process.env.WEBHOOK_URL || 'https://sivalteam-bot.onrender.com/webhook',
     VERSION: '3.0.0',
     BUILD_DATE: new Date().toISOString(),
     ENVIRONMENT: process.env.NODE_ENV || 'production',
@@ -253,33 +256,48 @@ class TurkishCharacterHandler {
 const turkishHandler = new TurkishCharacterHandler();
 
 // 💾 Advanced Data Management System
-class DataManager {
+class DataManager extends MongoDataManager {
     constructor() {
-        this.initializeFiles();
+        super();
+        this.initializeDatabase();
         this.startAutoBackup();
     }
     
-    async initializeFiles() {
+    async initializeDatabase() {
         try {
-            // Create backup directory
+            // MongoDB'ye bağlan
+            await connectDB();
+            
+            // Create backup directory for exports
             if (!fsSync.existsSync(DATA_FILES.backups)) {
                 await fs.mkdir(DATA_FILES.backups, { recursive: true });
             }
             
-            // Initialize all data files
+            console.log('💾 MongoDB data management system initialized successfully');
+        } catch (error) {
+            console.error('❌ Failed to initialize MongoDB:', error);
+            // Fallback to local files if MongoDB fails
+            console.log('⚠️ Falling back to local file storage...');
+            this.initializeLocalFiles();
+        }
+    }
+    
+    async initializeLocalFiles() {
+        try {
+            // Initialize all data files for fallback
             for (const [key, filename] of Object.entries(DATA_FILES)) {
                 if (key === 'backups') continue;
                 
                 if (!fsSync.existsSync(filename)) {
                     const initialData = this.getInitialData(key);
                     await this.writeFile(filename, initialData);
-                    console.log(`✅ Initialized: ${filename}`);
+                    console.log(`✅ Initialized local file: ${filename}`);
                 }
             }
             
-            console.log('💾 Data management system initialized successfully');
+            console.log('💾 Local file system initialized as fallback');
         } catch (error) {
-            console.error('❌ Failed to initialize data files:', error);
+            console.error('❌ Failed to initialize local files:', error);
             process.exit(1);
         }
     }
