@@ -1280,6 +1280,34 @@ class SivalTeamBot extends EventEmitter {
         }
     }
 
+    async notifyAdminsWithPhoto(caption, photoFileId) {
+        const admins = await User.find({ role: { $in: ['admin', 'manager'] }, isActive: true, isApproved: true });
+        for (const admin of admins) {
+            try {
+                await this.bot.telegram.sendPhoto(admin.chatId, photoFileId, {
+                    caption: caption,
+                    parse_mode: 'Markdown'
+                });
+            } catch (error) {
+                console.error(`Admin photo notification failed for ${admin.chatId}:`, error.message);
+            }
+        }
+    }
+
+    async notifyAdminsWithVoice(caption, voiceFileId) {
+        const admins = await User.find({ role: { $in: ['admin', 'manager'] }, isActive: true, isApproved: true });
+        for (const admin of admins) {
+            try {
+                await this.bot.telegram.sendVoice(admin.chatId, voiceFileId, {
+                    caption: caption,
+                    parse_mode: 'Markdown'
+                });
+            } catch (error) {
+                console.error(`Admin voice notification failed for ${admin.chatId}:`, error.message);
+            }
+        }
+    }
+
     getMainKeyboard(role) {
         if (role === 'admin' || role === 'manager') {
             // Admin panel
@@ -1617,9 +1645,13 @@ class SivalTeamBot extends EventEmitter {
     async handlePhotoMessage(ctx) {
         const chatId = ctx.chat.id.toString();
         const state = this.userStates.get(chatId);
+        const user = await this.getUser(chatId);
         
         if (state && state.action === 'add_product_media') {
             const photo = ctx.message.photo[ctx.message.photo.length - 1];
+            
+            // Get product info
+            const product = await MissingProduct.findById(state.data.productId);
             
             // Update existing product with photo
             await MissingProduct.findByIdAndUpdate(state.data.productId, {
@@ -1629,14 +1661,32 @@ class SivalTeamBot extends EventEmitter {
             
             this.userStates.delete(chatId);
             await ctx.reply('✅ Fotoğraf eklendi!');
+            
+            // Send photo to admins
+            if (product && user) {
+                await this.notifyAdminsWithPhoto(
+                    `📸 *Eksik Ürün Fotoğrafı*\n\n` +
+                    `📦 ${product.productName}\n` +
+                    `📂 ${product.category}\n` +
+                    `👤 ${user.firstName} ${user.lastName || ''}`,
+                    photo.file_id
+                );
+            }
+        } else if (user && (user.role === 'admin' || user.role === 'manager')) {
+            // Admin/manager can send photos anywhere - just acknowledge
+            await ctx.reply('📸 Fotoğraf alındı!');
         }
     }
 
     async handleVoiceMessage(ctx) {
         const chatId = ctx.chat.id.toString();
         const state = this.userStates.get(chatId);
+        const user = await this.getUser(chatId);
         
         if (state && state.action === 'add_product_media') {
+            // Get product info
+            const product = await MissingProduct.findById(state.data.productId);
+            
             // Update existing product with voice
             await MissingProduct.findByIdAndUpdate(state.data.productId, {
                 reportMethod: 'voice',
@@ -1645,6 +1695,20 @@ class SivalTeamBot extends EventEmitter {
             
             this.userStates.delete(chatId);
             await ctx.reply('✅ Ses kaydı eklendi!');
+            
+            // Send voice to admins
+            if (product && user) {
+                await this.notifyAdminsWithVoice(
+                    `🎤 *Eksik Ürün Ses Kaydı*\n\n` +
+                    `📦 ${product.productName}\n` +
+                    `📂 ${product.category}\n` +
+                    `👤 ${user.firstName} ${user.lastName || ''}`,
+                    ctx.message.voice.file_id
+                );
+            }
+        } else if (user && (user.role === 'admin' || user.role === 'manager')) {
+            // Admin/manager can send voice anywhere - just acknowledge
+            await ctx.reply('🎤 Ses kaydı alındı!');
         }
     }
 
