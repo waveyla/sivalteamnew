@@ -1182,7 +1182,8 @@ class SivalTeamBot extends EventEmitter {
                     console.log(`💾 Creating announcement with content: "${text}"`);
                     
                     const announcement = new Announcement({
-                        content: text,
+                        title: 'Genel Duyuru', // Default title
+                        message: text, // Use 'message' field as required by schema
                         createdBy: user.chatId,
                         createdByName: `${user.firstName} ${user.lastName}`,
                         targetRole: 'all'
