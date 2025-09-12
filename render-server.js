@@ -612,32 +612,46 @@ class SivalTeamBot extends EventEmitter {
 
         await ctx.reply(message, { parse_mode: 'Markdown' });
 
-        // Show completion buttons for each product
-        const keyboard = products.slice(0, 10).map(p => [
-            Markup.button.callback(
-                `✅ ${p.productName} - Tamamlandı`,
-                `complete_product_${p._id}`
-            )
-        ]);
+        // Show completion buttons organized by category
+        for (const category of sortedCategories) {
+            const categoryProducts = productsByCategory[category];
+            const categoryIcon = this.getCategoryIcon(category);
+            const categoryName = this.getCategoryName(category);
+            
+            // Show max 5 products per category for completion
+            const displayProducts = categoryProducts.slice(0, 5);
+            
+            if (displayProducts.length > 0) {
+                const keyboard = displayProducts.map(p => [
+                    Markup.button.callback(
+                        `✅ ${p.productName} - Tamamlandı`,
+                        `complete_product_${p._id}`
+                    )
+                ]);
 
-        if (keyboard.length > 0) {
-            await ctx.reply(
-                '🔧 Tamamlanan ürünleri işaretleyin:',
-                Markup.inlineKeyboard(keyboard)
-            );
+                await ctx.reply(
+                    `🔧 **${categoryIcon} ${categoryName}** - Tamamlanan ürünleri işaretleyin:`,
+                    {
+                        parse_mode: 'Markdown',
+                        ...Markup.inlineKeyboard(keyboard)
+                    }
+                );
+            }
         }
     }
 
     async showTechnicalIssues(ctx) {
         await ctx.reply(
-            '🔧 *Teknik Eksiklikler*\n\nNe tür teknik sorun bildirmek istiyorsunuz?',
+            '🔧 *Teknik Eksiklikler*\n\nMağazada hangi teknik sorun var?',
             {
                 parse_mode: 'Markdown',
                 ...Markup.inlineKeyboard([
-                    [Markup.button.callback('💻 Sistem Sorunu', 'tech_system')],
-                    [Markup.button.callback('📱 Uygulama Hatası', 'tech_app')],
-                    [Markup.button.callback('🌐 İnternet Problemi', 'tech_network')],
-                    [Markup.button.callback('🖥️ Donanım Arızası', 'tech_hardware')],
+                    [Markup.button.callback('💡 Aydınlatma Sorunu', 'tech_lighting')],
+                    [Markup.button.callback('❄️ Klima/Isıtma Arızası', 'tech_hvac')],
+                    [Markup.button.callback('🔌 Elektrik Problemi', 'tech_electric')],
+                    [Markup.button.callback('🚿 Su/Tesisat Sorunu', 'tech_water')],
+                    [Markup.button.callback('🔒 Güvenlik Sistemi', 'tech_security')],
+                    [Markup.button.callback('📱 Kasa/POS Sorunu', 'tech_pos')],
                     [Markup.button.callback('📄 Diğer', 'tech_other')],
                     [Markup.button.callback('❌ İptal', 'cancel_tech')]
                 ])
@@ -1331,18 +1345,22 @@ class SivalTeamBot extends EventEmitter {
 
             case 'tech_report':
                 const issueIcons = {
-                    system: '💻',
-                    app: '📱',
-                    network: '🌐',
-                    hardware: '🖥️',
+                    lighting: '💡',
+                    hvac: '❄️',
+                    electric: '🔌',
+                    water: '🚿',
+                    security: '🔒',
+                    pos: '📱',
                     other: '📄'
                 };
                 
                 const issueNames = {
-                    system: 'Sistem Sorunu',
-                    app: 'Uygulama Hatası',
-                    network: 'İnternet Problemi',
-                    hardware: 'Donanım Arızası',
+                    lighting: 'Aydınlatma Sorunu',
+                    hvac: 'Klima/Isıtma Arızası',
+                    electric: 'Elektrik Problemi',
+                    water: 'Su/Tesisat Sorunu',
+                    security: 'Güvenlik Sistemi',
+                    pos: 'Kasa/POS Sorunu',
                     other: 'Diğer'
                 };
                 
@@ -1665,18 +1683,24 @@ class SivalTeamBot extends EventEmitter {
         const chatId = ctx.chat.id.toString();
         const issueType = data.replace('tech_', '');
         
-        if (issueType === 'system') {
-            await ctx.editMessageText('💻 *Sistem Sorunu*\n\nSistem sorununuzun detaylarını yazın:', { parse_mode: 'Markdown' });
-            this.userStates.set(chatId, { action: 'tech_report', type: 'system' });
-        } else if (issueType === 'app') {
-            await ctx.editMessageText('📱 *Uygulama Hatası*\n\nUygulama hatasının detaylarını yazın:', { parse_mode: 'Markdown' });
-            this.userStates.set(chatId, { action: 'tech_report', type: 'app' });
-        } else if (issueType === 'network') {
-            await ctx.editMessageText('🌐 *İnternet Problemi*\n\nİnternet probleminizin detaylarını yazın:', { parse_mode: 'Markdown' });
-            this.userStates.set(chatId, { action: 'tech_report', type: 'network' });
-        } else if (issueType === 'hardware') {
-            await ctx.editMessageText('🖥️ *Donanım Arızası*\n\nDonanım arızasının detaylarını yazın:', { parse_mode: 'Markdown' });
-            this.userStates.set(chatId, { action: 'tech_report', type: 'hardware' });
+        if (issueType === 'lighting') {
+            await ctx.editMessageText('💡 *Aydınlatma Sorunu*\n\nAydınlatma sorununun detaylarını yazın:', { parse_mode: 'Markdown' });
+            this.userStates.set(chatId, { action: 'tech_report', type: 'lighting' });
+        } else if (issueType === 'hvac') {
+            await ctx.editMessageText('❄️ *Klima/Isıtma Arızası*\n\nKlima veya ısıtma arızasının detaylarını yazın:', { parse_mode: 'Markdown' });
+            this.userStates.set(chatId, { action: 'tech_report', type: 'hvac' });
+        } else if (issueType === 'electric') {
+            await ctx.editMessageText('🔌 *Elektrik Problemi*\n\nElektrik probleminin detaylarını yazın:', { parse_mode: 'Markdown' });
+            this.userStates.set(chatId, { action: 'tech_report', type: 'electric' });
+        } else if (issueType === 'water') {
+            await ctx.editMessageText('🚿 *Su/Tesisat Sorunu*\n\nSu veya tesisat sorununun detaylarını yazın:', { parse_mode: 'Markdown' });
+            this.userStates.set(chatId, { action: 'tech_report', type: 'water' });
+        } else if (issueType === 'security') {
+            await ctx.editMessageText('🔒 *Güvenlik Sistemi*\n\nGüvenlik sistemi sorununun detaylarını yazın:', { parse_mode: 'Markdown' });
+            this.userStates.set(chatId, { action: 'tech_report', type: 'security' });
+        } else if (issueType === 'pos') {
+            await ctx.editMessageText('📱 *Kasa/POS Sorunu*\n\nKasa veya POS sorununun detaylarını yazın:', { parse_mode: 'Markdown' });
+            this.userStates.set(chatId, { action: 'tech_report', type: 'pos' });
         } else if (issueType === 'other') {
             await ctx.editMessageText('📄 *Diğer Teknik Sorun*\n\nTeknik sorununuzun detaylarını yazın:', { parse_mode: 'Markdown' });
             this.userStates.set(chatId, { action: 'tech_report', type: 'other' });
