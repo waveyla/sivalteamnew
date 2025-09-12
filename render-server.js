@@ -1407,10 +1407,7 @@ async function cleanupDatabase() {
 // ==================== MONGODB CONNECTION ====================
 async function connectMongoDB() {
     try {
-        await mongoose.connect(MONGODB_URI, {
-            useNewUrlParser: true,
-            useUnifiedTopology: true
-        });
+        await mongoose.connect(MONGODB_URI);
         console.log('✅ MongoDB connected successfully');
         
         // Run cleanup on startup
