@@ -1111,12 +1111,9 @@ class SivalTeamBot extends EventEmitter {
                 break;
 
             case 'create_task':
-                if (state.step === 'title') {
-                    state.data.title = text;
-                    state.step = 'description';
-                    await ctx.reply('📝 Görev açıklamasını yazın:');
-                } else if (state.step === 'description') {
-                    state.data.description = text;
+                if (state.step === 'content') {
+                    console.log(`📋 Creating task with content: "${text}"`);
+                    console.log(`🔍 Task data:`, state.data);
                     
                     // Prepare assignedTo based on task type
                     let assignedTo = [];
@@ -1141,8 +1138,8 @@ class SivalTeamBot extends EventEmitter {
                     
                     // Create task
                     const task = new Task({
-                        title: state.data.title,
-                        description: state.data.description,
+                        title: text, // Use text as both title and description
+                        description: text,
                         assignmentType: state.data.type,
                         assignedTo: assignedTo,
                         assignedBy: user.chatId,
@@ -1382,6 +1379,15 @@ class SivalTeamBot extends EventEmitter {
     async handleIndividualTaskAssignment(ctx) {
         const chatId = ctx.chat.id.toString();
         
+        console.log(`👤 Admin starting individual task assignment`);
+        
+        // Set user state for individual task creation
+        this.userStates.set(chatId, {
+            action: 'create_task',
+            step: 'employee_selected',
+            data: { type: 'individual' }
+        });
+        
         // Get all approved employees
         const employees = await User.find({ 
             isApproved: true, 
@@ -1432,14 +1438,16 @@ class SivalTeamBot extends EventEmitter {
     async handleGroupTaskAssignment(ctx) {
         const chatId = ctx.chat.id.toString();
         
+        console.log(`👥 Admin starting group task assignment`);
+        
         try {
             await ctx.editMessageText(
-                '👥 *Toplu Görev Atama*\n\nGörev bilgilerini girin:\n\n📝 Görev başlığını yazın:',
+                '👥 *Toplu Görev Atama*\n\nTüm çalışanlara atanacak görevi yazın:',
                 { parse_mode: 'Markdown' }
             );
         } catch (error) {
             await ctx.reply(
-                '👥 *Toplu Görev Atama*\n\nGörev bilgilerini girin:\n\n📝 Görev başlığını yazın:',
+                '👥 *Toplu Görev Atama*\n\nTüm çalışanlara atanacak görevi yazın:',
                 { parse_mode: 'Markdown' }
             );
         }
@@ -1447,7 +1455,7 @@ class SivalTeamBot extends EventEmitter {
         // Set user state for group task creation
         this.userStates.set(chatId, {
             action: 'create_task',
-            step: 'title',
+            step: 'content',
             data: { type: 'group' }
         });
     }
@@ -1486,20 +1494,20 @@ class SivalTeamBot extends EventEmitter {
             chatId: employeeChatId,
             name: `${employee.firstName} ${employee.lastName || ''}`
         };
-        state.step = 'title';
+        state.step = 'content';
         this.userStates.set(chatId, state);
         
         
         try {
             await ctx.editMessageText(
                 `👤 *Seçilen Çalışan:* ${employee.firstName} ${employee.lastName || ''}\n\n` +
-                `📝 Görev başlığını yazın:`,
+                `📝 Atanacak görevi yazın:`,
                 { parse_mode: 'Markdown' }
             );
         } catch (error) {
             await ctx.reply(
                 `👤 *Seçilen Çalışan:* ${employee.firstName} ${employee.lastName || ''}\n\n` +
-                `📝 Görev başlığını yazın:`,
+                `📝 Atanacak görevi yazın:`,
                 { parse_mode: 'Markdown' }
             );
         }
