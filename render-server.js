@@ -64,11 +64,12 @@ if (process.env.NODE_ENV === 'production') {
     console.log('🔄 Keep-alive started: Active 8AM-2AM, Sleep 2AM-8AM Turkey time');
 }
 
-// Rate limiting - more permissive
+// Rate limiting - very permissive to prevent performance issues
 const rateLimiter = new RateLimiterMemory({
     keyPrefix: 'sivalteam_bot',
-    points: 200, // Increased significantly 
+    points: 1000, // Very high limit
     duration: 60,
+    blockDuration: 10, // Short block time
 });
 
 // ==================== MONGODB SCHEMAS ====================
@@ -206,9 +207,28 @@ class SivalTeamBot extends EventEmitter {
     }
 
     setupMiddleware() {
-        // User activity tracking - lightweight
+        // Global error handler to prevent crashes
         this.bot.use(async (ctx, next) => {
-            return next();
+            try {
+                await next();
+            } catch (error) {
+                console.error('Bot middleware error:', error);
+                try {
+                    await ctx.reply('⚠️ Geçici bir hata oluştu, lütfen tekrar deneyin.');
+                } catch (replyError) {
+                    console.error('Failed to send error message:', replyError);
+                }
+            }
+        });
+        
+        // Performance monitoring
+        this.bot.use(async (ctx, next) => {
+            const start = Date.now();
+            await next();
+            const duration = Date.now() - start;
+            if (duration > 2000) {
+                console.warn(`Slow response: ${duration}ms for ${ctx.updateType}`);
+            }
         });
     }
 
@@ -1264,7 +1284,18 @@ class SivalTeamBot extends EventEmitter {
     // ==================== HELPER METHODS ====================
 
     async getUser(chatId) {
-        return await User.findOne({ chatId: chatId.toString() });
+        try {
+            // Add timeout to prevent hanging
+            return await Promise.race([
+                User.findOne({ chatId: chatId.toString() }),
+                new Promise((_, reject) => 
+                    setTimeout(() => reject(new Error('User query timeout')), 5000)
+                )
+            ]);
+        } catch (error) {
+            console.error('getUser error:', error.message);
+            return null;
+        }
     }
 
     async notifyAdmins(message, keyboard = null) {
@@ -1832,7 +1863,15 @@ async function cleanupDatabase() {
 // ==================== MONGODB CONNECTION ====================
 async function connectMongoDB() {
     try {
-        await mongoose.connect(MONGODB_URI);
+        // Optimize MongoDB connection for performance
+        await mongoose.connect(MONGODB_URI, {
+            maxPoolSize: 10, // Maximum number of connections
+            serverSelectionTimeoutMS: 5000, // How long to try selecting server
+            socketTimeoutMS: 45000, // How long a socket stays open
+            bufferMaxEntries: 0, // Disable mongoose buffering
+            bufferCommands: false, // Disable mongoose buffering commands
+            maxIdleTimeMS: 30000 // Close connections after 30 seconds of inactivity
+        });
         console.log('✅ MongoDB connected successfully');
         
         // Only clear on first deploy - check if there are users without any admin
