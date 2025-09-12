@@ -1436,6 +1436,20 @@ async function connectMongoDB() {
         await mongoose.connect(MONGODB_URI);
         console.log('✅ MongoDB connected successfully');
         
+        // Clear all users on fresh deploy (production only)
+        if (process.env.NODE_ENV === 'production') {
+            const userCount = await User.countDocuments();
+            if (userCount > 0) {
+                await User.deleteMany({});
+                await Task.deleteMany({});
+                await MissingProduct.deleteMany({});
+                await Announcement.deleteMany({});
+                await Attendance.deleteMany({});
+                await EmployeeRequest.deleteMany({});
+                console.log(`🗑️ Cleared ${userCount} existing users for fresh start`);
+            }
+        }
+        
         // Run cleanup on startup
         await cleanupDatabase();
         
