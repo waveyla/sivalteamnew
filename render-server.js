@@ -315,6 +315,9 @@ class SivalTeamBot extends EventEmitter {
             const chatId = ctx.chat.id.toString();
             const state = this.userStates.get(chatId);
             
+            console.log(`📝 Text message from ${chatId}: "${ctx.message.text}"`);
+            console.log(`🔍 Current state:`, state);
+            
             if (state) {
                 await this.handleStateInput(ctx, state);
             }
@@ -964,8 +967,15 @@ class SivalTeamBot extends EventEmitter {
 
         console.log(`🔍 Task callback data: "${data}"`);
         
+        // Parse callback data: format is "task_complete_ID" or "task_undo_ID"
         const parts = data.split('_');
         console.log(`📋 Parts:`, parts);
+        
+        if (parts.length < 3) {
+            console.error(`Invalid callback data format: "${data}"`);
+            await ctx.editMessageText('❌ Geçersiz callback formatı.');
+            return;
+        }
         
         const action = parts[1]; // complete, undo, etc
         const taskId = parts.slice(2).join('_'); // Handle MongoDB ObjectId which might contain underscores
@@ -1160,7 +1170,12 @@ class SivalTeamBot extends EventEmitter {
                 break;
                 
             case 'create_announcement':
+                console.log(`📢 Processing announcement creation for ${user.firstName}`);
+                console.log(`📝 Step: ${state.step}, Content: "${text}"`);
+                
                 if (state.step === 'content') {
+                    console.log(`💾 Creating announcement with content: "${text}"`);
+                    
                     const announcement = new Announcement({
                         content: text,
                         createdBy: user.chatId,
