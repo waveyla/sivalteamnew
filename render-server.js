@@ -1312,15 +1312,21 @@ class SivalTeamBot extends EventEmitter {
     }
 
     async notifyAdminsWithPhoto(caption, photoFileId) {
+        console.log(`📸 Sending photo to admins. FileId: ${photoFileId}`);
+        console.log(`📝 Caption: ${caption}`);
+        
         const admins = await User.find({ role: { $in: ['admin', 'manager'] }, isActive: true, isApproved: true });
+        console.log(`👥 Found ${admins.length} admins to notify`);
+        
         for (const admin of admins) {
             try {
                 await this.bot.telegram.sendPhoto(admin.chatId, photoFileId, {
                     caption: caption,
                     parse_mode: 'Markdown'
                 });
+                console.log(`✅ Photo sent to admin ${admin.firstName} (${admin.chatId})`);
             } catch (error) {
-                console.error(`Admin photo notification failed for ${admin.chatId}:`, error.message);
+                console.error(`❌ Admin photo notification failed for ${admin.chatId}:`, error.message);
             }
         }
     }
@@ -1695,6 +1701,10 @@ class SivalTeamBot extends EventEmitter {
             
             // Send photo to admins
             if (product && user) {
+                console.log(`📦 Product found: ${product.productName}`);
+                console.log(`👤 User found: ${user.firstName}`);
+                console.log(`📷 Photo file_id: ${photo.file_id}`);
+                
                 await this.notifyAdminsWithPhoto(
                     `📸 *Eksik Ürün Fotoğrafı*\n\n` +
                     `📦 ${product.productName}\n` +
@@ -1702,6 +1712,8 @@ class SivalTeamBot extends EventEmitter {
                     `👤 ${user.firstName} ${user.lastName || ''}`,
                     photo.file_id
                 );
+            } else {
+                console.error(`❌ Missing data - Product: ${!!product}, User: ${!!user}`);
             }
         } else if (user && (user.role === 'admin' || user.role === 'manager')) {
             // Admin/manager can send photos anywhere - just acknowledge
