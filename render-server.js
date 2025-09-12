@@ -206,25 +206,22 @@ class SivalTeamBot extends EventEmitter {
                 
                 console.log(`🔍 Admin check: adminCount=${adminCount}, isFirstAdmin=${isFirstAdmin}`);
                 
-                // Yeni kullanıcı kaydı
-                const newUser = new User({
-                    chatId,
-                    username: ctx.from.username,
-                    firstName: ctx.from.first_name,
-                    lastName: ctx.from.last_name,
-                    telegramUsername: ctx.from.username,
-                    role: isFirstAdmin ? 'admin' : 'employee',
-                    isApproved: isFirstAdmin ? true : false
-                });
-                await newUser.save();
-                
                 if (isFirstAdmin) {
+                    // First admin - direct registration
+                    const newUser = new User({
+                        chatId,
+                        username: ctx.from.username,
+                        firstName: ctx.from.first_name,
+                        lastName: ctx.from.last_name,
+                        telegramUsername: ctx.from.username,
+                        role: 'admin',
+                        isApproved: true,
+                        department: 'Yönetim' // Default admin department
+                    });
+                    await newUser.save();
+                    
                     console.log(`👑 First admin registered: ${ctx.from.first_name} (${chatId})`);
-                } else {
-                    console.log(`👤 New user registered: ${ctx.from.first_name} (${chatId})`);
-                }
-
-                if (isFirstAdmin) {
+                    
                     await ctx.reply(
                         '🎉 *SivalTeam Bot\'a Hoş Geldiniz!*\n\n' +
                         `Merhaba ${ctx.from.first_name}!\n` +
@@ -236,23 +233,38 @@ class SivalTeamBot extends EventEmitter {
                         }
                     );
                 } else {
+                    // Regular user - ask for department first
                     await ctx.reply(
                         '👋 *SivalTeam Bot\'a Hoş Geldiniz!*\n\n' +
-                        `Merhaba ${ctx.from.first_name}!\n` +
-                        `Chat ID'niz: \`${chatId}\`\n\n` +
-                        '📝 Sisteme tam erişim için admin onayı bekleniyor.\n' +
-                        '⏳ Yöneticiniz sizi onayladığında bildirim alacaksınız.',
-                        { parse_mode: 'Markdown' }
+                        `Merhaba ${ctx.from.first_name}!\n\n` +
+                        '🏢 Lütfen departmanınızı seçin:',
+                        { 
+                            parse_mode: 'Markdown',
+                            ...Markup.inlineKeyboard([
+                                [Markup.button.callback('🛍️ Satış', 'dept_satis')],
+                                [Markup.button.callback('📦 Depo', 'dept_depo')],
+                                [Markup.button.callback('👔 İnsan Kaynakları', 'dept_ik')],
+                                [Markup.button.callback('💰 Muhasebe', 'dept_muhasebe')],
+                                [Markup.button.callback('🔧 Teknik', 'dept_teknik')],
+                                [Markup.button.callback('🏪 Mağaza', 'dept_magaza')],
+                                [Markup.button.callback('🚚 Kargo', 'dept_kargo')],
+                                [Markup.button.callback('📞 Müşteri Hizmetleri', 'dept_musteri')]
+                            ])
+                        }
                     );
-
-                    // Admin bilgilendirmesi - User approval needed
-                    await this.notifyAdmins(
-                        `🆕 *Yeni kullanıcı onay bekliyor:*\n\n` +
-                        `👤 ${ctx.from.first_name} ${ctx.from.last_name || ''}\n` +
-                        `🆔 @${ctx.from.username || 'username yok'}\n` +
-                        `💬 Chat ID: ${chatId}`,
-                        this.getApprovalKeyboard(chatId)
-                    );
+                    
+                    // Set user state for department selection
+                    this.userStates.set(chatId, {
+                        action: 'register_user',
+                        step: 'department_selection',
+                        data: {
+                            chatId,
+                            username: ctx.from.username,
+                            firstName: ctx.from.first_name,
+                            lastName: ctx.from.last_name,
+                            telegramUsername: ctx.from.username
+                        }
+                    });
                 }
                 return;
             }
@@ -275,11 +287,12 @@ class SivalTeamBot extends EventEmitter {
                     { parse_mode: 'Markdown' }
                 );
                 
-                // Notify admins of return
+                // Notify admins of return with department info
                 await this.notifyAdmins(
                     `🔄 *Kullanıcı Geri Döndü*\n\n` +
                     `👤 ${ctx.from.first_name} ${ctx.from.last_name || ''}\n` +
                     `🆔 @${ctx.from.username || 'username yok'}\n` +
+                    `🏢 Departman: ${user.department || 'Belirtilmemiş'}\n` +
                     `💬 Chat ID: ${chatId}\n\n` +
                     `Bu kullanıcı daha önce bottan çıkarılmış, tekrar katıldı.`,
                     this.getApprovalKeyboard(chatId)
@@ -395,6 +408,10 @@ class SivalTeamBot extends EventEmitter {
                 // Employee selection for tasks
                 else if (data.startsWith('select_employee_')) {
                     await this.handleEmployeeSelection(ctx, data);
+                }
+                // Department selection for new users
+                else if (data.startsWith('dept_')) {
+                    await this.handleDepartmentSelection(ctx, data);
                 }
 
                 await ctx.answerCbQuery();
@@ -644,7 +661,9 @@ class SivalTeamBot extends EventEmitter {
             // Approval buttons for pending users
             for (const u of pendingUsers.slice(0, 5)) {
                 await ctx.reply(
-                    `👤 *${u.firstName} ${u.lastName || ''}*\n@${u.username || 'username yok'}`,
+                    `👤 *${u.firstName} ${u.lastName || ''}*\n` +
+                    `🆔 @${u.username || 'username yok'}\n` +
+                    `🏢 ${u.department || 'Departman belirtilmemiş'}`,
                     {
                         parse_mode: 'Markdown',
                         ...this.getApprovalKeyboard(u.chatId)
@@ -674,7 +693,9 @@ class SivalTeamBot extends EventEmitter {
             for (const u of approvedUsers.slice(0, 10)) {
                 if (u.role !== 'admin') { // Don't show buttons for other admins
                     await ctx.reply(
-                        `${this.getRoleDisplay(u.role)} *${u.firstName} ${u.lastName || ''}*\n@${u.username || 'username yok'}`,
+                        `${this.getRoleDisplay(u.role)} *${u.firstName} ${u.lastName || ''}*\n` +
+                        `🆔 @${u.username || 'username yok'}\n` +
+                        `🏢 ${u.department || 'Departman belirtilmemiş'}`,
                         {
                             parse_mode: 'Markdown',
                             ...this.getUserManagementKeyboard(u.chatId)
@@ -1480,6 +1501,62 @@ class SivalTeamBot extends EventEmitter {
                 { parse_mode: 'Markdown' }
             );
         }
+    }
+
+    async handleDepartmentSelection(ctx, data) {
+        const chatId = ctx.chat.id.toString();
+        const state = this.userStates.get(chatId);
+        
+        if (!state || state.action !== 'register_user') return;
+        
+        // Map department codes to names
+        const departmentMap = {
+            'dept_satis': 'Satış',
+            'dept_depo': 'Depo',
+            'dept_ik': 'İnsan Kaynakları',
+            'dept_muhasebe': 'Muhasebe',
+            'dept_teknik': 'Teknik',
+            'dept_magaza': 'Mağaza',
+            'dept_kargo': 'Kargo',
+            'dept_musteri': 'Müşteri Hizmetleri'
+        };
+        
+        const selectedDepartment = departmentMap[data];
+        
+        // Create new user with selected department
+        const newUser = new User({
+            chatId: state.data.chatId,
+            username: state.data.username,
+            firstName: state.data.firstName,
+            lastName: state.data.lastName,
+            telegramUsername: state.data.telegramUsername,
+            role: 'employee',
+            isApproved: false,
+            department: selectedDepartment
+        });
+        
+        await newUser.save();
+        this.userStates.delete(chatId);
+        
+        console.log(`👤 New user registered: ${state.data.firstName} - ${selectedDepartment} (${chatId})`);
+        
+        await ctx.editMessageText(
+            `✅ *Kayıt Tamamlandı!*\n\n` +
+            `👤 ${state.data.firstName} ${state.data.lastName || ''}\n` +
+            `🏢 Departman: ${selectedDepartment}\n\n` +
+            '⏳ Admin onayı bekleniyor...',
+            { parse_mode: 'Markdown' }
+        );
+        
+        // Notify admins with department info
+        await this.notifyAdmins(
+            `🆕 *Yeni kullanıcı onay bekliyor:*\n\n` +
+            `👤 ${state.data.firstName} ${state.data.lastName || ''}\n` +
+            `🆔 @${state.data.username || 'username yok'}\n` +
+            `🏢 Departman: ${selectedDepartment}\n` +
+            `💬 Chat ID: ${chatId}`,
+            this.getApprovalKeyboard(chatId)
+        );
     }
 
     async handlePhotoMessage(ctx) {
