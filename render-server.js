@@ -141,6 +141,7 @@ const missingProductSchema = new mongoose.Schema({
 
 // Announcement Schema - Duyuru sistemi
 const announcementSchema = new mongoose.Schema({
+    announcementId: { type: String, unique: true, sparse: true }, // Add announcementId field to match existing index
     title: { type: String, required: true },
     message: { type: String, required: true },
     createdBy: String,
@@ -1245,6 +1246,7 @@ class SivalTeamBot extends EventEmitter {
                     console.log(`💾 Creating announcement with content: "${text}"`);
                     
                     const announcement = new Announcement({
+                        announcementId: `announcement_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`, // Generate unique announcementId
                         title: 'Genel Duyuru', // Default title
                         message: text, // Use 'message' field as required by schema
                         createdBy: user.chatId,
