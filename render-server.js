@@ -19,32 +19,7 @@ app.use(helmet());
 app.use(cors());
 app.use(express.json({ limit: '10mb' }));
 
-// Keep-alive mechanism to prevent Render sleep (only 2AM-8AM)
-const keepAlive = () => {
-    setInterval(async () => {
-        const now = new Date();
-        const turkeyTime = new Date(now.getTime() + (3 * 60 * 60 * 1000)); // UTC+3 Turkey time
-        const hour = turkeyTime.getHours();
-        
-        // Only ping between 2AM and 8AM Turkey time
-        if (hour >= 2 && hour < 8) {
-            try {
-                const response = await fetch(`${WEBHOOK_URL}/health`);
-                console.log(`🌙 Night keep-alive ping (${hour}:${turkeyTime.getMinutes().toString().padStart(2, '0')}): ${response.status}`);
-            } catch (error) {
-                console.log(`🌙 Night keep-alive ping failed (${hour}:${turkeyTime.getMinutes().toString().padStart(2, '0')}):`, error.message);
-            }
-        } else {
-            console.log(`☀️ Daytime (${hour}:${turkeyTime.getMinutes().toString().padStart(2, '0')}): Keep-alive skipped`);
-        }
-    }, 10 * 60 * 1000); // Check every 10 minutes
-};
-
-// Only run keep-alive in production (Render)
-if (process.env.NODE_ENV === 'production') {
-    keepAlive();
-    console.log('🔄 Keep-alive mechanism started (active 2AM-8AM Turkey time)');
-}
+// Note: Keep-alive disabled to stay within Render free tier limits (750 hours/month)
 
 // Rate limiting - more permissive
 const rateLimiter = new RateLimiterMemory({
