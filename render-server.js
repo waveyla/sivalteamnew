@@ -205,6 +205,8 @@ class SivalTeamBot extends EventEmitter {
                 const adminCount = await User.countDocuments({ role: 'admin' });
                 const isFirstUser = userCount === 0 && adminCount === 0;
                 
+                console.log(`🔍 User check: userCount=${userCount}, adminCount=${adminCount}, isFirstUser=${isFirstUser}`);
+                
                 // Yeni kullanıcı kaydı
                 const newUser = new User({
                     chatId,
