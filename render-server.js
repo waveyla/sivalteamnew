@@ -257,6 +257,36 @@ class SivalTeamBot extends EventEmitter {
                 return;
             }
 
+            // If user was deactivated (kicked), reactivate and require approval
+            if (!user.isActive) {
+                await User.findOneAndUpdate(
+                    { chatId },
+                    { 
+                        isActive: true,
+                        isApproved: false, // Require new approval
+                        lastActive: new Date()
+                    }
+                );
+                
+                await ctx.reply(
+                    '👋 *Tekrar Hoş Geldiniz!*\n\n' +
+                    'Bottan çıkarılmıştınız ancak tekrar katıldınız.\n' +
+                    '⏳ Yönetici onayı bekleniyor.',
+                    { parse_mode: 'Markdown' }
+                );
+                
+                // Notify admins of return
+                await this.notifyAdmins(
+                    `🔄 *Kullanıcı Geri Döndü*\n\n` +
+                    `👤 ${ctx.from.first_name} ${ctx.from.last_name || ''}\n` +
+                    `🆔 @${ctx.from.username || 'username yok'}\n` +
+                    `💬 Chat ID: ${chatId}\n\n` +
+                    `Bu kullanıcı daha önce bottan çıkarılmış, tekrar katıldı.`,
+                    this.getApprovalKeyboard(chatId)
+                );
+                return;
+            }
+
             if (!user.isApproved) {
                 await ctx.reply(
                     '⏳ *Onay Bekleniyor*\n\n' +
@@ -590,10 +620,10 @@ class SivalTeamBot extends EventEmitter {
             return;
         }
 
-        const users = await User.find({}).sort({ registeredAt: -1 });
+        const users = await User.find({ isActive: true }).sort({ registeredAt: -1 });
 
         if (users.length === 0) {
-            await ctx.reply('👥 Kullanıcı bulunamadı.');
+            await ctx.reply('👥 Aktif kullanıcı bulunamadı.');
             return;
         }
 
@@ -873,10 +903,25 @@ class SivalTeamBot extends EventEmitter {
         }
 
         const targetChatId = data.replace('delete_user_', '');
-        const targetUser = await User.findOneAndDelete({ chatId: targetChatId });
+        const targetUser = await User.findOneAndUpdate(
+            { chatId: targetChatId },
+            { 
+                isActive: false,
+                isApproved: false,
+                role: 'employee' // Reset role to employee
+            },
+            { new: true }
+        );
 
         if (targetUser) {
-            await ctx.editMessageText(`🗑️ ${targetUser.firstName} ${targetUser.lastName} silindi!`);
+            await ctx.editMessageText(`🗑️ ${targetUser.firstName} ${targetUser.lastName} bottan çıkarıldı!\n\n💡 Tekrar /start ile geri gelebilir.`);
+            
+            // Notify user they were removed but can return
+            await this.bot.telegram.sendMessage(
+                targetChatId,
+                '🚪 *Bottan Çıkarıldınız*\n\nYönetici tarafından bottan çıkarıldınız.\n\n💡 Tekrar katılmak istiyorsanız /start yazabilirsiniz.',
+                { parse_mode: 'Markdown' }
+            ).catch(() => {});
         }
     }
 
