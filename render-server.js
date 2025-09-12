@@ -366,7 +366,11 @@ class SivalTeamBot extends EventEmitter {
                 await ctx.answerCbQuery();
             } catch (error) {
                 console.error('Callback error:', error);
-                await ctx.answerCbQuery('❌ İşlem başarısız!');
+                try {
+                    await ctx.answerCbQuery('❌ İşlem başarısız!');
+                } catch (cbError) {
+                    console.error('Answer callback error:', cbError);
+                }
             }
         });
     }
@@ -631,6 +635,19 @@ class SivalTeamBot extends EventEmitter {
             });
 
             await ctx.reply(message, { parse_mode: 'Markdown' });
+            
+            // Management buttons for approved users
+            for (const u of approvedUsers.slice(0, 10)) {
+                if (u.role !== 'admin') { // Don't show buttons for other admins
+                    await ctx.reply(
+                        `${this.getRoleDisplay(u.role)} *${u.firstName} ${u.lastName || ''}*\n@${u.username || 'username yok'}`,
+                        {
+                            parse_mode: 'Markdown',
+                            ...this.getUserManagementKeyboard(u.chatId)
+                        }
+                    );
+                }
+            }
         }
     }
 
@@ -906,7 +923,9 @@ class SivalTeamBot extends EventEmitter {
         const user = await this.getUser(ctx.chat.id);
         if (!user || !user.isApproved) return;
 
-        const [, action, taskId] = data.split('_');
+        const parts = data.split('_');
+        const action = parts[1]; // complete, undo, etc
+        const taskId = parts.slice(2).join('_'); // Handle MongoDB ObjectId which might contain underscores
         const task = await Task.findById(taskId);
         
         if (!task) {
@@ -974,7 +993,14 @@ class SivalTeamBot extends EventEmitter {
         );
 
         if (product) {
-            await ctx.editMessageText(`✅ ${product.productName} tamamlandı olarak işaretlendi!`);
+            try {
+                await ctx.editMessageText(`✅ ${product.productName} tamamlandı olarak işaretlendi!`);
+            } catch (error) {
+                // If edit fails, send new message
+                await ctx.reply(`✅ ${product.productName} tamamlandı olarak işaretlendi!`);
+            }
+        } else {
+            await ctx.answerCbQuery('❌ Ürün bulunamadı!');
         }
     }
 
@@ -1297,13 +1323,23 @@ class SivalTeamBot extends EventEmitter {
         
         keyboard.push([Markup.button.callback('❌ İptal', 'cancel_task')]);
         
-        await ctx.editMessageText(
-            '👤 *Bireysel Görev Atama*\n\nHangi çalışana görev atanacak?',
-            {
-                parse_mode: 'Markdown',
-                ...Markup.inlineKeyboard(keyboard)
-            }
-        );
+        try {
+            await ctx.editMessageText(
+                '👤 *Bireysel Görev Atama*\n\nHangi çalışana görev atanacak?',
+                {
+                    parse_mode: 'Markdown',
+                    ...Markup.inlineKeyboard(keyboard)
+                }
+            );
+        } catch (error) {
+            await ctx.reply(
+                '👤 *Bireysel Görev Atama*\n\nHangi çalışana görev atanacak?',
+                {
+                    parse_mode: 'Markdown',
+                    ...Markup.inlineKeyboard(keyboard)
+                }
+            );
+        }
         
         // Set user state for task creation
         this.userStates.set(chatId, {
@@ -1316,10 +1352,17 @@ class SivalTeamBot extends EventEmitter {
     async handleGroupTaskAssignment(ctx) {
         const chatId = ctx.chat.id.toString();
         
-        await ctx.editMessageText(
-            '👥 *Toplu Görev Atama*\n\nGörev bilgilerini girin:\n\n📝 Görev başlığını yazın:',
-            { parse_mode: 'Markdown' }
-        );
+        try {
+            await ctx.editMessageText(
+                '👥 *Toplu Görev Atama*\n\nGörev bilgilerini girin:\n\n📝 Görev başlığını yazın:',
+                { parse_mode: 'Markdown' }
+            );
+        } catch (error) {
+            await ctx.reply(
+                '👥 *Toplu Görev Atama*\n\nGörev bilgilerini girin:\n\n📝 Görev başlığını yazın:',
+                { parse_mode: 'Markdown' }
+            );
+        }
         
         // Set user state for group task creation
         this.userStates.set(chatId, {
@@ -1366,11 +1409,19 @@ class SivalTeamBot extends EventEmitter {
         state.step = 'title';
         this.userStates.set(chatId, state);
         
-        await ctx.editMessageText(
-            `👤 *Seçilen Çalışan:* ${employee.firstName} ${employee.lastName || ''}\n\n` +
-            `📝 Görev başlığını yazın:`,
-            { parse_mode: 'Markdown' }
-        );
+        try {
+            await ctx.editMessageText(
+                `👤 *Seçilen Çalışan:* ${employee.firstName} ${employee.lastName || ''}\n\n` +
+                `📝 Görev başlığını yazın:`,
+                { parse_mode: 'Markdown' }
+            );
+        } catch (error) {
+            await ctx.reply(
+                `👤 *Seçilen Çalışan:* ${employee.firstName} ${employee.lastName || ''}\n\n` +
+                `📝 Görev başlığını yazın:`,
+                { parse_mode: 'Markdown' }
+            );
+        }
     }
 
     async handlePhotoMessage(ctx) {
