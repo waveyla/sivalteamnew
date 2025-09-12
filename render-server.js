@@ -350,20 +350,20 @@ class SivalTeamBot extends EventEmitter {
                 else if (data.startsWith('category_')) {
                     await this.handleCategorySelection(ctx, data);
                 }
-                // Task callbacks
-                else if (data.startsWith('task_')) {
-                    await this.handleTaskCallback(ctx, data);
-                }
-                // Product callbacks
-                else if (data.startsWith('complete_product_')) {
-                    await this.handleProductCompletion(ctx, data);
-                }
-                // Task assignment callbacks
+                // Task assignment callbacks (must be before generic task_ handler)
                 else if (data.startsWith('task_individual')) {
                     await this.handleIndividualTaskAssignment(ctx);
                 }
                 else if (data.startsWith('task_group')) {
                     await this.handleGroupTaskAssignment(ctx);
+                }
+                // Task completion callbacks (format: task_complete_ID or task_undo_ID)
+                else if (data.startsWith('task_complete_') || data.startsWith('task_undo_')) {
+                    await this.handleTaskCallback(ctx, data);
+                }
+                // Product callbacks
+                else if (data.startsWith('complete_product_')) {
+                    await this.handleProductCompletion(ctx, data);
                 }
                 // Leave callbacks
                 else if (data.startsWith('leave_')) {
@@ -380,6 +380,11 @@ class SivalTeamBot extends EventEmitter {
                 // Employee selection for tasks
                 else if (data.startsWith('select_employee_')) {
                     await this.handleEmployeeSelection(ctx, data);
+                }
+                // Generic task callbacks (fallback)
+                else if (data.startsWith('task_')) {
+                    console.log(`⚠️ Unhandled task callback: "${data}"`);
+                    await ctx.answerCbQuery('Bu özellik henüz aktif değil.');
                 }
                 // Department selection for new users
                 else if (data.startsWith('dept_')) {
