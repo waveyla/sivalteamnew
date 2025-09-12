@@ -278,7 +278,6 @@ class SivalTeamBot extends EventEmitter {
         this.bot.hears('📋 Görevlerim', async (ctx) => await this.showMyTasks(ctx));
         this.bot.hears('📦 Eksik Ürün Bildir', async (ctx) => await this.reportMissingProduct(ctx));
         this.bot.hears('📢 Duyurular', async (ctx) => await this.showAnnouncements(ctx));
-        this.bot.hears('🔄 Vardiya Değişimi', async (ctx) => await this.requestShiftChange(ctx));
         this.bot.hears('📊 Durum', async (ctx) => await this.showStatus(ctx));
         this.bot.hears('❓ Yardım', async (ctx) => await this.showHelp(ctx));
         
@@ -658,8 +657,8 @@ class SivalTeamBot extends EventEmitter {
                 info: 'ℹ️', warning: '⚠️', urgent: '🚨'
             }[announcement.priority];
             
-            const message = `${priorityIcon} *${announcement.title}*\n\n` +
-                `${announcement.message}\n\n` +
+            const message = `${priorityIcon} *DUYURU*\n\n` +
+                `${announcement.content}\n\n` +
                 `👤 ${announcement.createdByName}\n` +
                 `📅 ${announcement.createdAt.toLocaleDateString('tr-TR')}`;
 
@@ -987,26 +986,11 @@ class SivalTeamBot extends EventEmitter {
         switch (state.action) {
             case 'report_product':
                 if (state.step === 'product_name') {
-                    state.data.productName = text;
-                    state.step = 'quantity';
-                    await ctx.reply('🔢 Kaç adet eksik? (Sayı yazın)');
-                } else if (state.step === 'quantity') {
-                    state.data.quantity = parseInt(text) || 1;
-                    state.step = 'media';
-                    await ctx.reply(
-                        '📱 *Bildirim Yöntemi*\n\n' +
-                        'Şimdi ürün hakkında:\n' +
-                        '📸 Fotoğraf gönderebilirsiniz\n' +
-                        '🎙️ Ses kaydı gönderebilirsiniz\n' +
-                        '📝 Veya "yazılı" yazarak metin ile bildirebilirsiniz',
-                        { parse_mode: 'Markdown' }
-                    );
-                } else if (state.step === 'media' && text.toLowerCase() === 'yazılı') {
-                    // Text report
+                    // Save product and complete immediately (no quantity needed)
                     const product = new MissingProduct({
-                        productName: state.data.productName,
+                        productName: text,
                         category: state.data.category,
-                        quantity: state.data.quantity,
+                        quantity: 1, // Default to 1
                         reportedBy: user.chatId,
                         reportedByName: `${user.firstName} ${user.lastName}`,
                         reportMethod: 'text'
@@ -1015,15 +999,19 @@ class SivalTeamBot extends EventEmitter {
                     await product.save();
                     this.userStates.delete(chatId);
                     
-                    await ctx.reply('✅ Eksik ürün bildirimi yazılı olarak kaydedildi!');
+                    await ctx.reply('✅ Eksik ürün bildirimi kaydedildi!\n\n📸 Fotoğraf eklemek isterseniz şimdi gönderebilirsiniz.');
+                    
+                    // Set state for optional photo
+                    this.userStates.set(chatId, {
+                        action: 'add_product_media',
+                        data: { productId: product._id }
+                    });
                     
                     // Notify admins
                     await this.notifyAdmins(
                         `📦 *Yeni Eksik Ürün Bildirimi*\n\n` +
-                        `${this.getCategoryIcon(state.data.category)} ${state.data.productName}\n` +
-                        `📊 ${state.data.quantity} adet\n` +
-                        `👤 ${user.firstName} ${user.lastName}\n` +
-                        `📝 Yazılı bildirim`
+                        `${this.getCategoryIcon(state.data.category)} ${text}\n` +
+                        `👤 ${user.firstName} ${user.lastName}`
                     );
                 }
                 break;
@@ -1150,16 +1138,15 @@ class SivalTeamBot extends EventEmitter {
                 ['➕ Görev Oluştur', '📋 Aktif Görevler'],
                 ['📦 Eksik Ürünler Listesi', '👥 Kullanıcılar'],
                 ['📢 Duyuru Yayınla', '📦 Eksik Ürün Bildir'],
-                ['🔄 Vardiya Değişimi', '📊 Durum'],
-                ['❓ Yardım']
+                ['📊 Durum', '❓ Yardım']
             ];
             return Markup.keyboard(adminButtons).resize();
         } else {
             // Employee panel
             const employeeButtons = [
                 ['📋 Görevlerim', '📦 Eksik Ürün Bildir'],
-                ['📢 Duyurular', '🔄 Vardiya Değişimi'],
-                ['📊 Durum', '❓ Yardım']
+                ['📢 Duyurular', '📊 Durum'],
+                ['❓ Yardım']
             ];
             return Markup.keyboard(employeeButtons).resize();
         }
@@ -1390,33 +1377,17 @@ class SivalTeamBot extends EventEmitter {
         const chatId = ctx.chat.id.toString();
         const state = this.userStates.get(chatId);
         
-        if (state && state.action === 'report_product' && state.step === 'media') {
-            const user = await this.getUser(chatId);
+        if (state && state.action === 'add_product_media') {
             const photo = ctx.message.photo[ctx.message.photo.length - 1];
             
-            const product = new MissingProduct({
-                productName: state.data.productName,
-                category: state.data.category,
-                quantity: state.data.quantity,
-                reportedBy: user.chatId,
-                reportedByName: `${user.firstName} ${user.lastName}`,
+            // Update existing product with photo
+            await MissingProduct.findByIdAndUpdate(state.data.productId, {
                 reportMethod: 'photo',
                 photoUrl: photo.file_id
             });
             
-            await product.save();
             this.userStates.delete(chatId);
-            
-            await ctx.reply('✅ Eksik ürün bildirimi fotoğrafla kaydedildi!');
-            
-            // Notify admins
-            await this.notifyAdmins(
-                `📦 *Yeni Eksik Ürün Bildirimi*\n\n` +
-                `${this.getCategoryIcon(state.data.category)} ${state.data.productName}\n` +
-                `📊 ${state.data.quantity} adet\n` +
-                `👤 ${user.firstName} ${user.lastName}\n` +
-                `📸 Fotoğraf ile bildirildi`
-            );
+            await ctx.reply('✅ Fotoğraf eklendi!');
         }
     }
 
@@ -1424,32 +1395,15 @@ class SivalTeamBot extends EventEmitter {
         const chatId = ctx.chat.id.toString();
         const state = this.userStates.get(chatId);
         
-        if (state && state.action === 'report_product' && state.step === 'media') {
-            const user = await this.getUser(chatId);
-            
-            const product = new MissingProduct({
-                productName: state.data.productName,
-                category: state.data.category,
-                quantity: state.data.quantity,
-                reportedBy: user.chatId,
-                reportedByName: `${user.firstName} ${user.lastName}`,
+        if (state && state.action === 'add_product_media') {
+            // Update existing product with voice
+            await MissingProduct.findByIdAndUpdate(state.data.productId, {
                 reportMethod: 'voice',
                 voiceFileId: ctx.message.voice.file_id
             });
             
-            await product.save();
             this.userStates.delete(chatId);
-            
-            await ctx.reply('✅ Eksik ürün bildirimi ses kaydıyla kaydedildi!');
-            
-            // Notify admins
-            await this.notifyAdmins(
-                `📦 *Yeni Eksik Ürün Bildirimi*\n\n` +
-                `${this.getCategoryIcon(state.data.category)} ${state.data.productName}\n` +
-                `📊 ${state.data.quantity} adet\n` +
-                `👤 ${user.firstName} ${user.lastName}\n` +
-                `🎙️ Ses kaydı ile bildirildi`
-            );
+            await ctx.reply('✅ Ses kaydı eklendi!');
         }
     }
 
