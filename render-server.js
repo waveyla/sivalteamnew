@@ -1782,8 +1782,16 @@ async function startServer() {
 
     // Start polling in development
     if (process.env.NODE_ENV !== 'production') {
-        sivalTeamBot.bot.launch();
-        console.log('🤖 Bot polling started for development');
+        try {
+            // Clear webhook first to avoid conflicts
+            await sivalTeamBot.bot.telegram.deleteWebhook();
+            console.log('🗑️ Webhook cleared for development mode');
+            
+            await sivalTeamBot.bot.launch();
+            console.log('🤖 Bot polling started for development');
+        } catch (error) {
+            console.error('❌ Failed to start bot in development:', error.message);
+        }
     }
 }
 
