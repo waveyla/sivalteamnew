@@ -1436,18 +1436,19 @@ async function connectMongoDB() {
         await mongoose.connect(MONGODB_URI);
         console.log('✅ MongoDB connected successfully');
         
-        // Clear all users on fresh deploy (production only)
-        if (process.env.NODE_ENV === 'production') {
-            const userCount = await User.countDocuments();
-            if (userCount > 0) {
-                await User.deleteMany({});
-                await Task.deleteMany({});
-                await MissingProduct.deleteMany({});
-                await Announcement.deleteMany({});
-                await Attendance.deleteMany({});
-                await EmployeeRequest.deleteMany({});
-                console.log(`🗑️ Cleared ${userCount} existing users for fresh start`);
-            }
+        // Only clear on first deploy - check if there are users without any admin
+        const userCount = await User.countDocuments();
+        const adminCount = await User.countDocuments({ role: 'admin' });
+        
+        // Clear only if users exist but no admin (indicates old/broken data)
+        if (userCount > 0 && adminCount === 0) {
+            await User.deleteMany({});
+            await Task.deleteMany({});
+            await MissingProduct.deleteMany({});
+            await Announcement.deleteMany({});
+            await Attendance.deleteMany({});
+            await EmployeeRequest.deleteMany({});
+            console.log(`🗑️ Cleared ${userCount} orphaned users (no admin found) for fresh start`);
         }
         
         // Run cleanup on startup
