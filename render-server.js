@@ -19,8 +19,6 @@ app.use(helmet());
 app.use(cors());
 app.use(express.json({ limit: '10mb' }));
 
-// Note: Keep-alive disabled to stay within Render free tier limits (750 hours/month)
-
 // Turkey time helper
 const getTurkeyTime = () => {
     return new Date().toLocaleString('tr-TR', {
@@ -34,10 +32,37 @@ const getTurkeyTime = () => {
     });
 };
 
+// Keep-alive mechanism: Active EXCEPT 2AM-8AM (sleep time)
+const keepAlive = () => {
+    setInterval(async () => {
+        const now = new Date();
+        const turkeyTime = new Date(now.getTime() + (3 * 60 * 60 * 1000)); // UTC+3 Turkey time
+        const hour = turkeyTime.getHours();
+        
+        // Sleep between 2AM and 8AM Turkey time, keep alive other times
+        if (hour >= 2 && hour < 8) {
+            console.log(`😴 Sleep time (${hour}:${turkeyTime.getMinutes().toString().padStart(2, '0')}): Keep-alive disabled`);
+        } else {
+            try {
+                const response = await fetch(`${WEBHOOK_URL}/health`);
+                console.log(`🟢 Keep-alive ping (${hour}:${turkeyTime.getMinutes().toString().padStart(2, '0')}): ${response.status}`);
+            } catch (error) {
+                console.log(`❌ Keep-alive ping failed (${hour}:${turkeyTime.getMinutes().toString().padStart(2, '0')}):`, error.message);
+            }
+        }
+    }, 10 * 60 * 1000); // Check every 10 minutes
+};
+
 // Log current time every 30 minutes
 setInterval(() => {
     console.log(`🕐 Current Turkey time: ${getTurkeyTime()}`);
 }, 30 * 60 * 1000);
+
+// Start keep-alive in production (Render)
+if (process.env.NODE_ENV === 'production') {
+    keepAlive();
+    console.log('🔄 Keep-alive started: Active 8AM-2AM, Sleep 2AM-8AM Turkey time');
+}
 
 // Rate limiting - more permissive
 const rateLimiter = new RateLimiterMemory({
