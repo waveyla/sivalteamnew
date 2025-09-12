@@ -617,7 +617,7 @@ class SivalTeamBot extends EventEmitter {
                     `👤 *${u.firstName} ${u.lastName || ''}*\n@${u.username || 'username yok'}`,
                     {
                         parse_mode: 'Markdown',
-                        ...this.getUserManagementKeyboard(u.chatId)
+                        ...this.getApprovalKeyboard(u.chatId)
                     }
                 );
             }
@@ -1210,12 +1210,8 @@ class SivalTeamBot extends EventEmitter {
     getUserManagementKeyboard(chatId) {
         return Markup.inlineKeyboard([
             [
-                Markup.button.callback('✅ Onayla', `approve_user_${chatId}`),
-                Markup.button.callback('❌ Reddet', `reject_user_${chatId}`)
-            ],
-            [
                 Markup.button.callback('👨‍💼 Admin Yap', `promote_user_${chatId}`),
-                Markup.button.callback('🗑️ Sil', `delete_user_${chatId}`)
+                Markup.button.callback('🗑️ Bottan Sil', `delete_user_${chatId}`)
             ]
         ]);
     }
@@ -1358,6 +1354,8 @@ class SivalTeamBot extends EventEmitter {
             step: 'employee_selected',
             data: { type: 'individual' }
         });
+        
+        console.log(`🎯 Individual task state set for ${chatId}`);
     }
 
     async handleGroupTaskAssignment(ctx) {
@@ -1381,6 +1379,8 @@ class SivalTeamBot extends EventEmitter {
             step: 'title',
             data: { type: 'group' }
         });
+        
+        console.log(`🎯 Group task state set for ${chatId}`);
     }
 
     async handleLeaveCallback(ctx, data) {
@@ -1419,6 +1419,8 @@ class SivalTeamBot extends EventEmitter {
         };
         state.step = 'title';
         this.userStates.set(chatId, state);
+        
+        console.log(`👤 Employee selected: ${employee.firstName} for ${chatId}`);
         
         try {
             await ctx.editMessageText(
