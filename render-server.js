@@ -962,9 +962,15 @@ class SivalTeamBot extends EventEmitter {
         const user = await this.getUser(ctx.chat.id);
         if (!user || !user.isApproved) return;
 
+        console.log(`🔍 Task callback data: "${data}"`);
+        
         const parts = data.split('_');
+        console.log(`📋 Parts:`, parts);
+        
         const action = parts[1]; // complete, undo, etc
         const taskId = parts.slice(2).join('_'); // Handle MongoDB ObjectId which might contain underscores
+        
+        console.log(`🎯 Action: "${action}", TaskId: "${taskId}"`);
         
         // Validate taskId
         if (!taskId || taskId.length < 24) {
@@ -1340,12 +1346,16 @@ class SivalTeamBot extends EventEmitter {
         
         const chatId = ctx.chat.id.toString();
         
+        console.log(`📢 Admin ${user.firstName} starting announcement creation`);
+        
         await ctx.reply('📢 *Duyuru Yayınla*\n\nDuyuru metnini yazın:', { parse_mode: 'Markdown' });
         
         this.userStates.set(chatId, {
             action: 'create_announcement',
             step: 'content'
         });
+        
+        console.log(`🎯 Announcement state set for ${chatId}`);
     }
 
     async handleIndividualTaskAssignment(ctx) {
