@@ -974,27 +974,28 @@ class SivalTeamBot extends EventEmitter {
         let helpText = `🤖 *SivalTeam Bot Yardım*\n\n`;
 
         if (isAdmin) {
-            helpText += `*Yönetici Özellikleri:*\n`;
-            helpText += `➕ Görev Oluştur - Yeni görev oluştur\n`;
-            helpText += `📋 Aktif Görevler - Görev durumları\n`;
-            helpText += `📦 Eksik Ürünler Listesi - Bildirilen ürünler\n`;
-            helpText += `👥 Kullanıcılar - Kullanıcı yönetimi\n`;
-            helpText += `📢 Duyuru Yayınla - Duyuru oluştur\n`;
-            helpText += `📈 Raporlar - Sistem raporları\n\n`;
+            helpText += `*👑 Yönetici Özellikleri:*\n`;
+            helpText += `➕ Görev Oluştur - Bireysel/Toplu/Kat bazlı görev\n`;
+            helpText += `📋 Aktif Görevler - Görev durumları ve takibi\n`;
+            helpText += `📦 Eksik Ürünler Listesi - Kategori bazlı eksikler\n`;
+            helpText += `👥 Kullanıcılar - Kullanıcı onay ve yönetimi\n`;
+            helpText += `📢 Duyuru Yayınla - Metin/Fotoğraf/Ses/Belge ile duyuru\n`;
+            helpText += `🔧 Teknik Eksiklikler - Mağaza teknik sorunları\n\n`;
         }
 
-        helpText += `*Çalışan Özellikleri:*\n`;
-        helpText += `📋 Görevlerim - Atanan görevler\n`;
-        helpText += `📦 Eksik Ürün Bildir - Kategorili bildirim\n`;
-        helpText += `📢 Duyurular - Güncel duyurular\n`;
-        helpText += `📅 İzin Talebi - İzin talep et\n`;
-        helpText += `🔄 Vardiya Değişimi - Vardiya değişimi\n`;
-        helpText += `☕ Mola - Mola başlat/bitir\n\n`;
+        helpText += `*👷 Çalışan Özellikleri:*\n`;
+        helpText += `📋 Görevlerim - Size atanan görevler\n`;
+        helpText += `📦 Eksik Ürün Bildir - 7 kategoride ürün bildirimi\n`;
+        helpText += `  └ Kadın, Erkek, Çocuk, Çamaşır, Çorap, Ayakkabı, Ev Tekstili\n`;
+        helpText += `📢 Duyurular - Yönetici duyuruları\n`;
+        helpText += `🔧 Teknik Eksiklikler - Teknik sorun bildirimi\n`;
+        helpText += `  └ Aydınlatma, Klima, Elektrik, Su, Güvenlik, Kasa/POS\n\n`;
 
-        helpText += `💡 *İpuçları:*\n`;
-        helpText += `• Görevleri tamamladığınızda işaretleyin\n`;
-        helpText += `• Eksik ürünleri fotoğraf, ses veya yazı ile bildirebilirsiniz\n`;
-        helpText += `• Tüm talepler yönetici onayına tabidir`;
+        helpText += `💡 *Kullanım İpuçları:*\n`;
+        helpText += `• Görevleri tamamladığınızda ✅ butonuna basın\n`;
+        helpText += `• Eksik ürünleri 📸 fotoğraf, 🎙️ ses veya 📝 yazı ile bildirin\n`;
+        helpText += `• Kayıt sırasında departman ve kat seçimi yapın\n`;
+        helpText += `• Duyurular 7 gün sonra otomatik silinir`;
 
         await ctx.reply(helpText, { parse_mode: 'Markdown' });
     }
