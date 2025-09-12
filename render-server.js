@@ -361,7 +361,6 @@ class SivalTeamBot extends EventEmitter {
         this.bot.hears('📋 Görevlerim', async (ctx) => await this.showMyTasks(ctx));
         this.bot.hears('📦 Eksik Ürün Bildir', async (ctx) => await this.reportMissingProduct(ctx));
         this.bot.hears('📢 Duyurular', async (ctx) => await this.showAnnouncements(ctx));
-        this.bot.hears('📊 Durum', async (ctx) => await this.showStatus(ctx));
         this.bot.hears('❓ Yardım', async (ctx) => await this.showHelp(ctx));
         
         // Ana menü butonları - Admin
@@ -370,6 +369,7 @@ class SivalTeamBot extends EventEmitter {
         this.bot.hears('📦 Eksik Ürünler Listesi', async (ctx) => await this.showMissingProductsList(ctx));
         this.bot.hears('👥 Kullanıcılar', async (ctx) => await this.showUsers(ctx));
         this.bot.hears('📢 Duyuru Yayınla', async (ctx) => await this.publishAnnouncement(ctx));
+        this.bot.hears('🔧 Teknik Eksiklikler', async (ctx) => await this.showTechnicalIssues(ctx));
         
         // Handle photo messages for missing products
         this.bot.on('photo', async (ctx) => await this.handlePhotoMessage(ctx));
@@ -439,6 +439,10 @@ class SivalTeamBot extends EventEmitter {
                 // Shift callbacks
                 else if (data.startsWith('shift_')) {
                     await this.handleShiftCallback(ctx, data);
+                }
+                // Technical issues callbacks
+                else if (data.startsWith('tech_')) {
+                    await this.handleTechnicalIssueCallback(ctx, data);
                 }
                 // Cancel callbacks
                 else if (data.startsWith('cancel_')) {
@@ -530,6 +534,7 @@ class SivalTeamBot extends EventEmitter {
                     [Markup.button.callback('👨 Erkek', 'category_erkek')],
                     [Markup.button.callback('🧒 Çocuk', 'category_çocuk')],
                     [Markup.button.callback('👕 Çamaşır', 'category_çamaşır')],
+                    [Markup.button.callback('🧦 Çorap', 'category_çorap')],
                     [Markup.button.callback('👟 Ayakkabı', 'category_ayakkabı')],
                     [Markup.button.callback('🏠 Ev Tekstili', 'category_ev_tekstili')],
                     [Markup.button.callback('❌ İptal', 'cancel_report')]
@@ -555,28 +560,55 @@ class SivalTeamBot extends EventEmitter {
             return;
         }
 
-        let message = '📦 *Eksik Ürünler Listesi*\n\n';
-        
-        for (let i = 0; i < products.length && i < 10; i++) {
-            const product = products[i];
-            const categoryIcon = this.getCategoryIcon(product.category);
-            const urgencyIcon = {
-                low: '🟢', medium: '🟡', high: '🔴', critical: '🚨'
-            }[product.urgency];
+        // Group products by category
+        const productsByCategory = {};
+        products.forEach(product => {
+            if (!productsByCategory[product.category]) {
+                productsByCategory[product.category] = [];
+            }
+            productsByCategory[product.category].push(product);
+        });
+
+        let message = '📦 *Kategori Bazlı Eksik Ürünler*\n\n';
+
+        // Sort categories by product count (most to least)
+        const sortedCategories = Object.keys(productsByCategory).sort((a, b) => 
+            productsByCategory[b].length - productsByCategory[a].length
+        );
+
+        for (const category of sortedCategories) {
+            const categoryProducts = productsByCategory[category];
+            const categoryIcon = this.getCategoryIcon(category);
+            const categoryName = this.getCategoryName(category);
             
-            message += `${urgencyIcon} ${categoryIcon} *${product.productName}*\n`;
-            message += `📊 ${product.quantity || 1} ${product.unit || 'adet'}\n`;
-            message += `👤 ${product.reportedByName}\n`;
-            message += `📅 ${product.reportedAt.toLocaleDateString('tr-TR')}\n`;
+            message += `${categoryIcon} *${categoryName}* (${categoryProducts.length})\n`;
             
-            if (product.reportMethod === 'photo' && product.photoUrl) {
-                message += `📸 Fotoğraf var\n`;
-            } else if (product.reportMethod === 'voice' && product.voiceFileId) {
-                message += `🎙️ Ses kaydı var\n`;
+            // Show first 3 products in each category
+            for (let i = 0; i < Math.min(categoryProducts.length, 3); i++) {
+                const product = categoryProducts[i];
+                const urgencyIcon = {
+                    low: '🟢', medium: '🟡', high: '🔴', critical: '🚨'
+                }[product.urgency] || '⚪';
+                
+                message += `  ${urgencyIcon} ${product.productName}\n`;
+                message += `     👤 ${product.reportedByName} • `;
+                message += `📅 ${product.reportedAt.toLocaleDateString('tr-TR')}\n`;
+                
+                if (product.reportMethod === 'photo' && product.photoUrl) {
+                    message += `     📸 Fotoğraf mevcut\n`;
+                } else if (product.reportMethod === 'voice' && product.voiceFileId) {
+                    message += `     🎙️ Ses kaydı mevcut\n`;
+                }
             }
             
-            message += `─────────────\n`;
+            if (categoryProducts.length > 3) {
+                message += `  ... ve ${categoryProducts.length - 3} ürün daha\n`;
+            }
+            
+            message += `\n`;
         }
+
+        message += `📊 *Toplam: ${products.length} eksik ürün*`;
 
         await ctx.reply(message, { parse_mode: 'Markdown' });
 
@@ -594,6 +626,23 @@ class SivalTeamBot extends EventEmitter {
                 Markup.inlineKeyboard(keyboard)
             );
         }
+    }
+
+    async showTechnicalIssues(ctx) {
+        await ctx.reply(
+            '🔧 *Teknik Eksiklikler*\n\nNe tür teknik sorun bildirmek istiyorsunuz?',
+            {
+                parse_mode: 'Markdown',
+                ...Markup.inlineKeyboard([
+                    [Markup.button.callback('💻 Sistem Sorunu', 'tech_system')],
+                    [Markup.button.callback('📱 Uygulama Hatası', 'tech_app')],
+                    [Markup.button.callback('🌐 İnternet Problemi', 'tech_network')],
+                    [Markup.button.callback('🖥️ Donanım Arızası', 'tech_hardware')],
+                    [Markup.button.callback('📄 Diğer', 'tech_other')],
+                    [Markup.button.callback('❌ İptal', 'cancel_tech')]
+                ])
+            }
+        );
     }
     
     // Admin - Create Task
@@ -899,8 +948,7 @@ class SivalTeamBot extends EventEmitter {
         helpText += `📢 Duyurular - Güncel duyurular\n`;
         helpText += `📅 İzin Talebi - İzin talep et\n`;
         helpText += `🔄 Vardiya Değişimi - Vardiya değişimi\n`;
-        helpText += `☕ Mola - Mola başlat/bitir\n`;
-        helpText += `📊 Durum - Güncel durumunuz\n\n`;
+        helpText += `☕ Mola - Mola başlat/bitir\n\n`;
 
         helpText += `💡 *İpuçları:*\n`;
         helpText += `• Görevleri tamamladığınızda işaretleyin\n`;
@@ -1280,6 +1328,36 @@ class SivalTeamBot extends EventEmitter {
                     await ctx.reply(`✅ Duyuru yayınlandı!\n\n📊 ${successCount} başarılı, ${failCount} başarısız`);
                 }
                 break;
+
+            case 'tech_report':
+                const issueIcons = {
+                    system: '💻',
+                    app: '📱',
+                    network: '🌐',
+                    hardware: '🖥️',
+                    other: '📄'
+                };
+                
+                const issueNames = {
+                    system: 'Sistem Sorunu',
+                    app: 'Uygulama Hatası',
+                    network: 'İnternet Problemi',
+                    hardware: 'Donanım Arızası',
+                    other: 'Diğer'
+                };
+                
+                this.userStates.delete(chatId);
+                
+                await ctx.reply(`✅ Teknik sorun bildirimi kaydedildi!\n\n${issueIcons[state.type]} **${issueNames[state.type]}**\n\n**Detay:** ${text}\n\n👤 ${user.firstName} ${user.lastName || ''}`, { parse_mode: 'Markdown' });
+                
+                // Notify admins about the technical issue
+                await this.notifyAdmins(
+                    `🔧 **Yeni Teknik Sorun Bildirimi**\n\n` +
+                    `${issueIcons[state.type]} **${issueNames[state.type]}**\n\n` +
+                    `**Detay:** ${text}\n\n` +
+                    `👤 **Bildiren:** ${user.firstName} ${user.lastName || ''}`
+                );
+                break;
         }
     }
 
@@ -1354,14 +1432,14 @@ class SivalTeamBot extends EventEmitter {
                 ['➕ Görev Oluştur', '📋 Aktif Görevler'],
                 ['📦 Eksik Ürünler Listesi', '👥 Kullanıcılar'],
                 ['📢 Duyuru Yayınla', '📦 Eksik Ürün Bildir'],
-                ['📊 Durum', '❓ Yardım']
+                ['🔧 Teknik Eksiklikler', '❓ Yardım']
             ];
             return Markup.keyboard(adminButtons).resize();
         } else {
             // Employee panel
             const employeeButtons = [
                 ['📋 Görevlerim', '📦 Eksik Ürün Bildir'],
-                ['📢 Duyurular', '📊 Durum'],
+                ['🔧 Teknik Eksiklikler', '📢 Duyurular'],
                 ['❓ Yardım']
             ];
             return Markup.keyboard(employeeButtons).resize();
@@ -1410,6 +1488,7 @@ class SivalTeamBot extends EventEmitter {
             erkek: '👨',
             çocuk: '🧒',
             çamaşır: '👕',
+            çorap: '🧦',
             ayakkabı: '👟',
             ev_tekstili: '🏠'
         };
@@ -1422,6 +1501,7 @@ class SivalTeamBot extends EventEmitter {
             erkek: 'Erkek',
             çocuk: 'Çocuk',
             çamaşır: 'Çamaşır',
+            çorap: 'Çorap',
             ayakkabı: 'Ayakkabı',
             ev_tekstili: 'Ev Tekstili'
         };
@@ -1579,6 +1659,28 @@ class SivalTeamBot extends EventEmitter {
 
     async handleShiftCallback(ctx, data) {
         await ctx.answerCbQuery('Vardiya değişimi özelliği geliştirilme aşamasında...');
+    }
+
+    async handleTechnicalIssueCallback(ctx, data) {
+        const chatId = ctx.chat.id.toString();
+        const issueType = data.replace('tech_', '');
+        
+        if (issueType === 'system') {
+            await ctx.editMessageText('💻 *Sistem Sorunu*\n\nSistem sorununuzun detaylarını yazın:', { parse_mode: 'Markdown' });
+            this.userStates.set(chatId, { action: 'tech_report', type: 'system' });
+        } else if (issueType === 'app') {
+            await ctx.editMessageText('📱 *Uygulama Hatası*\n\nUygulama hatasının detaylarını yazın:', { parse_mode: 'Markdown' });
+            this.userStates.set(chatId, { action: 'tech_report', type: 'app' });
+        } else if (issueType === 'network') {
+            await ctx.editMessageText('🌐 *İnternet Problemi*\n\nİnternet probleminizin detaylarını yazın:', { parse_mode: 'Markdown' });
+            this.userStates.set(chatId, { action: 'tech_report', type: 'network' });
+        } else if (issueType === 'hardware') {
+            await ctx.editMessageText('🖥️ *Donanım Arızası*\n\nDonanım arızasının detaylarını yazın:', { parse_mode: 'Markdown' });
+            this.userStates.set(chatId, { action: 'tech_report', type: 'hardware' });
+        } else if (issueType === 'other') {
+            await ctx.editMessageText('📄 *Diğer Teknik Sorun*\n\nTeknik sorununuzun detaylarını yazın:', { parse_mode: 'Markdown' });
+            this.userStates.set(chatId, { action: 'tech_report', type: 'other' });
+        }
     }
 
     async handleCancelCallback(ctx, data) {
