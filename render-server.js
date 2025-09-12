@@ -19,6 +19,24 @@ app.use(helmet());
 app.use(cors());
 app.use(express.json({ limit: '10mb' }));
 
+// Keep-alive mechanism to prevent Render sleep
+const keepAlive = () => {
+    setInterval(async () => {
+        try {
+            const response = await fetch(`${WEBHOOK_URL}/health`);
+            console.log(`🔄 Keep-alive ping: ${response.status}`);
+        } catch (error) {
+            console.log('🔄 Keep-alive ping failed:', error.message);
+        }
+    }, 14 * 60 * 1000); // Ping every 14 minutes
+};
+
+// Only run keep-alive in production (Render)
+if (process.env.NODE_ENV === 'production') {
+    keepAlive();
+    console.log('🔄 Keep-alive mechanism started');
+}
+
 // Rate limiting - more permissive
 const rateLimiter = new RateLimiterMemory({
     keyPrefix: 'sivalteam_bot',
