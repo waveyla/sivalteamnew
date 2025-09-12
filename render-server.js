@@ -200,9 +200,10 @@ class SivalTeamBot extends EventEmitter {
             const user = await User.findOne({ chatId });
 
             if (!user) {
-                // Check if this is the first user
+                // Check if this is the first user (no users exist) and no admin exists
                 const userCount = await User.countDocuments();
-                const isFirstUser = userCount === 0;
+                const adminCount = await User.countDocuments({ role: 'admin' });
+                const isFirstUser = userCount === 0 && adminCount === 0;
                 
                 // Yeni kullanıcı kaydı
                 const newUser = new User({
@@ -215,6 +216,12 @@ class SivalTeamBot extends EventEmitter {
                     isApproved: isFirstUser ? true : false
                 });
                 await newUser.save();
+                
+                if (isFirstUser) {
+                    console.log(`👑 First admin registered: ${ctx.from.first_name} (${chatId})`);
+                } else {
+                    console.log(`👤 New user registered: ${ctx.from.first_name} (${chatId})`);
+                }
 
                 if (isFirstUser) {
                     await ctx.reply(
