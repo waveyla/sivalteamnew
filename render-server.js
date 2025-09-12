@@ -35,6 +35,7 @@ const userSchema = new mongoose.Schema({
     lastName: String,
     role: { type: String, enum: ['admin', 'employee', 'manager'], default: 'employee' },
     isActive: { type: Boolean, default: true },
+    isApproved: { type: Boolean, default: false },
     department: String,
     position: String,
     shift: { type: String, enum: ['Sabah', 'Öğlen', 'Akşam', 'Gece'], default: 'Sabah' },
@@ -50,6 +51,7 @@ const userSchema = new mongoose.Schema({
 const taskSchema = new mongoose.Schema({
     title: { type: String, required: true },
     description: String,
+    assignmentType: { type: String, enum: ['individual', 'group'], default: 'individual' },
     assignedTo: [{
         userId: String,
         name: String,
@@ -57,22 +59,29 @@ const taskSchema = new mongoose.Schema({
         completedAt: Date
     }],
     assignedBy: String,
+    assignedByName: String,
     priority: { type: String, enum: ['low', 'medium', 'high', 'urgent'], default: 'medium' },
     status: { type: String, enum: ['pending', 'in_progress', 'completed', 'cancelled'], default: 'pending' },
     category: String,
     dueDate: Date,
     createdAt: { type: Date, default: Date.now },
     completedAt: Date,
+    completedCount: { type: Number, default: 0 },
+    totalAssigned: { type: Number, default: 0 },
     tags: [String]
 });
 
 // Missing Product Schema - Eksik ürün takibi
 const missingProductSchema = new mongoose.Schema({
     productName: { type: String, required: true },
+    category: { type: String, enum: ['kadın', 'erkek', 'çocuk', 'çamaşır', 'ayakkabı', 'ev_tekstili'], required: true },
     quantity: Number,
     unit: String,
     reportedBy: String,
     reportedByName: String,
+    reportMethod: { type: String, enum: ['text', 'photo', 'voice'], default: 'text' },
+    photoUrl: String,
+    voiceFileId: String,
     location: String,
     urgency: { type: String, enum: ['low', 'medium', 'high', 'critical'], default: 'medium' },
     status: { type: String, enum: ['reported', 'confirmed', 'ordered', 'resolved'], default: 'reported' },
@@ -128,57 +137,15 @@ const employeeRequestSchema = new mongoose.Schema({
     processedBy: String
 });
 
-// Violation Schema - İhlal kayıtları (SecurityTrackerPro özelliği)
-const violationSchema = new mongoose.Schema({
-    employeeId: String,
-    employeeName: String,
-    type: { type: String, required: true },
-    severity: { type: String, enum: ['low', 'medium', 'high', 'critical'], default: 'medium' },
-    description: String,
-    location: String,
-    cameraId: String,
-    detectedAt: { type: Date, default: Date.now },
-    resolvedAt: Date,
-    resolvedBy: String,
-    status: { type: String, enum: ['pending', 'reviewing', 'resolved', 'dismissed'], default: 'pending' },
-    evidence: String,
-    actions: [String]
-});
-
-// Shift Schedule Schema - Vardiya programı
-const shiftScheduleSchema = new mongoose.Schema({
-    employeeId: String,
-    employeeName: String,
-    date: Date,
-    shift: { type: String, enum: ['Sabah', 'Öğlen', 'Akşam', 'Gece'] },
-    isConfirmed: { type: Boolean, default: false },
-    createdAt: { type: Date, default: Date.now },
-    createdBy: String
-});
-
-// Report Schema - Rapor sistemi
-const reportSchema = new mongoose.Schema({
-    title: String,
-    type: { type: String, enum: ['daily', 'weekly', 'monthly', 'custom'] },
-    department: String,
-    generatedBy: String,
-    generatedAt: { type: Date, default: Date.now },
-    data: mongoose.Schema.Types.Mixed,
-    fileUrl: String
-});
-
 const User = mongoose.model('User', userSchema);
 const Task = mongoose.model('Task', taskSchema);
 const MissingProduct = mongoose.model('MissingProduct', missingProductSchema);
 const Announcement = mongoose.model('Announcement', announcementSchema);
 const Attendance = mongoose.model('Attendance', attendanceSchema);
 const EmployeeRequest = mongoose.model('EmployeeRequest', employeeRequestSchema);
-const Violation = mongoose.model('Violation', violationSchema);
-const ShiftSchedule = mongoose.model('ShiftSchedule', shiftScheduleSchema);
-const Report = mongoose.model('Report', reportSchema);
 
 // ==================== TELEGRAM BOT CLASS ====================
-class SecurityTrackerBot extends EventEmitter {
+class SivalTeamBot extends EventEmitter {
     constructor() {
         super();
         this.bot = new Telegraf(BOT_TOKEN);
@@ -189,7 +156,7 @@ class SecurityTrackerBot extends EventEmitter {
         this.setupCallbackHandlers();
         this.setupAdminCommands();
         this.setupWebhook();
-        console.log('🤖 SecurityTrackerPro Bot initialized');
+        console.log('🤖 SivalTeam Bot initialized');
     }
 
     setupMiddleware() {
@@ -239,12 +206,13 @@ class SecurityTrackerBot extends EventEmitter {
                     username: ctx.from.username,
                     firstName: ctx.from.first_name,
                     lastName: ctx.from.last_name,
-                    telegramUsername: ctx.from.username
+                    telegramUsername: ctx.from.username,
+                    isApproved: false
                 });
                 await newUser.save();
 
                 await ctx.reply(
-                    '👋 *SecurityTrackerPro Bot\'a Hoş Geldiniz!*\n\n' +
+                    '👋 *SivalTeam Bot\'a Hoş Geldiniz!*\n\n' +
                     `Merhaba ${ctx.from.first_name}!\n` +
                     `Chat ID'niz: \`${chatId}\`\n\n` +
                     '📝 Sisteme tam erişim için admin onayı bekleniyor.\n' +
@@ -252,12 +220,23 @@ class SecurityTrackerBot extends EventEmitter {
                     { parse_mode: 'Markdown' }
                 );
 
-                // Admin bilgilendirmesi
+                // Admin bilgilendirmesi - User approval needed
                 await this.notifyAdmins(
-                    `🆕 Yeni kullanıcı kaydı:\n` +
+                    `🆕 *Yeni kullanıcı onay bekliyor:*\n\n` +
                     `👤 ${ctx.from.first_name} ${ctx.from.last_name || ''}\n` +
                     `🆔 @${ctx.from.username || 'username yok'}\n` +
-                    `💬 Chat ID: ${chatId}`
+                    `💬 Chat ID: ${chatId}`,
+                    this.getApprovalKeyboard(chatId)
+                );
+                return;
+            }
+
+            if (!user.isApproved) {
+                await ctx.reply(
+                    '⏳ *Onay Bekleniyor*\n\n' +
+                    'Hesabınız henüz yönetici tarafından onaylanmamış.\n' +
+                    'Lütfen bekleyin veya yöneticinizle iletişime geçin.',
+                    { parse_mode: 'Markdown' }
                 );
                 return;
             }
@@ -269,19 +248,29 @@ class SecurityTrackerBot extends EventEmitter {
             });
         });
 
-        // Ana menü butonları
+        // Ana menü butonları - Çalışan
         this.bot.hears('📋 Görevlerim', async (ctx) => await this.showMyTasks(ctx));
-        this.bot.hears('📦 Eksik Ürünler', async (ctx) => await this.showMissingProducts(ctx));
+        this.bot.hears('📦 Eksik Ürün Bildir', async (ctx) => await this.reportMissingProduct(ctx));
         this.bot.hears('📢 Duyurular', async (ctx) => await this.showAnnouncements(ctx));
         this.bot.hears('📅 İzin Talebi', async (ctx) => await this.requestLeave(ctx));
         this.bot.hears('🔄 Vardiya Değişimi', async (ctx) => await this.requestShiftChange(ctx));
         this.bot.hears('☕ Mola', async (ctx) => await this.handleBreak(ctx));
         this.bot.hears('📊 Durum', async (ctx) => await this.showStatus(ctx));
-        this.bot.hears('⚙️ Ayarlar', async (ctx) => await this.showSettings(ctx));
+        this.bot.hears('❓ Yardım', async (ctx) => await this.showHelp(ctx));
+        
+        // Ana menü butonları - Admin
+        this.bot.hears('➕ Görev Oluştur', async (ctx) => await this.createTask(ctx));
+        this.bot.hears('📋 Aktif Görevler', async (ctx) => await this.showActiveTasks(ctx));
+        this.bot.hears('📦 Eksik Ürünler Listesi', async (ctx) => await this.showMissingProductsList(ctx));
         this.bot.hears('👥 Kullanıcılar', async (ctx) => await this.showUsers(ctx));
         this.bot.hears('📈 Raporlar', async (ctx) => await this.showReports(ctx));
-        this.bot.hears('🚨 İhlaller', async (ctx) => await this.showViolations(ctx));
-        this.bot.hears('❓ Yardım', async (ctx) => await this.showHelp(ctx));
+        this.bot.hears('📢 Duyuru Yayınla', async (ctx) => await this.publishAnnouncement(ctx));
+        
+        // Handle photo messages for missing products
+        this.bot.on('photo', async (ctx) => await this.handlePhotoMessage(ctx));
+        
+        // Handle voice messages for missing products
+        this.bot.on('voice', async (ctx) => await this.handleVoiceMessage(ctx));
 
         // Text message handler for states
         this.bot.on('text', async (ctx) => {
@@ -298,43 +287,52 @@ class SecurityTrackerBot extends EventEmitter {
         this.bot.on('callback_query', async (ctx) => {
             const data = ctx.callbackQuery.data;
             const chatId = ctx.chat.id.toString();
-            const user = await this.getUser(chatId);
             
-            if (!user) {
-                await ctx.answerCbQuery('❌ Yetkiniz yok!');
-                return;
-            }
-
             try {
+                // User approval callbacks
+                if (data.startsWith('approve_user_')) {
+                    await this.handleUserApproval(ctx, data);
+                }
+                else if (data.startsWith('reject_user_')) {
+                    await this.handleUserRejection(ctx, data);
+                }
+                else if (data.startsWith('block_user_')) {
+                    await this.handleUserBlock(ctx, data);
+                }
+                else if (data.startsWith('delete_user_')) {
+                    await this.handleUserDeletion(ctx, data);
+                }
+                else if (data.startsWith('promote_user_')) {
+                    await this.handleUserPromotion(ctx, data);
+                }
+                // Category selection for missing products
+                else if (data.startsWith('category_')) {
+                    await this.handleCategorySelection(ctx, data);
+                }
                 // Task callbacks
-                if (data.startsWith('task_')) {
-                    await this.handleTaskCallback(ctx, data, user);
+                else if (data.startsWith('task_')) {
+                    await this.handleTaskCallback(ctx, data);
                 }
                 // Product callbacks
-                else if (data.startsWith('product_')) {
-                    await this.handleProductCallback(ctx, data, user);
+                else if (data.startsWith('complete_product_')) {
+                    await this.handleProductCompletion(ctx, data);
                 }
-                // Request callbacks
-                else if (data.startsWith('request_')) {
-                    await this.handleRequestCallback(ctx, data, user);
+                // Task assignment callbacks
+                else if (data.startsWith('task_individual')) {
+                    await this.handleIndividualTaskAssignment(ctx);
                 }
-                // User management callbacks
-                else if (data.startsWith('user_')) {
-                    await this.handleUserCallback(ctx, data, user);
-                }
-                // Violation callbacks
-                else if (data.startsWith('violation_')) {
-                    await this.handleViolationCallback(ctx, data, user);
+                else if (data.startsWith('task_group')) {
+                    await this.handleGroupTaskAssignment(ctx);
                 }
                 // Leave callbacks
                 else if (data.startsWith('leave_')) {
-                    await this.handleLeaveCallback(ctx, data, user);
+                    await this.handleLeaveCallback(ctx, data);
                 }
                 // Shift callbacks
                 else if (data.startsWith('shift_')) {
-                    await this.handleShiftCallback(ctx, data, user);
+                    await this.handleShiftCallback(ctx, data);
                 }
-                // Cancel callback
+                // Cancel callbacks
                 else if (data.startsWith('cancel_')) {
                     await this.handleCancelCallback(ctx, data);
                 }
@@ -348,23 +346,15 @@ class SecurityTrackerBot extends EventEmitter {
     }
 
     setupAdminCommands() {
-        // Admin komutları
         this.bot.command('broadcast', async (ctx) => await this.broadcastMessage(ctx));
         this.bot.command('stats', async (ctx) => await this.showStats(ctx));
-        this.bot.command('addtask', async (ctx) => await this.addTask(ctx));
-        this.bot.command('announce', async (ctx) => await this.createAnnouncement(ctx));
-        this.bot.command('report', async (ctx) => await this.generateReport(ctx));
-        this.bot.command('makeadmin', async (ctx) => await this.makeAdmin(ctx));
-        this.bot.command('removeadmin', async (ctx) => await this.removeAdmin(ctx));
-        this.bot.command('activate', async (ctx) => await this.activateUser(ctx));
-        this.bot.command('deactivate', async (ctx) => await this.deactivateUser(ctx));
     }
 
     // ==================== HANDLER METHODS ====================
     
     async showMyTasks(ctx) {
         const user = await this.getUser(ctx.chat.id);
-        if (!user) return;
+        if (!user || !user.isApproved) return;
 
         const tasks = await Task.find({
             'assignedTo.userId': user.chatId,
@@ -389,8 +379,7 @@ class SecurityTrackerBot extends EventEmitter {
                 `📊 Durum: ${assignee.completed ? '✅ Tamamlandı' : '⏳ Bekliyor'}`;
 
             const keyboard = !assignee.completed ? Markup.inlineKeyboard([
-                [Markup.button.callback('✅ Tamamla', `task_complete_${task._id}`)],
-                [Markup.button.callback('💬 Not Ekle', `task_note_${task._id}`)]
+                [Markup.button.callback('✅ Tamamla', `task_complete_${task._id}`)]
             ]) : Markup.inlineKeyboard([
                 [Markup.button.callback('↩️ Tamamlanmadı', `task_undo_${task._id}`)]
             ]);
@@ -399,57 +388,229 @@ class SecurityTrackerBot extends EventEmitter {
         }
     }
 
-    async showMissingProducts(ctx) {
+    // Employee - Missing Product Report with Categories
+    async reportMissingProduct(ctx) {
         const user = await this.getUser(ctx.chat.id);
-        if (!user) return;
-
-        const products = await MissingProduct.find({
-            status: { $ne: 'resolved' }
-        }).sort({ urgency: -1, reportedAt: -1 }).limit(10);
-
-        if (products.length === 0) {
-            await ctx.reply('📦 Eksik ürün raporu bulunmuyor.');
-            
-            if (user.role !== 'employee') {
-                await ctx.reply('➕ Yeni eksik ürün bildirmek için /addproduct komutunu kullanabilirsiniz.');
-            }
+        if (!user || !user.isApproved) {
+            await ctx.reply('❌ Bu özelliği kullanma yetkiniz yok.');
             return;
         }
 
-        let message = '📦 *Eksik Ürün Listesi*\n\n';
-        for (const product of products) {
+        await ctx.reply(
+            '📦 *Eksik Ürün Bildirimi*\n\nHangi kategoriden ürün eksik?',
+            {
+                parse_mode: 'Markdown',
+                ...Markup.inlineKeyboard([
+                    [Markup.button.callback('👩 Kadın', 'category_kadın')],
+                    [Markup.button.callback('👨 Erkek', 'category_erkek')],
+                    [Markup.button.callback('🧒 Çocuk', 'category_çocuk')],
+                    [Markup.button.callback('👕 Çamaşır', 'category_çamaşır')],
+                    [Markup.button.callback('👟 Ayakkabı', 'category_ayakkabı')],
+                    [Markup.button.callback('🏠 Ev Tekstili', 'category_ev_tekstili')],
+                    [Markup.button.callback('❌ İptal', 'cancel_report')]
+                ])
+            }
+        );
+    }
+    
+    // Admin - Missing Products List
+    async showMissingProductsList(ctx) {
+        const user = await this.getUser(ctx.chat.id);
+        if (!user || (user.role !== 'admin' && user.role !== 'manager')) {
+            await ctx.reply('❌ Bu özellik sadece yöneticiler içindir.');
+            return;
+        }
+
+        const products = await MissingProduct.find({
+            status: { $ne: 'resolved' }
+        }).sort({ reportedAt: -1 });
+
+        if (products.length === 0) {
+            await ctx.reply('📦 Bekleyen eksik ürün bildirimi bulunmuyor.');
+            return;
+        }
+
+        let message = '📦 *Eksik Ürünler Listesi*\n\n';
+        
+        for (let i = 0; i < products.length && i < 10; i++) {
+            const product = products[i];
+            const categoryIcon = this.getCategoryIcon(product.category);
             const urgencyIcon = {
                 low: '🟢', medium: '🟡', high: '🔴', critical: '🚨'
             }[product.urgency];
             
-            message += `${urgencyIcon} *${product.productName}*\n`;
-            message += `📊 Miktar: ${product.quantity} ${product.unit || 'adet'}\n`;
-            message += `📍 Konum: ${product.location || 'Belirtilmemiş'}\n`;
-            message += `👤 Bildiren: ${product.reportedByName}\n`;
+            message += `${urgencyIcon} ${categoryIcon} *${product.productName}*\n`;
+            message += `📊 ${product.quantity || 1} ${product.unit || 'adet'}\n`;
+            message += `👤 ${product.reportedByName}\n`;
             message += `📅 ${product.reportedAt.toLocaleDateString('tr-TR')}\n`;
+            
+            if (product.reportMethod === 'photo' && product.photoUrl) {
+                message += `📸 Fotoğraf var\n`;
+            } else if (product.reportMethod === 'voice' && product.voiceFileId) {
+                message += `🎙️ Ses kaydı var\n`;
+            }
+            
             message += `─────────────\n`;
         }
 
         await ctx.reply(message, { parse_mode: 'Markdown' });
 
-        if (user.role === 'admin' || user.role === 'manager') {
+        // Show completion buttons for each product
+        const keyboard = products.slice(0, 10).map(p => [
+            Markup.button.callback(
+                `✅ ${p.productName} - Tamamlandı`,
+                `complete_product_${p._id}`
+            )
+        ]);
+
+        if (keyboard.length > 0) {
             await ctx.reply(
-                '🔧 Ürün durumunu güncellemek için ilgili ürünü seçin:',
-                Markup.inlineKeyboard(
-                    products.slice(0, 5).map(p => [
-                        Markup.button.callback(
-                            `${p.productName} - ${p.status}`,
-                            `product_manage_${p._id}`
-                        )
-                    ])
-                )
+                '🔧 Tamamlanan ürünleri işaretleyin:',
+                Markup.inlineKeyboard(keyboard)
             );
+        }
+    }
+    
+    // Admin - Create Task
+    async createTask(ctx) {
+        const user = await this.getUser(ctx.chat.id);
+        if (!user || (user.role !== 'admin' && user.role !== 'manager')) {
+            await ctx.reply('❌ Bu özellik sadece yöneticiler içindir.');
+            return;
+        }
+
+        await ctx.reply(
+            '📋 *Görev Oluştur*\n\nKime görev atanacak?',
+            {
+                parse_mode: 'Markdown',
+                ...Markup.inlineKeyboard([
+                    [Markup.button.callback('👤 Bireysel Atama', 'task_individual')],
+                    [Markup.button.callback('👥 Toplu Atama', 'task_group')],
+                    [Markup.button.callback('❌ İptal', 'cancel_task')]
+                ])
+            }
+        );
+    }
+    
+    // Admin - Show Active Tasks
+    async showActiveTasks(ctx) {
+        const user = await this.getUser(ctx.chat.id);
+        if (!user || (user.role !== 'admin' && user.role !== 'manager')) {
+            await ctx.reply('❌ Bu özellik sadece yöneticiler içindir.');
+            return;
+        }
+
+        const tasks = await Task.find({
+            status: { $ne: 'completed' }
+        }).sort({ createdAt: -1 });
+
+        if (tasks.length === 0) {
+            await ctx.reply('📋 Aktif görev bulunmuyor.');
+            return;
+        }
+
+        for (const task of tasks.slice(0, 10)) {
+            const priorityIcon = {
+                low: '🟢', medium: '🟡', high: '🔴', urgent: '🚨'
+            }[task.priority];
+            
+            const completedCount = task.assignedTo.filter(a => a.completed).length;
+            const totalAssigned = task.assignedTo.length;
+            const progressBar = this.getProgressBar(completedCount, totalAssigned);
+            
+            let message = `${priorityIcon} *Görev #${task._id.toString().slice(-6)}*\n\n`;
+            message += `📌 *${task.title}*\n`;
+            message += `📝 ${task.description || 'Açıklama yok'}\n`;
+            message += `👥 Atanan: ${totalAssigned} kişi\n`;
+            message += `✅ Tamamlanan: ${completedCount}/${totalAssigned}\n`;
+            message += `${progressBar}\n`;
+            message += `📅 ${task.createdAt.toLocaleDateString('tr-TR')}\n\n`;
+            
+            // Show who completed
+            const completed = task.assignedTo.filter(a => a.completed);
+            if (completed.length > 0) {
+                message += `*Tamamlayanlar:*\n`;
+                completed.forEach(c => {
+                    message += `✓ ${c.name}\n`;
+                });
+                message += `\n`;
+            }
+            
+            // Show who's pending
+            const pending = task.assignedTo.filter(a => !a.completed);
+            if (pending.length > 0) {
+                message += `*Bekleyenler:*\n`;
+                pending.forEach(p => {
+                    message += `⏳ ${p.name}\n`;
+                });
+            }
+
+            await ctx.reply(message, { parse_mode: 'Markdown' });
+        }
+    }
+
+    async showUsers(ctx) {
+        const user = await this.getUser(ctx.chat.id);
+        if (!user || (user.role !== 'admin' && user.role !== 'manager')) {
+            await ctx.reply('❌ Bu özellik sadece yöneticiler içindir.');
+            return;
+        }
+
+        const users = await User.find({}).sort({ registeredAt: -1 });
+
+        if (users.length === 0) {
+            await ctx.reply('👥 Kullanıcı bulunamadı.');
+            return;
+        }
+
+        // Pending approvals first
+        const pendingUsers = users.filter(u => !u.isApproved);
+        const approvedUsers = users.filter(u => u.isApproved);
+
+        if (pendingUsers.length > 0) {
+            let message = '⏳ *Onay Bekleyen Kullanıcılar*\n\n';
+            pendingUsers.forEach(u => {
+                message += `👤 ${u.firstName} ${u.lastName || ''}\n`;
+                message += `🆔 @${u.username || 'yok'}\n`;
+                message += `💬 ${u.chatId}\n\n`;
+            });
+
+            await ctx.reply(message, { parse_mode: 'Markdown' });
+
+            // Approval buttons for pending users
+            for (const u of pendingUsers.slice(0, 5)) {
+                await ctx.reply(
+                    `👤 *${u.firstName} ${u.lastName || ''}*\n@${u.username || 'username yok'}`,
+                    {
+                        parse_mode: 'Markdown',
+                        ...this.getUserManagementKeyboard(u.chatId)
+                    }
+                );
+            }
+        }
+
+        if (approvedUsers.length > 0) {
+            let message = '✅ *Onaylı Kullanıcılar*\n\n';
+            approvedUsers.slice(0, 20).forEach(u => {
+                const roleIcon = {
+                    admin: '👨‍💼',
+                    manager: '👔',
+                    employee: '👷‍♂️'
+                }[u.role];
+
+                const statusIcon = u.isActive ? '🟢' : '🔴';
+                
+                message += `${roleIcon} ${statusIcon} ${u.firstName} ${u.lastName || ''}\n`;
+                message += `🆔 @${u.username || 'yok'} | ${u.department || 'Departman yok'}\n\n`;
+            });
+
+            await ctx.reply(message, { parse_mode: 'Markdown' });
         }
     }
 
     async showAnnouncements(ctx) {
         const user = await this.getUser(ctx.chat.id);
-        if (!user) return;
+        if (!user || !user.isApproved) return;
 
         const announcements = await Announcement.find({
             isActive: true,
@@ -470,91 +631,18 @@ class SecurityTrackerBot extends EventEmitter {
                 info: 'ℹ️', warning: '⚠️', urgent: '🚨'
             }[announcement.priority];
             
-            const readStatus = announcement.readBy.some(r => r.userId === user.chatId) ? '✅' : '🔵';
-            
-            const message = `${priorityIcon} ${readStatus} *${announcement.title}*\n\n` +
+            const message = `${priorityIcon} *${announcement.title}*\n\n` +
                 `${announcement.message}\n\n` +
                 `👤 ${announcement.createdByName}\n` +
                 `📅 ${announcement.createdAt.toLocaleDateString('tr-TR')}`;
 
-            const keyboard = !announcement.readBy.some(r => r.userId === user.chatId) ?
-                Markup.inlineKeyboard([
-                    [Markup.button.callback('✅ Okundu', `announcement_read_${announcement._id}`)]
-                ]) : undefined;
-
-            await ctx.reply(message, { parse_mode: 'Markdown', ...keyboard });
-
-            // Mark as read
-            if (!announcement.readBy.some(r => r.userId === user.chatId)) {
-                announcement.readBy.push({ userId: user.chatId, readAt: new Date() });
-                await announcement.save();
-            }
+            await ctx.reply(message, { parse_mode: 'Markdown' });
         }
-    }
-
-    async requestLeave(ctx) {
-        const user = await this.getUser(ctx.chat.id);
-        if (!user) return;
-
-        const requestId = Date.now().toString();
-        this.requests.set(requestId, {
-            type: 'leave',
-            employeeId: user.chatId,
-            employeeName: `${user.firstName} ${user.lastName}`,
-            status: 'pending'
-        });
-
-        await ctx.reply(
-            '📅 *İzin Talebi*\n\nNe zaman izin almak istiyorsunuz?',
-            {
-                parse_mode: 'Markdown',
-                ...Markup.inlineKeyboard([
-                    [
-                        Markup.button.callback('Bugün', `leave_today_${requestId}`),
-                        Markup.button.callback('Yarın', `leave_tomorrow_${requestId}`)
-                    ],
-                    [
-                        Markup.button.callback('Bu Hafta', `leave_week_${requestId}`),
-                        Markup.button.callback('Özel Tarih', `leave_custom_${requestId}`)
-                    ],
-                    [Markup.button.callback('❌ İptal', `cancel_${requestId}`)]
-                ])
-            }
-        );
-    }
-
-    async requestShiftChange(ctx) {
-        const user = await this.getUser(ctx.chat.id);
-        if (!user) return;
-
-        const requestId = Date.now().toString();
-        this.requests.set(requestId, {
-            type: 'shift_change',
-            employeeId: user.chatId,
-            employeeName: `${user.firstName} ${user.lastName}`,
-            currentShift: user.shift,
-            status: 'pending'
-        });
-
-        const shifts = ['Sabah', 'Öğlen', 'Akşam', 'Gece'].filter(s => s !== user.shift);
-
-        await ctx.reply(
-            `🔄 *Vardiya Değişimi*\n\nMevcut: ${user.shift}\nHangi vardiyaya geçmek istiyorsunuz?`,
-            {
-                parse_mode: 'Markdown',
-                ...Markup.inlineKeyboard([
-                    ...shifts.map(shift => [
-                        Markup.button.callback(shift, `shift_${shift.toLowerCase()}_${requestId}`)
-                    ]),
-                    [Markup.button.callback('❌ İptal', `cancel_${requestId}`)]
-                ])
-            }
-        );
     }
 
     async handleBreak(ctx) {
         const user = await this.getUser(ctx.chat.id);
-        if (!user) return;
+        if (!user || !user.isApproved) return;
 
         // Check if already on break
         const today = new Date();
@@ -580,21 +668,19 @@ class SecurityTrackerBot extends EventEmitter {
                 `Toplam mola: ${attendance.totalBreakMinutes} dakika`,
                 { parse_mode: 'Markdown' }
             );
-
-            this.emit('break_ended', {
-                userId: user.chatId,
-                userName: `${user.firstName} ${user.lastName}`,
-                duration: breakMinutes
-            });
         } else {
             // Start break
-            const newAttendance = await Attendance.findOneAndUpdate(
+            await Attendance.findOneAndUpdate(
                 {
                     userId: user.chatId,
                     date: { $gte: today }
                 },
                 {
-                    $set: { breakStart: new Date() }
+                    $set: { 
+                        breakStart: new Date(),
+                        userId: user.chatId,
+                        userName: `${user.firstName} ${user.lastName}`
+                    }
                 },
                 { upsert: true, new: true }
             );
@@ -605,18 +691,12 @@ class SecurityTrackerBot extends EventEmitter {
                 `⚠️ Mola süreniz 30 dakikayı geçmemelidir.`,
                 { parse_mode: 'Markdown' }
             );
-
-            this.emit('break_started', {
-                userId: user.chatId,
-                userName: `${user.firstName} ${user.lastName}`,
-                time: new Date()
-            });
         }
     }
 
     async showStatus(ctx) {
         const user = await this.getUser(ctx.chat.id);
-        if (!user) return;
+        if (!user || !user.isApproved) return;
 
         const today = new Date();
         today.setHours(0, 0, 0, 0);
@@ -631,11 +711,6 @@ class SecurityTrackerBot extends EventEmitter {
             'assignedTo.completed': false
         });
 
-        const pendingRequests = await EmployeeRequest.countDocuments({
-            employeeId: user.chatId,
-            status: 'pending'
-        });
-
         let statusMessage = `📊 *Güncel Durumunuz*\n\n`;
         statusMessage += `👤 ${user.firstName} ${user.lastName}\n`;
         statusMessage += `🏢 ${user.department || 'Departman belirtilmemiş'}\n`;
@@ -644,199 +719,167 @@ class SecurityTrackerBot extends EventEmitter {
 
         statusMessage += `*Bugün:*\n`;
         if (attendance) {
-            if (attendance.checkIn) {
-                statusMessage += `✅ Giriş: ${attendance.checkIn.toLocaleTimeString('tr-TR')}\n`;
-            }
-            if (attendance.checkOut) {
-                statusMessage += `🚪 Çıkış: ${attendance.checkOut.toLocaleTimeString('tr-TR')}\n`;
-            } else if (attendance.checkIn) {
-                statusMessage += `🟢 Şu anda iştesiniz\n`;
-            }
             if (attendance.breakStart && !attendance.breakEnd) {
                 statusMessage += `☕ Molada (${attendance.breakStart.toLocaleTimeString('tr-TR')})\n`;
             }
             if (attendance.totalBreakMinutes > 0) {
                 statusMessage += `⏱️ Toplam mola: ${attendance.totalBreakMinutes} dakika\n`;
             }
-        } else {
-            statusMessage += `❌ Giriş kaydınız yok\n`;
         }
 
         statusMessage += `\n*Özet:*\n`;
-        statusMessage += `📋 Bekleyen görev: ${pendingTasks}\n`;
-        statusMessage += `📝 Bekleyen talep: ${pendingRequests}`;
+        statusMessage += `📋 Bekleyen görev: ${pendingTasks}`;
 
         await ctx.reply(statusMessage, { parse_mode: 'Markdown' });
     }
 
-    async showSettings(ctx) {
-        const user = await this.getUser(ctx.chat.id);
-        if (!user) return;
-
-        const message = `⚙️ *Ayarlar*\n\n` +
-            `*Profil Bilgileri:*\n` +
-            `👤 ${user.firstName} ${user.lastName || ''}\n` +
-            `📱 @${user.username || 'Kullanıcı adı yok'}\n` +
-            `🏷️ Rol: ${this.getRoleDisplay(user.role)}\n` +
-            `🏢 Departman: ${user.department || 'Belirtilmemiş'}\n` +
-            `💼 Pozisyon: ${user.position || 'Belirtilmemiş'}\n` +
-            `⏰ Vardiya: ${user.shift}\n` +
-            `📅 Kayıt: ${user.registeredAt.toLocaleDateString('tr-TR')}\n` +
-            `🟢 Durum: ${user.isActive ? 'Aktif' : 'Pasif'}`;
-
-        const keyboard = Markup.inlineKeyboard([
-            [Markup.button.callback('📝 Bilgileri Güncelle', 'settings_update')],
-            [Markup.button.callback('🔔 Bildirim Ayarları', 'settings_notifications')],
-            [Markup.button.callback('🔐 Güvenlik', 'settings_security')]
-        ]);
-
-        await ctx.reply(message, { parse_mode: 'Markdown', ...keyboard });
-    }
-
-    async showUsers(ctx) {
-        const user = await this.getUser(ctx.chat.id);
-        if (!user || user.role === 'employee') {
-            await ctx.reply('❌ Bu özellik sadece yöneticiler içindir.');
-            return;
-        }
-
-        const users = await User.find({}).sort({ department: 1, firstName: 1 }).limit(50);
-
-        if (users.length === 0) {
-            await ctx.reply('👥 Kullanıcı bulunamadı.');
-            return;
-        }
-
-        let currentDepartment = '';
-        let message = '👥 *Kullanıcı Listesi*\n\n';
-
-        for (const u of users) {
-            if (u.department !== currentDepartment) {
-                currentDepartment = u.department || 'Belirtilmemiş';
-                message += `\n*${currentDepartment}*\n`;
-            }
-
-            const roleIcon = {
-                admin: '👨‍💼',
-                manager: '👔',
-                employee: '👷‍♂️'
-            }[u.role];
-
-            const statusIcon = u.isActive ? '🟢' : '🔴';
-            
-            message += `${roleIcon} ${statusIcon} ${u.firstName} ${u.lastName || ''} (@${u.username || 'yok'})\n`;
-        }
-
-        await ctx.reply(message, { parse_mode: 'Markdown' });
-
-        if (user.role === 'admin') {
-            await ctx.reply(
-                '👥 Kullanıcı yönetimi için:\n' +
-                '/makeadmin [chatId] - Admin yap\n' +
-                '/removeadmin [chatId] - Admin yetkisini kaldır\n' +
-                '/activate [chatId] - Kullanıcıyı aktifleştir\n' +
-                '/deactivate [chatId] - Kullanıcıyı pasifleştir'
-            );
-        }
-    }
-
-    async showViolations(ctx) {
-        const user = await this.getUser(ctx.chat.id);
-        if (!user || user.role === 'employee') {
-            await ctx.reply('❌ Bu özellik sadece yöneticiler içindir.');
-            return;
-        }
-
-        const violations = await Violation.find({
-            status: { $ne: 'resolved' }
-        }).sort({ severity: -1, detectedAt: -1 }).limit(10);
-
-        if (violations.length === 0) {
-            await ctx.reply('🚨 Aktif ihlal kaydı bulunmuyor.');
-            return;
-        }
-
-        for (const violation of violations) {
-            const severityIcon = {
-                low: '🟡',
-                medium: '🟠',
-                high: '🔴',
-                critical: '🚨'
-            }[violation.severity];
-
-            const message = `${severityIcon} *İhlal #${violation._id.toString().slice(-6)}*\n\n` +
-                `📋 Tür: ${violation.type}\n` +
-                `👤 Çalışan: ${violation.employeeName || 'Bilinmiyor'}\n` +
-                `📍 Konum: ${violation.location || 'Belirtilmemiş'}\n` +
-                `📅 Tarih: ${violation.detectedAt.toLocaleString('tr-TR')}\n` +
-                `📝 ${violation.description || 'Açıklama yok'}\n` +
-                `🔍 Durum: ${this.getStatusDisplay(violation.status)}`;
-
-            const keyboard = Markup.inlineKeyboard([
-                [
-                    Markup.button.callback('✅ Çözüldü', `violation_resolve_${violation._id}`),
-                    Markup.button.callback('❌ Reddet', `violation_dismiss_${violation._id}`)
-                ],
-                [Markup.button.callback('📝 Not Ekle', `violation_note_${violation._id}`)]
-            ]);
-
-            await ctx.reply(message, { parse_mode: 'Markdown', ...keyboard });
-        }
-    }
-
     async showHelp(ctx) {
         const user = await this.getUser(ctx.chat.id);
-        const isAdmin = user && user.role === 'admin';
-        const isManager = user && user.role === 'manager';
+        if (!user || !user.isApproved) return;
 
-        let helpText = `🤖 *SecurityTrackerPro Bot Yardım*\n\n`;
+        const isAdmin = user && (user.role === 'admin' || user.role === 'manager');
 
-        helpText += `*Genel Komutlar:*\n`;
-        helpText += `/start - Botu başlat\n`;
-        helpText += `/help - Bu yardım mesajı\n\n`;
-
-        helpText += `*Çalışan Özellikleri:*\n`;
-        helpText += `📋 Görevlerim - Aktif görevleri görüntüle\n`;
-        helpText += `📦 Eksik Ürünler - Eksik ürün listesi\n`;
-        helpText += `📢 Duyurular - Güncel duyurular\n`;
-        helpText += `📅 İzin Talebi - İzin talep et\n`;
-        helpText += `🔄 Vardiya Değişimi - Vardiya değişimi talep et\n`;
-        helpText += `☕ Mola - Mola başlat/bitir\n`;
-        helpText += `📊 Durum - Güncel durumunuz\n`;
-        helpText += `⚙️ Ayarlar - Profil ayarları\n\n`;
-
-        if (isManager || isAdmin) {
-            helpText += `*Yönetici Özellikleri:*\n`;
-            helpText += `👥 Kullanıcılar - Kullanıcı listesi\n`;
-            helpText += `📈 Raporlar - Sistem raporları\n`;
-            helpText += `🚨 İhlaller - İhlal kayıtları\n`;
-            helpText += `/addtask - Yeni görev ekle\n`;
-            helpText += `/announce - Duyuru yayınla\n`;
-            helpText += `/stats - İstatistikler\n\n`;
-        }
+        let helpText = `🤖 *SivalTeam Bot Yardım*\n\n`;
 
         if (isAdmin) {
-            helpText += `*Admin Komutları:*\n`;
-            helpText += `/broadcast - Toplu mesaj gönder\n`;
-            helpText += `/makeadmin [chatId] - Admin yap\n`;
-            helpText += `/removeadmin [chatId] - Admin yetkisini kaldır\n`;
-            helpText += `/activate [chatId] - Kullanıcıyı aktifleştir\n`;
-            helpText += `/deactivate [chatId] - Kullanıcıyı pasifleştir\n`;
-            helpText += `/report - Detaylı rapor oluştur\n\n`;
+            helpText += `*Yönetici Özellikleri:*\n`;
+            helpText += `➕ Görev Oluştur - Yeni görev oluştur\n`;
+            helpText += `📋 Aktif Görevler - Görev durumları\n`;
+            helpText += `📦 Eksik Ürünler Listesi - Bildirilen ürünler\n`;
+            helpText += `👥 Kullanıcılar - Kullanıcı yönetimi\n`;
+            helpText += `📢 Duyuru Yayınla - Duyuru oluştur\n`;
+            helpText += `📈 Raporlar - Sistem raporları\n\n`;
         }
 
+        helpText += `*Çalışan Özellikleri:*\n`;
+        helpText += `📋 Görevlerim - Atanan görevler\n`;
+        helpText += `📦 Eksik Ürün Bildir - Kategorili bildirim\n`;
+        helpText += `📢 Duyurular - Güncel duyurular\n`;
+        helpText += `📅 İzin Talebi - İzin talep et\n`;
+        helpText += `🔄 Vardiya Değişimi - Vardiya değişimi\n`;
+        helpText += `☕ Mola - Mola başlat/bitir\n`;
+        helpText += `📊 Durum - Güncel durumunuz\n\n`;
+
         helpText += `💡 *İpuçları:*\n`;
-        helpText += `• Görevleri tamamladığınızda işaretlemeyi unutmayın\n`;
-        helpText += `• Mola sürelerinize dikkat edin\n`;
-        helpText += `• Tüm talepler yönetici onayına tabidir\n`;
-        helpText += `• Sorun yaşarsanız yöneticinizle iletişime geçin`;
+        helpText += `• Görevleri tamamladığınızda işaretleyin\n`;
+        helpText += `• Eksik ürünleri fotoğraf, ses veya yazı ile bildirebilirsiniz\n`;
+        helpText += `• Tüm talepler yönetici onayına tabidir`;
 
         await ctx.reply(helpText, { parse_mode: 'Markdown' });
     }
 
     // ==================== CALLBACK HANDLERS ====================
 
-    async handleTaskCallback(ctx, data, user) {
+    async handleUserApproval(ctx, data) {
+        const user = await this.getUser(ctx.chat.id);
+        if (!user || user.role !== 'admin') {
+            await ctx.answerCbQuery('❌ Yetkiniz yok!');
+            return;
+        }
+
+        const targetChatId = data.replace('approve_user_', '');
+        const targetUser = await User.findOneAndUpdate(
+            { chatId: targetChatId },
+            { isApproved: true, isActive: true },
+            { new: true }
+        );
+
+        if (targetUser) {
+            await ctx.editMessageText(`✅ ${targetUser.firstName} ${targetUser.lastName} onaylandı!`);
+            
+            // Notify user of approval
+            await this.bot.telegram.sendMessage(
+                targetChatId,
+                '🎉 *Hesabınız Onaylandı!*\n\nSivalTeam Bot\'a hoş geldiniz!\nArtık tüm özellikleri kullanabilirsiniz.',
+                { parse_mode: 'Markdown' }
+            ).catch(() => {});
+        }
+    }
+
+    async handleUserRejection(ctx, data) {
+        const user = await this.getUser(ctx.chat.id);
+        if (!user || user.role !== 'admin') {
+            await ctx.answerCbQuery('❌ Yetkiniz yok!');
+            return;
+        }
+
+        const targetChatId = data.replace('reject_user_', '');
+        const targetUser = await User.findOne({ chatId: targetChatId });
+
+        if (targetUser) {
+            await ctx.editMessageText(`❌ ${targetUser.firstName} ${targetUser.lastName} reddedildi.`);
+            
+            // Notify user of rejection
+            await this.bot.telegram.sendMessage(
+                targetChatId,
+                '❌ *Hesap Başvurunuz Reddedildi*\n\nDaha fazla bilgi için yöneticinizle iletişime geçin.',
+                { parse_mode: 'Markdown' }
+            ).catch(() => {});
+        }
+    }
+
+    async handleUserDeletion(ctx, data) {
+        const user = await this.getUser(ctx.chat.id);
+        if (!user || user.role !== 'admin') {
+            await ctx.answerCbQuery('❌ Yetkiniz yok!');
+            return;
+        }
+
+        const targetChatId = data.replace('delete_user_', '');
+        const targetUser = await User.findOneAndDelete({ chatId: targetChatId });
+
+        if (targetUser) {
+            await ctx.editMessageText(`🗑️ ${targetUser.firstName} ${targetUser.lastName} silindi!`);
+        }
+    }
+
+    async handleUserPromotion(ctx, data) {
+        const user = await this.getUser(ctx.chat.id);
+        if (!user || user.role !== 'admin') {
+            await ctx.answerCbQuery('❌ Yetkiniz yok!');
+            return;
+        }
+
+        const targetChatId = data.replace('promote_user_', '');
+        const targetUser = await User.findOneAndUpdate(
+            { chatId: targetChatId },
+            { role: 'admin' },
+            { new: true }
+        );
+
+        if (targetUser) {
+            await ctx.editMessageText(`👨‍💼 ${targetUser.firstName} ${targetUser.lastName} admin yapıldı!`);
+            
+            // Notify user of promotion
+            await this.bot.telegram.sendMessage(
+                targetChatId,
+                '👨‍💼 *Admin Yetkisi Verildi!*\n\nTebrikler! Artık admin yetkileriniz bulunuyor.',
+                { parse_mode: 'Markdown' }
+            ).catch(() => {});
+        }
+    }
+
+    async handleCategorySelection(ctx, data) {
+        const category = data.replace('category_', '');
+        const chatId = ctx.chat.id.toString();
+        const user = await this.getUser(chatId);
+
+        this.userStates.set(chatId, {
+            action: 'report_product',
+            step: 'product_name',
+            data: { category }
+        });
+
+        await ctx.editMessageText(
+            `📦 *${this.getCategoryIcon(category)} ${this.getCategoryName(category)} Kategorisi*\n\n` +
+            `Eksik olan ürünün adını yazın:`
+        );
+    }
+
+    async handleTaskCallback(ctx, data) {
+        const user = await this.getUser(ctx.chat.id);
+        if (!user || !user.isApproved) return;
+
         const [, action, taskId] = data.split('_');
         const task = await Task.findById(taskId);
         
@@ -855,6 +898,9 @@ class SecurityTrackerBot extends EventEmitter {
             task.assignedTo[assigneeIndex].completed = true;
             task.assignedTo[assigneeIndex].completedAt = new Date();
             
+            // Update completed count
+            task.completedCount = task.assignedTo.filter(a => a.completed).length;
+            
             // Check if all completed
             if (task.assignedTo.every(a => a.completed)) {
                 task.status = 'completed';
@@ -864,184 +910,384 @@ class SecurityTrackerBot extends EventEmitter {
             await task.save();
             await ctx.editMessageText('✅ Görev tamamlandı olarak işaretlendi!');
             
-            this.emit('task_completed', {
-                taskId: task._id,
-                userId: user.chatId,
-                userName: `${user.firstName} ${user.lastName}`
-            });
+            // Notify admins
+            await this.notifyAdmins(
+                `✅ *Görev Tamamlandı*\n\n` +
+                `📋 ${task.title}\n` +
+                `👤 ${user.firstName} ${user.lastName}\n` +
+                `⏰ ${new Date().toLocaleString('tr-TR')}`
+            );
+            
         } else if (action === 'undo') {
             task.assignedTo[assigneeIndex].completed = false;
             task.assignedTo[assigneeIndex].completedAt = null;
             task.status = 'in_progress';
+            task.completedCount = task.assignedTo.filter(a => a.completed).length;
             
             await task.save();
             await ctx.editMessageText('↩️ Görev tamamlanmadı olarak işaretlendi.');
         }
     }
 
-    async handleProductCallback(ctx, data, user) {
-        const [, action, productId] = data.split('_');
-        
-        if (user.role === 'employee') {
+    async handleProductCompletion(ctx, data) {
+        const user = await this.getUser(ctx.chat.id);
+        if (!user || (user.role !== 'admin' && user.role !== 'manager')) {
             await ctx.answerCbQuery('❌ Yetkiniz yok!');
             return;
         }
 
-        if (action === 'manage') {
-            const product = await MissingProduct.findById(productId);
-            if (!product) {
-                await ctx.editMessageText('❌ Ürün bulunamadı.');
-                return;
-            }
-
-            const keyboard = Markup.inlineKeyboard([
-                [Markup.button.callback('✅ Çözüldü', `product_resolve_${productId}`)],
-                [Markup.button.callback('📦 Sipariş Verildi', `product_ordered_${productId}`)],
-                [Markup.button.callback('🔍 Onaylandı', `product_confirmed_${productId}`)],
-                [Markup.button.callback('❌ İptal', 'cancel')]
-            ]);
-
-            await ctx.editMessageText(
-                `📦 *${product.productName}*\n\n` +
-                `Miktar: ${product.quantity} ${product.unit || 'adet'}\n` +
-                `Durum: ${product.status}\n\n` +
-                `Ne yapmak istiyorsunuz?`,
-                { parse_mode: 'Markdown', ...keyboard }
-            );
-        } else if (action === 'resolve') {
-            await MissingProduct.findByIdAndUpdate(productId, {
+        const productId = data.replace('complete_product_', '');
+        const product = await MissingProduct.findByIdAndUpdate(
+            productId,
+            {
                 status: 'resolved',
                 resolvedAt: new Date(),
                 resolvedBy: user.chatId
-            });
-            await ctx.editMessageText('✅ Ürün sorunu çözüldü!');
-        } else if (action === 'ordered') {
-            await MissingProduct.findByIdAndUpdate(productId, {
-                status: 'ordered'
-            });
-            await ctx.editMessageText('📦 Ürün sipariş edildi olarak işaretlendi.');
-        } else if (action === 'confirmed') {
-            await MissingProduct.findByIdAndUpdate(productId, {
-                status: 'confirmed'
-            });
-            await ctx.editMessageText('🔍 Ürün eksikliği onaylandı.');
-        }
-    }
-
-    async handleLeaveCallback(ctx, data, user) {
-        const parts = data.split('_');
-        const dateType = parts[1];
-        const requestId = parts[2];
-        const request = this.requests.get(requestId);
-
-        if (!request) {
-            await ctx.editMessageText('❌ Talep bulunamadı.');
-            return;
-        }
-
-        let leaveDate = new Date();
-        let endDate = new Date();
-
-        switch(dateType) {
-            case 'today':
-                break;
-            case 'tomorrow':
-                leaveDate.setDate(leaveDate.getDate() + 1);
-                endDate = new Date(leaveDate);
-                break;
-            case 'week':
-                endDate.setDate(endDate.getDate() + 7);
-                request.duration = 'week';
-                break;
-            case 'custom':
-                this.userStates.set(user.chatId, {
-                    action: 'leave_date',
-                    requestId
-                });
-                await ctx.editMessageText('📅 İzin tarihini GG.AA.YYYY formatında yazın:');
-                return;
-        }
-
-        request.startDate = leaveDate;
-        request.endDate = endDate;
-
-        const employeeRequest = new EmployeeRequest({
-            employeeId: user.chatId,
-            employeeName: `${user.firstName} ${user.lastName}`,
-            type: 'leave',
-            details: {
-                startDate: leaveDate,
-                endDate: endDate,
-                duration: request.duration
             },
-            reason: request.reason
-        });
-
-        await employeeRequest.save();
-        this.requests.delete(requestId);
-
-        await ctx.editMessageText(
-            `✅ İzin talebiniz alındı.\n\n` +
-            `📅 Başlangıç: ${leaveDate.toLocaleDateString('tr-TR')}\n` +
-            `📅 Bitiş: ${endDate.toLocaleDateString('tr-TR')}\n\n` +
-            `⏳ Yönetici onayı bekleniyor...`
+            { new: true }
         );
 
-        await this.notifyAdmins(
-            `📅 *Yeni İzin Talebi*\n\n` +
-            `👤 ${user.firstName} ${user.lastName}\n` +
-            `📅 ${leaveDate.toLocaleDateString('tr-TR')} - ${endDate.toLocaleDateString('tr-TR')}`
-        );
+        if (product) {
+            await ctx.editMessageText(`✅ ${product.productName} tamamlandı olarak işaretlendi!`);
+        }
     }
 
-    async handleShiftCallback(ctx, data, user) {
-        const parts = data.split('_');
-        const newShift = parts[1].charAt(0).toUpperCase() + parts[1].slice(1);
-        const requestId = parts[2];
-        const request = this.requests.get(requestId);
+    async handleStateInput(ctx, state) {
+        const chatId = ctx.chat.id.toString();
+        const text = ctx.message.text;
+        const user = await this.getUser(chatId);
 
-        if (!request) {
-            await ctx.editMessageText('❌ Talep bulunamadı.');
-            return;
+        switch (state.action) {
+            case 'report_product':
+                if (state.step === 'product_name') {
+                    state.data.productName = text;
+                    state.step = 'quantity';
+                    await ctx.reply('🔢 Kaç adet eksik? (Sayı yazın)');
+                } else if (state.step === 'quantity') {
+                    state.data.quantity = parseInt(text) || 1;
+                    state.step = 'media';
+                    await ctx.reply(
+                        '📱 *Bildirim Yöntemi*\n\n' +
+                        'Şimdi ürün hakkında:\n' +
+                        '📸 Fotoğraf gönderebilirsiniz\n' +
+                        '🎙️ Ses kaydı gönderebilirsiniz\n' +
+                        '📝 Veya "yazılı" yazarak metin ile bildirebilirsiniz',
+                        { parse_mode: 'Markdown' }
+                    );
+                } else if (state.step === 'media' && text.toLowerCase() === 'yazılı') {
+                    // Text report
+                    const product = new MissingProduct({
+                        productName: state.data.productName,
+                        category: state.data.category,
+                        quantity: state.data.quantity,
+                        reportedBy: user.chatId,
+                        reportedByName: `${user.firstName} ${user.lastName}`,
+                        reportMethod: 'text'
+                    });
+                    
+                    await product.save();
+                    this.userStates.delete(chatId);
+                    
+                    await ctx.reply('✅ Eksik ürün bildirimi yazılı olarak kaydedildi!');
+                    
+                    // Notify admins
+                    await this.notifyAdmins(
+                        `📦 *Yeni Eksik Ürün Bildirimi*\n\n` +
+                        `${this.getCategoryIcon(state.data.category)} ${state.data.productName}\n` +
+                        `📊 ${state.data.quantity} adet\n` +
+                        `👤 ${user.firstName} ${user.lastName}\n` +
+                        `📝 Yazılı bildirim`
+                    );
+                }
+                break;
+
+            case 'create_task':
+                if (state.step === 'title') {
+                    state.data.title = text;
+                    state.step = 'description';
+                    await ctx.reply('📝 Görev açıklamasını yazın:');
+                } else if (state.step === 'description') {
+                    state.data.description = text;
+                    
+                    // Create task
+                    const task = new Task({
+                        title: state.data.title,
+                        description: state.data.description,
+                        assignmentType: state.data.assignmentType,
+                        assignedTo: state.data.assignedTo,
+                        assignedBy: user.chatId,
+                        assignedByName: `${user.firstName} ${user.lastName}`,
+                        totalAssigned: state.data.assignedTo.length
+                    });
+                    
+                    await task.save();
+                    this.userStates.delete(chatId);
+                    
+                    await ctx.reply('✅ Görev başarıyla oluşturuldu!');
+                    
+                    // Send task to assigned users
+                    for (const assignee of state.data.assignedTo) {
+                        await this.bot.telegram.sendMessage(
+                            assignee.userId,
+                            `🆕 *Yeni Görev!*\n\n` +
+                            `📋 *${task.title}*\n` +
+                            `📝 ${task.description}\n` +
+                            `👤 Atayan: ${user.firstName} ${user.lastName}`,
+                            {
+                                parse_mode: 'Markdown',
+                                ...Markup.inlineKeyboard([
+                                    [Markup.button.callback('✅ Tamamla', `task_complete_${task._id}`)]
+                                ])
+                            }
+                        ).catch(() => {});
+                    }
+                }
+                break;
         }
+    }
 
-        request.newShift = newShift;
+    // ==================== HELPER METHODS ====================
 
-        const employeeRequest = new EmployeeRequest({
-            employeeId: user.chatId,
-            employeeName: `${user.firstName} ${user.lastName}`,
-            type: 'shift_change',
-            details: {
-                currentShift: request.currentShift,
-                requestedShift: newShift
+    async getUser(chatId) {
+        return await User.findOne({ chatId: chatId.toString() });
+    }
+
+    async notifyAdmins(message, keyboard = null) {
+        const admins = await User.find({ role: { $in: ['admin', 'manager'] }, isActive: true, isApproved: true });
+        for (const admin of admins) {
+            try {
+                const options = { parse_mode: 'Markdown' };
+                if (keyboard) Object.assign(options, keyboard);
+                await this.bot.telegram.sendMessage(admin.chatId, message, options);
+            } catch (error) {
+                console.error(`Admin notification failed for ${admin.chatId}:`, error.message);
             }
-        });
+        }
+    }
 
-        await employeeRequest.save();
-        this.requests.delete(requestId);
+    getMainKeyboard(role) {
+        if (role === 'admin' || role === 'manager') {
+            // Admin panel
+            const adminButtons = [
+                ['➕ Görev Oluştur', '📋 Aktif Görevler'],
+                ['📦 Eksik Ürünler Listesi', '👥 Kullanıcılar'],
+                ['📢 Duyuru Yayınla', '📈 Raporlar'],
+                ['📅 İzin Talebi', '🔄 Vardiya Değişimi'],
+                ['📦 Eksik Ürün Bildir', '📊 Durum'],
+                ['❓ Yardım']
+            ];
+            return Markup.keyboard(adminButtons).resize();
+        } else {
+            // Employee panel
+            const employeeButtons = [
+                ['📋 Görevlerim', '📦 Eksik Ürün Bildir'],
+                ['📢 Duyurular', '📊 Durum'],
+                ['📅 İzin Talebi', '🔄 Vardiya Değişimi'],
+                ['❓ Yardım']
+            ];
+            return Markup.keyboard(employeeButtons).resize();
+        }
+    }
 
-        await ctx.editMessageText(
-            `✅ Vardiya değişim talebiniz alındı.\n\n` +
-            `🔄 Mevcut: ${request.currentShift}\n` +
-            `➡️ Talep: ${newShift}\n\n` +
-            `⏳ Yönetici onayı bekleniyor...`
-        );
+    getWelcomeMessage(user) {
+        const roleDisplay = this.getRoleDisplay(user.role);
+        const panelType = (user.role === 'admin' || user.role === 'manager') ? 'Yönetici Paneli' : 'Çalışan Paneli';
+        return `👋 *Hoş Geldiniz!*\n\n` +
+            `${roleDisplay} *${user.firstName} ${user.lastName || ''}*\n` +
+            `🏢 SivalTeam Bot - ${panelType}\n\n` +
+            `Aşağıdaki menüden işlem seçebilirsiniz.`;
+    }
 
-        await this.notifyAdmins(
-            `🔄 *Yeni Vardiya Değişim Talebi*\n\n` +
-            `👤 ${user.firstName} ${user.lastName}\n` +
-            `Mevcut: ${request.currentShift} → Talep: ${newShift}`
-        );
+    getApprovalKeyboard(chatId) {
+        return Markup.inlineKeyboard([
+            [Markup.button.callback('✅ Onayla', `approve_user_${chatId}`)],
+            [Markup.button.callback('❌ Reddet', `reject_user_${chatId}`)],
+            [Markup.button.callback('🚫 Engelle', `block_user_${chatId}`)],
+            [Markup.button.callback('🗑️ Sil', `delete_user_${chatId}`)]
+        ]);
+    }
+
+    getUserManagementKeyboard(chatId) {
+        return Markup.inlineKeyboard([
+            [
+                Markup.button.callback('✅ Onayla', `approve_user_${chatId}`),
+                Markup.button.callback('❌ Reddet', `reject_user_${chatId}`)
+            ],
+            [
+                Markup.button.callback('👨‍💼 Admin Yap', `promote_user_${chatId}`),
+                Markup.button.callback('🗑️ Sil', `delete_user_${chatId}`)
+            ]
+        ]);
+    }
+
+    getRoleDisplay(role) {
+        const roles = {
+            admin: '👨‍💼 Admin',
+            manager: '👔 Yönetici',
+            employee: '👷‍♂️ Çalışan'
+        };
+        return roles[role] || role;
+    }
+
+    getCategoryIcon(category) {
+        const icons = {
+            kadın: '👩',
+            erkek: '👨',
+            çocuk: '🧒',
+            çamaşır: '👕',
+            ayakkabı: '👟',
+            ev_tekstili: '🏠'
+        };
+        return icons[category] || '📦';
+    }
+
+    getCategoryName(category) {
+        const names = {
+            kadın: 'Kadın',
+            erkek: 'Erkek',
+            çocuk: 'Çocuk',
+            çamaşır: 'Çamaşır',
+            ayakkabı: 'Ayakkabı',
+            ev_tekstili: 'Ev Tekstili'
+        };
+        return names[category] || category;
+    }
+
+    getProgressBar(completed, total) {
+        if (total === 0) return '⬜⬜⬜⬜⬜';
+        const percentage = completed / total;
+        const filled = Math.round(percentage * 5);
+        return '🟩'.repeat(filled) + '⬜'.repeat(5 - filled);
+    }
+
+    isSpamMessage(msg) {
+        if (!msg.text) return false;
+        
+        const spamKeywords = [
+            'casino', 'bet', 'gambling', 'crypto', 'investment',
+            'earn money', 'click here', 'limited time', 'free money',
+            'bit.ly', 'tinyurl', 'porn', 'xxx', 'sex'
+        ];
+        
+        const text = msg.text.toLowerCase();
+        return spamKeywords.some(keyword => text.includes(keyword));
+    }
+
+    setupWebhook() {
+        if (process.env.NODE_ENV === 'production') {
+            this.bot.telegram.setWebhook(`${WEBHOOK_URL}/bot${BOT_TOKEN}`);
+            console.log(`🌐 Webhook set to: ${WEBHOOK_URL}/bot${BOT_TOKEN}`);
+        }
+    }
+
+    // Placeholder methods to be implemented
+    async showReports(ctx) {
+        await ctx.reply('📈 Raporlar özelliği geliştirilme aşamasında...');
+    }
+
+    async requestLeave(ctx) {
+        await ctx.reply('📅 İzin talebi özelliği geliştirilme aşamasında...');
+    }
+
+    async requestShiftChange(ctx) {
+        await ctx.reply('🔄 Vardiya değişimi özelliği geliştirilme aşamasında...');
+    }
+
+    async publishAnnouncement(ctx) {
+        await ctx.reply('📢 Duyuru yayınlama özelliği geliştirilme aşamasında...');
+    }
+
+    async handleIndividualTaskAssignment(ctx) {
+        await ctx.reply('👤 Bireysel görev atama özelliği geliştirilme aşamasında...');
+    }
+
+    async handleGroupTaskAssignment(ctx) {
+        await ctx.reply('👥 Toplu görev atama özelliği geliştirilme aşamasında...');
+    }
+
+    async handleLeaveCallback(ctx, data) {
+        await ctx.answerCbQuery('İzin talebi özelliği geliştirilme aşamasında...');
+    }
+
+    async handleShiftCallback(ctx, data) {
+        await ctx.answerCbQuery('Vardiya değişimi özelliği geliştirilme aşamasında...');
     }
 
     async handleCancelCallback(ctx, data) {
         const requestId = data.split('_')[1];
         this.requests.delete(requestId);
-        await ctx.editMessageText('❌ Talep iptal edildi.');
+        this.userStates.delete(ctx.chat.id.toString());
+        await ctx.editMessageText('❌ İşlem iptal edildi.');
     }
 
-    // ==================== ADMIN COMMANDS ====================
+    async handlePhotoMessage(ctx) {
+        const chatId = ctx.chat.id.toString();
+        const state = this.userStates.get(chatId);
+        
+        if (state && state.action === 'report_product' && state.step === 'media') {
+            const user = await this.getUser(chatId);
+            const photo = ctx.message.photo[ctx.message.photo.length - 1];
+            
+            const product = new MissingProduct({
+                productName: state.data.productName,
+                category: state.data.category,
+                quantity: state.data.quantity,
+                reportedBy: user.chatId,
+                reportedByName: `${user.firstName} ${user.lastName}`,
+                reportMethod: 'photo',
+                photoUrl: photo.file_id
+            });
+            
+            await product.save();
+            this.userStates.delete(chatId);
+            
+            await ctx.reply('✅ Eksik ürün bildirimi fotoğrafla kaydedildi!');
+            
+            // Notify admins
+            await this.notifyAdmins(
+                `📦 *Yeni Eksik Ürün Bildirimi*\n\n` +
+                `${this.getCategoryIcon(state.data.category)} ${state.data.productName}\n` +
+                `📊 ${state.data.quantity} adet\n` +
+                `👤 ${user.firstName} ${user.lastName}\n` +
+                `📸 Fotoğraf ile bildirildi`
+            );
+        }
+    }
 
+    async handleVoiceMessage(ctx) {
+        const chatId = ctx.chat.id.toString();
+        const state = this.userStates.get(chatId);
+        
+        if (state && state.action === 'report_product' && state.step === 'media') {
+            const user = await this.getUser(chatId);
+            
+            const product = new MissingProduct({
+                productName: state.data.productName,
+                category: state.data.category,
+                quantity: state.data.quantity,
+                reportedBy: user.chatId,
+                reportedByName: `${user.firstName} ${user.lastName}`,
+                reportMethod: 'voice',
+                voiceFileId: ctx.message.voice.file_id
+            });
+            
+            await product.save();
+            this.userStates.delete(chatId);
+            
+            await ctx.reply('✅ Eksik ürün bildirimi ses kaydıyla kaydedildi!');
+            
+            // Notify admins
+            await this.notifyAdmins(
+                `📦 *Yeni Eksik Ürün Bildirimi*\n\n` +
+                `${this.getCategoryIcon(state.data.category)} ${state.data.productName}\n` +
+                `📊 ${state.data.quantity} adet\n` +
+                `👤 ${user.firstName} ${user.lastName}\n` +
+                `🎙️ Ses kaydı ile bildirildi`
+            );
+        }
+    }
+
+    // Admin commands
     async broadcastMessage(ctx) {
         const user = await this.getUser(ctx.chat.id);
         if (!user || user.role !== 'admin') {
@@ -1055,7 +1301,7 @@ class SecurityTrackerBot extends EventEmitter {
             return;
         }
 
-        const users = await User.find({ isActive: true });
+        const users = await User.find({ isActive: true, isApproved: true });
         let sent = 0;
         let failed = 0;
 
@@ -1082,169 +1328,79 @@ class SecurityTrackerBot extends EventEmitter {
 
         const stats = {
             totalUsers: await User.countDocuments(),
-            activeUsers: await User.countDocuments({ isActive: true }),
-            pendingTasks: await Task.countDocuments({ status: { $ne: 'completed' } }),
+            approvedUsers: await User.countDocuments({ isApproved: true }),
+            pendingUsers: await User.countDocuments({ isApproved: false }),
+            activeTasks: await Task.countDocuments({ status: { $ne: 'completed' } }),
             completedTasks: await Task.countDocuments({ status: 'completed' }),
-            missingProducts: await MissingProduct.countDocuments({ status: { $ne: 'resolved' } }),
-            pendingRequests: await EmployeeRequest.countDocuments({ status: 'pending' }),
-            activeViolations: await Violation.countDocuments({ status: { $ne: 'resolved' } })
+            missingProducts: await MissingProduct.countDocuments({ status: { $ne: 'resolved' } })
         };
 
         const message = `📊 *Sistem İstatistikleri*\n\n` +
             `👥 Toplam Kullanıcı: ${stats.totalUsers}\n` +
-            `🟢 Aktif Kullanıcı: ${stats.activeUsers}\n\n` +
-            `📋 Bekleyen Görev: ${stats.pendingTasks}\n` +
-            `✅ Tamamlanan Görev: ${stats.completedTasks}\n\n` +
-            `📦 Eksik Ürün: ${stats.missingProducts}\n` +
-            `📝 Bekleyen Talep: ${stats.pendingRequests}\n` +
-            `🚨 Aktif İhlal: ${stats.activeViolations}`;
+            `✅ Onaylı: ${stats.approvedUsers}\n` +
+            `⏳ Bekleyen: ${stats.pendingUsers}\n\n` +
+            `📋 Aktif Görev: ${stats.activeTasks}\n` +
+            `✅ Tamamlanan: ${stats.completedTasks}\n\n` +
+            `📦 Eksik Ürün: ${stats.missingProducts}`;
 
         await ctx.reply(message, { parse_mode: 'Markdown' });
     }
+}
 
-    async makeAdmin(ctx) {
-        const user = await this.getUser(ctx.chat.id);
-        if (!user || user.role !== 'admin') {
-            await ctx.reply('❌ Bu komutu kullanma yetkiniz yok.');
-            return;
-        }
-
-        const targetChatId = ctx.message.text.split(' ')[1];
-        if (!targetChatId) {
-            await ctx.reply('Kullanım: /makeadmin [chatId]');
-            return;
-        }
-
-        const targetUser = await User.findOneAndUpdate(
-            { chatId: targetChatId },
-            { role: 'admin' },
-            { new: true }
-        );
-
-        if (targetUser) {
-            await ctx.reply(`✅ ${targetUser.firstName} admin yapıldı.`);
-            await this.bot.telegram.sendMessage(targetChatId, '🎉 Admin yetkisi verildi!');
-        } else {
-            await ctx.reply('❌ Kullanıcı bulunamadı.');
-        }
-    }
-
-    // ==================== HELPER METHODS ====================
-
-    async getUser(chatId) {
-        return await User.findOne({ chatId: chatId.toString() });
-    }
-
-    async notifyAdmins(message) {
-        const admins = await User.find({ role: { $in: ['admin', 'manager'] }, isActive: true });
-        for (const admin of admins) {
-            try {
-                await this.bot.telegram.sendMessage(admin.chatId, message, { parse_mode: 'Markdown' });
-            } catch (error) {
-                console.error(`Admin notification failed for ${admin.chatId}:`, error.message);
-            }
-        }
-    }
-
-    async handleStateInput(ctx, state) {
-        const chatId = ctx.chat.id.toString();
-        const text = ctx.message.text;
-
-        switch (state.action) {
-            case 'leave_date':
-                // Parse date and save leave request
-                const request = this.requests.get(state.requestId);
-                if (request) {
-                    // Date parsing logic here
-                    await ctx.reply('✅ Tarih kaydedildi. Talep gönderildi.');
-                    this.requests.delete(state.requestId);
-                }
-                this.userStates.delete(chatId);
-                break;
-
-            case 'add_task':
-                // Handle task creation steps
-                if (!state.data) state.data = {};
-                
-                if (!state.data.title) {
-                    state.data.title = text;
-                    await ctx.reply('📝 Görev açıklamasını yazın:');
-                } else if (!state.data.description) {
-                    state.data.description = text;
-                    await this.saveTask(state.data);
-                    await ctx.reply('✅ Görev oluşturuldu!');
-                    this.userStates.delete(chatId);
-                }
-                break;
-        }
-    }
-
-    getMainKeyboard(role) {
-        const baseButtons = [
-            ['📋 Görevlerim', '📦 Eksik Ürünler'],
-            ['📢 Duyurular', '📊 Durum'],
-            ['📅 İzin Talebi', '🔄 Vardiya Değişimi'],
-            ['☕ Mola', '⚙️ Ayarlar'],
-            ['❓ Yardım']
-        ];
-
-        if (role === 'admin' || role === 'manager') {
-            baseButtons.push(['👥 Kullanıcılar', '📈 Raporlar', '🚨 İhlaller']);
-        }
-
-        return Markup.keyboard(baseButtons).resize();
-    }
-
-    getWelcomeMessage(user) {
-        const roleDisplay = this.getRoleDisplay(user.role);
-        return `👋 *Hoş Geldiniz!*\n\n` +
-            `${roleDisplay} *${user.firstName} ${user.lastName || ''}*\n` +
-            `🏢 SecurityTrackerPro Bot\n\n` +
-            `Aşağıdaki menüden işlem seçebilirsiniz.`;
-    }
-
-    getRoleDisplay(role) {
-        const roles = {
-            admin: '👨‍💼 Admin',
-            manager: '👔 Yönetici',
-            employee: '👷‍♂️ Çalışan'
-        };
-        return roles[role] || role;
-    }
-
-    getStatusDisplay(status) {
-        const statuses = {
-            pending: '⏳ Bekliyor',
-            in_progress: '🔄 İşlemde',
-            completed: '✅ Tamamlandı',
-            resolved: '✅ Çözüldü',
-            reviewing: '🔍 İnceleniyor',
-            dismissed: '❌ Reddedildi',
-            approved: '✅ Onaylandı',
-            rejected: '❌ Reddedildi',
-            cancelled: '🚫 İptal edildi'
-        };
-        return statuses[status] || status;
-    }
-
-    isSpamMessage(msg) {
-        if (!msg.text) return false;
+// ==================== DATABASE CLEANUP ====================
+async function cleanupDatabase() {
+    try {
+        // Get database stats
+        const stats = await mongoose.connection.db.stats();
+        const sizeInMB = stats.dataSize / (1024 * 1024);
         
-        const spamKeywords = [
-            'casino', 'bet', 'gambling', 'crypto', 'investment',
-            'earn money', 'click here', 'limited time', 'free money',
-            'bit.ly', 'tinyurl', 'porn', 'xxx', 'sex'
-        ];
+        console.log(`📈 Database size: ${sizeInMB.toFixed(2)} MB`);
         
-        const text = msg.text.toLowerCase();
-        return spamKeywords.some(keyword => text.includes(keyword));
-    }
-
-    setupWebhook() {
-        if (process.env.NODE_ENV === 'production') {
-            this.bot.telegram.setWebhook(`${WEBHOOK_URL}/bot${BOT_TOKEN}`);
-            console.log(`🌐 Webhook set to: ${WEBHOOK_URL}/bot${BOT_TOKEN}`);
+        // If database is over 500MB, start cleanup
+        if (sizeInMB > 500) {
+            console.log('🧽 Starting database cleanup...');
+            
+            // Delete old completed tasks (older than 30 days)
+            const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
+            const deletedTasks = await Task.deleteMany({
+                status: 'completed',
+                completedAt: { $lt: thirtyDaysAgo }
+            });
+            
+            // Delete old resolved missing products (older than 30 days)
+            const deletedProducts = await MissingProduct.deleteMany({
+                status: 'resolved',
+                resolvedAt: { $lt: thirtyDaysAgo }
+            });
+            
+            // Delete old attendance records (older than 90 days)
+            const ninetyDaysAgo = new Date(Date.now() - 90 * 24 * 60 * 60 * 1000);
+            const deletedAttendance = await Attendance.deleteMany({
+                date: { $lt: ninetyDaysAgo }
+            });
+            
+            // Delete old employee requests (older than 60 days)
+            const sixtyDaysAgo = new Date(Date.now() - 60 * 24 * 60 * 60 * 1000);
+            const deletedRequests = await EmployeeRequest.deleteMany({
+                createdAt: { $lt: sixtyDaysAgo },
+                status: { $in: ['approved', 'rejected', 'cancelled'] }
+            });
+            
+            // Delete old announcements (older than 60 days)
+            const deletedAnnouncements = await Announcement.deleteMany({
+                createdAt: { $lt: sixtyDaysAgo },
+                isActive: false
+            });
+            
+            console.log(`✨ Cleanup completed:`);
+            console.log(`   - Tasks: ${deletedTasks.deletedCount}`);
+            console.log(`   - Products: ${deletedProducts.deletedCount}`);
+            console.log(`   - Attendance: ${deletedAttendance.deletedCount}`);
+            console.log(`   - Requests: ${deletedRequests.deletedCount}`);
+            console.log(`   - Announcements: ${deletedAnnouncements.deletedCount}`);
         }
+    } catch (error) {
+        console.error('❌ Database cleanup error:', error);
     }
 }
 
@@ -1256,6 +1412,13 @@ async function connectMongoDB() {
             useUnifiedTopology: true
         });
         console.log('✅ MongoDB connected successfully');
+        
+        // Run cleanup on startup
+        await cleanupDatabase();
+        
+        // Schedule cleanup every 24 hours
+        setInterval(cleanupDatabase, 24 * 60 * 60 * 1000);
+        
     } catch (error) {
         console.error('❌ MongoDB connection error:', error);
         process.exit(1);
@@ -1263,12 +1426,12 @@ async function connectMongoDB() {
 }
 
 // ==================== INITIALIZE BOT ====================
-const securityBot = new SecurityTrackerBot();
+const sivalTeamBot = new SivalTeamBot();
 
 // ==================== EXPRESS ROUTES ====================
 app.get('/', (req, res) => {
     res.json({ 
-        status: 'SecurityTrackerPro Bot Active',
+        status: 'SivalTeam Bot Active',
         timestamp: new Date().toISOString(),
         version: '3.0.0'
     });
@@ -1284,7 +1447,7 @@ app.get('/health', (req, res) => {
 });
 
 // Webhook endpoint
-app.use(securityBot.bot.webhookCallback(`/bot${BOT_TOKEN}`));
+app.use(sivalTeamBot.bot.webhookCallback(`/bot${BOT_TOKEN}`));
 
 // API Routes
 app.post('/api/register-user', async (req, res) => {
@@ -1309,40 +1472,19 @@ app.post('/api/register-user', async (req, res) => {
     }
 });
 
-app.post('/api/send-task', async (req, res) => {
-    try {
-        const { task } = req.body;
-        
-        for (const assignee of task.assignedTo) {
-            const user = await User.findOne({ chatId: assignee.userId });
-            if (user) {
-                await securityBot.bot.telegram.sendMessage(
-                    user.chatId,
-                    `🆕 *Yeni Görev!*\n\n${task.title}\n${task.description}`,
-                    { parse_mode: 'Markdown' }
-                );
-            }
-        }
-        
-        res.json({ success: true });
-    } catch (error) {
-        res.status(500).json({ error: error.message });
-    }
-});
-
 // ==================== SERVER START ====================
 async function startServer() {
     await connectMongoDB();
     
     app.listen(PORT, () => {
-        console.log(`🚀 SecurityTrackerPro Bot Server running on port ${PORT}`);
+        console.log(`🚀 SivalTeam Bot Server running on port ${PORT}`);
         console.log(`🌐 Health endpoint: http://localhost:${PORT}/health`);
         console.log(`📡 Environment: ${process.env.NODE_ENV || 'development'}`);
     });
 
     // Start polling in development
     if (process.env.NODE_ENV !== 'production') {
-        securityBot.bot.launch();
+        sivalTeamBot.bot.launch();
         console.log('🤖 Bot polling started for development');
     }
 }
@@ -1350,13 +1492,13 @@ async function startServer() {
 // Graceful shutdown
 process.once('SIGINT', () => {
     console.log('🛑 Received SIGINT, shutting down gracefully...');
-    securityBot.bot.stop('SIGINT');
+    sivalTeamBot.bot.stop('SIGINT');
     process.exit(0);
 });
 
 process.once('SIGTERM', () => {
     console.log('🛑 Received SIGTERM, shutting down gracefully...');
-    securityBot.bot.stop('SIGTERM');
+    sivalTeamBot.bot.stop('SIGTERM');
     process.exit(0);
 });
 
@@ -1366,4 +1508,4 @@ startServer().catch(error => {
     process.exit(1);
 });
 
-module.exports = { app, securityBot };
+module.exports = { app, sivalTeamBot };
