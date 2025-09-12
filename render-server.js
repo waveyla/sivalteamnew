@@ -299,8 +299,12 @@ class SivalTeamBot extends EventEmitter {
             const chatId = ctx.chat.id.toString();
             const state = this.userStates.get(chatId);
             
+            console.log(`📝 Text received from ${chatId}: "${ctx.message.text}"`);
             if (state) {
+                console.log(`🎯 State found: ${state.action} - ${state.step}`);
                 await this.handleStateInput(ctx, state);
+            } else {
+                console.log(`❌ No state found for ${chatId}`);
             }
         });
     }
@@ -1118,10 +1122,13 @@ class SivalTeamBot extends EventEmitter {
                     await announcement.save();
                     this.userStates.delete(chatId);
                     
-                    await ctx.reply('✅ Duyuru yayınlandı!');
-                    
                     // Send announcement to all users
                     const users = await User.find({ isApproved: true, isActive: true });
+                    console.log(`📢 Duyuru gönderiliyor ${users.length} kullanıcıya...`);
+                    
+                    let successCount = 0;
+                    let failCount = 0;
+                    
                     for (const targetUser of users) {
                         try {
                             await this.bot.telegram.sendMessage(
@@ -1129,10 +1136,14 @@ class SivalTeamBot extends EventEmitter {
                                 `📢 *DUYURU*\n\n${text}\n\n👤 ${user.firstName} ${user.lastName}`,
                                 { parse_mode: 'Markdown' }
                             );
+                            successCount++;
                         } catch (error) {
                             console.error(`Duyuru gönderilemedi: ${targetUser.chatId}`, error.message);
+                            failCount++;
                         }
                     }
+                    
+                    await ctx.reply(`✅ Duyuru yayınlandı!\n\n📊 ${successCount} başarılı, ${failCount} başarısız`);
                 }
                 break;
         }
@@ -1284,7 +1295,7 @@ class SivalTeamBot extends EventEmitter {
 
     async publishAnnouncement(ctx) {
         const user = await this.getUser(ctx.chat.id);
-        if (!user || user.role !== 'admin') {
+        if (!user || (user.role !== 'admin' && user.role !== 'manager')) {
             await ctx.reply('❌ Bu özellik sadece yöneticiler içindir.');
             return;
         }
