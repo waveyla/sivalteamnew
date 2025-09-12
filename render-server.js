@@ -5,6 +5,7 @@ const cors = require('cors');
 const helmet = require('helmet');
 const { RateLimiterMemory } = require('rate-limiter-flexible');
 const EventEmitter = require('events');
+const schedule = require('node-schedule');
 require('dotenv').config();
 
 // Environment variables
@@ -2304,6 +2305,190 @@ async function cleanupDatabase() {
     }
 }
 
+// ==================== MONTHLY STATISTICS ====================
+async function sendMonthlyStatistics() {
+    try {
+        console.log('📊 Generating monthly statistics report...');
+        
+        // Get date range for previous month
+        const now = new Date();
+        const firstDayLastMonth = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+        const lastDayLastMonth = new Date(now.getFullYear(), now.getMonth(), 0, 23, 59, 59);
+        
+        const monthName = firstDayLastMonth.toLocaleDateString('tr-TR', { 
+            month: 'long', 
+            year: 'numeric' 
+        });
+        
+        // Get all users for reference
+        const allUsers = await User.find({ 
+            isApproved: true, 
+            role: { $in: ['employee', 'manager'] } 
+        });
+        
+        // Task statistics
+        const tasksLastMonth = await Task.find({
+            createdAt: { $gte: firstDayLastMonth, $lte: lastDayLastMonth }
+        });
+        
+        // Calculate task assignment statistics
+        const taskAssignmentStats = {};
+        const taskCompletionStats = {};
+        
+        tasksLastMonth.forEach(task => {
+            task.assignedTo.forEach(assignee => {
+                // Count assignments
+                if (!taskAssignmentStats[assignee.userId]) {
+                    taskAssignmentStats[assignee.userId] = {
+                        name: assignee.name,
+                        count: 0
+                    };
+                }
+                taskAssignmentStats[assignee.userId].count++;
+                
+                // Count completions
+                if (assignee.completed) {
+                    if (!taskCompletionStats[assignee.userId]) {
+                        taskCompletionStats[assignee.userId] = {
+                            name: assignee.name,
+                            count: 0
+                        };
+                    }
+                    taskCompletionStats[assignee.userId].count++;
+                }
+            });
+        });
+        
+        // Missing product reports statistics
+        const missingProducts = await MissingProduct.find({
+            reportedAt: { $gte: firstDayLastMonth, $lte: lastDayLastMonth }
+        });
+        
+        const productReportStats = {};
+        missingProducts.forEach(product => {
+            if (!productReportStats[product.reportedBy]) {
+                productReportStats[product.reportedBy] = {
+                    name: product.reportedByName,
+                    count: 0
+                };
+            }
+            productReportStats[product.reportedBy].count++;
+        });
+        
+        // User activity statistics (based on lastActive)
+        const activeUsers = allUsers.filter(user => 
+            user.lastActive && 
+            user.lastActive >= firstDayLastMonth && 
+            user.lastActive <= lastDayLastMonth
+        );
+        
+        // Sort statistics
+        const topTaskAssigned = Object.entries(taskAssignmentStats)
+            .sort(([,a], [,b]) => b.count - a.count)
+            .slice(0, 5);
+            
+        const topTaskCompleted = Object.entries(taskCompletionStats)
+            .sort(([,a], [,b]) => b.count - a.count)
+            .slice(0, 5);
+            
+        const topProductReports = Object.entries(productReportStats)
+            .sort(([,a], [,b]) => b.count - a.count)
+            .slice(0, 5);
+        
+        // Generate report message
+        let report = `📊 *${monthName} Aylık İstatistik Raporu*\n\n`;
+        
+        // General statistics
+        report += `📋 *Genel İstatistikler:*\n`;
+        report += `• Toplam Görev: ${tasksLastMonth.length}\n`;
+        report += `• Eksik Ürün Bildirimi: ${missingProducts.length}\n`;
+        report += `• Aktif Kullanıcı: ${activeUsers.length}/${allUsers.length}\n\n`;
+        
+        // Top task assignments
+        if (topTaskAssigned.length > 0) {
+            report += `🎯 *En Çok Görev Atanan Çalışanlar:*\n`;
+            topTaskAssigned.forEach(([userId, data], index) => {
+                const medal = index === 0 ? '🥇' : index === 1 ? '🥈' : index === 2 ? '🥉' : '📍';
+                report += `${medal} ${data.name}: ${data.count} görev\n`;
+            });
+            report += `\n`;
+        }
+        
+        // Top task completions
+        if (topTaskCompleted.length > 0) {
+            report += `✅ *En Çok Görev Tamamlayan Çalışanlar:*\n`;
+            topTaskCompleted.forEach(([userId, data], index) => {
+                const medal = index === 0 ? '🥇' : index === 1 ? '🥈' : index === 2 ? '🥉' : '📍';
+                report += `${medal} ${data.name}: ${data.count} görev\n`;
+            });
+            report += `\n`;
+        }
+        
+        // Top product reporters
+        if (topProductReports.length > 0) {
+            report += `📦 *En Çok Eksik Ürün Bildiren Çalışanlar:*\n`;
+            topProductReports.forEach(([userId, data], index) => {
+                const medal = index === 0 ? '🥇' : index === 1 ? '🥈' : index === 2 ? '🥉' : '📍';
+                report += `${medal} ${data.name}: ${data.count} bildirim\n`;
+            });
+            report += `\n`;
+        }
+        
+        // Performance insights
+        report += `💡 *Performans Öngörüleri:*\n`;
+        
+        if (topTaskCompleted.length > 0) {
+            const topPerformer = topTaskCompleted[0][1];
+            report += `• 🌟 Ayın Yıldızı: ${topPerformer.name}\n`;
+        }
+        
+        if (activeUsers.length < allUsers.length * 0.8) {
+            report += `• ⚠️ Bot kullanım oranı düşük: %${Math.round((activeUsers.length / allUsers.length) * 100)}\n`;
+        } else {
+            report += `• 🚀 Bot kullanım oranı yüksek: %${Math.round((activeUsers.length / allUsers.length) * 100)}\n`;
+        }
+        
+        const completionRate = taskCompletionStats && tasksLastMonth.length > 0 ? 
+            Math.round((Object.values(taskCompletionStats).reduce((sum, stat) => sum + stat.count, 0) / 
+            Object.values(taskAssignmentStats).reduce((sum, stat) => sum + stat.count, 0)) * 100) : 0;
+            
+        if (completionRate > 80) {
+            report += `• ✅ Görev tamamlama oranı mükemmel: %${completionRate}\n`;
+        } else if (completionRate > 60) {
+            report += `• 📊 Görev tamamlama oranı iyi: %${completionRate}\n`;
+        } else {
+            report += `• 📈 Görev tamamlama oranı artırılabilir: %${completionRate}\n`;
+        }
+        
+        report += `\n📅 Rapor tarihi: ${now.toLocaleDateString('tr-TR')}`;
+        
+        // Send to all admins
+        const admins = await User.find({ 
+            role: { $in: ['admin', 'manager'] }, 
+            isActive: true, 
+            isApproved: true 
+        });
+        
+        for (const admin of admins) {
+            try {
+                await sivalTeamBot.bot.telegram.sendMessage(
+                    admin.chatId,
+                    report,
+                    { parse_mode: 'Markdown' }
+                );
+                console.log(`✅ Monthly report sent to admin: ${admin.firstName}`);
+            } catch (error) {
+                console.error(`❌ Failed to send monthly report to ${admin.firstName}:`, error.message);
+            }
+        }
+        
+        console.log('✅ Monthly statistics report sent successfully');
+        
+    } catch (error) {
+        console.error('❌ Monthly statistics error:', error);
+    }
+}
+
 // ==================== MONGODB CONNECTION ====================
 async function connectMongoDB() {
     try {
@@ -2339,6 +2524,17 @@ async function connectMongoDB() {
         
         // Schedule cleanup every 24 hours
         setInterval(cleanupDatabase, 24 * 60 * 60 * 1000);
+        
+        // Schedule monthly statistics report (1st day of every month at 9 AM Turkey time)
+        schedule.scheduleJob('0 9 1 * *', async () => {
+            console.log('📊 Running scheduled monthly statistics report...');
+            try {
+                await sendMonthlyStatistics();
+                console.log('✅ Scheduled monthly statistics completed successfully');
+            } catch (error) {
+                console.error('❌ Scheduled monthly statistics failed:', error.message);
+            }
+        });
         
     } catch (error) {
         console.error('❌ MongoDB connection error:', error);
