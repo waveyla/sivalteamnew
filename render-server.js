@@ -1594,11 +1594,28 @@ class SivalTeamBot extends EventEmitter {
                     console.log(`🔄 Retrying webhook setup in ${baseDelay/1000} seconds... (Attempt ${retryCount + 1}/${maxRetries})`);
                     setTimeout(() => this.setupWebhook(retryCount + 1), baseDelay);
                 } else {
-                    console.log('⚠️ Webhook setup failed after maximum retries. Bot will work in polling mode.');
+                    console.log('⚠️ Webhook setup failed after maximum retries. Switching to polling mode.');
+                    await this.startPolling();
                     console.log('🔄 Will retry webhook setup every 5 minutes...');
                     setInterval(() => this.setupWebhook(0), 300000);
                 }
             }
+        }
+    }
+
+    async startPolling() {
+        try {
+            console.log('🔄 Starting polling mode...');
+            await this.bot.telegram.deleteWebhook();
+            this.bot.launch({
+                polling: {
+                    timeout: 30,
+                    limit: 100
+                }
+            });
+            console.log('✅ Bot started in polling mode');
+        } catch (error) {
+            console.error('❌ Failed to start polling:', error);
         }
     }
 
