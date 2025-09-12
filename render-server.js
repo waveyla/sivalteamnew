@@ -1868,10 +1868,12 @@ async function connectMongoDB() {
             maxPoolSize: 10, // Maximum number of connections
             serverSelectionTimeoutMS: 5000, // How long to try selecting server
             socketTimeoutMS: 45000, // How long a socket stays open
-            bufferMaxEntries: 0, // Disable mongoose buffering
-            bufferCommands: false, // Disable mongoose buffering commands
             maxIdleTimeMS: 30000 // Close connections after 30 seconds of inactivity
         });
+        
+        // Configure mongoose buffering separately
+        mongoose.set('bufferCommands', false);
+        mongoose.set('bufferMaxEntries', 0);
         console.log('✅ MongoDB connected successfully');
         
         // Only clear on first deploy - check if there are users without any admin
