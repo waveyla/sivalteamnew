@@ -375,6 +375,26 @@ class SivalTeamBot extends EventEmitter {
     setupAdminCommands() {
         this.bot.command('broadcast', async (ctx) => await this.broadcastMessage(ctx));
         this.bot.command('stats', async (ctx) => await this.showStats(ctx));
+        
+        // Emergency admin assignment command
+        this.bot.command('makeadmin', async (ctx) => {
+            const adminCount = await User.countDocuments({ role: 'admin' });
+            if (adminCount === 0) {
+                const chatId = ctx.chat.id.toString();
+                await User.findOneAndUpdate(
+                    { chatId },
+                    { role: 'admin', isApproved: true },
+                    { upsert: true, new: true }
+                );
+                await ctx.reply('👑 *Yönetici yetkisi verildi!*\n\nArtık tüm admin özelliklerini kullanabilirsiniz.', {
+                    parse_mode: 'Markdown',
+                    ...this.getMainKeyboard('admin')
+                });
+                console.log(`🚨 Emergency admin assigned: ${ctx.from.first_name} (${chatId})`);
+            } else {
+                await ctx.reply('❌ Sistemde zaten admin bulunmakta.');
+            }
+        });
     }
 
     // ==================== HANDLER METHODS ====================
