@@ -1574,10 +1574,19 @@ class SivalTeamBot extends EventEmitter {
         return spamKeywords.some(keyword => text.includes(keyword));
     }
 
-    setupWebhook() {
+    async setupWebhook() {
         if (process.env.NODE_ENV === 'production') {
-            this.bot.telegram.setWebhook(`${WEBHOOK_URL}/bot${BOT_TOKEN}`);
-            console.log(`🌐 Webhook set to: ${WEBHOOK_URL}/bot${BOT_TOKEN}`);
+            try {
+                await this.bot.telegram.setWebhook(`${WEBHOOK_URL}/bot${BOT_TOKEN}`, {
+                    allowed_updates: ['message', 'callback_query'],
+                    drop_pending_updates: true
+                });
+                console.log(`🌐 Webhook set to: ${WEBHOOK_URL}/bot${BOT_TOKEN}`);
+            } catch (error) {
+                console.error('❌ Failed to set webhook:', error.message);
+                console.log('🔄 Retrying webhook setup in 10 seconds...');
+                setTimeout(() => this.setupWebhook(), 10000);
+            }
         }
     }
 
