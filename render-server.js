@@ -106,7 +106,7 @@ const taskSchema = new mongoose.Schema({
     taskId: { type: String, unique: true, sparse: true }, // Add taskId field to match existing index
     title: { type: String, required: true },
     description: String,
-    assignmentType: { type: String, enum: ['individual', 'group'], default: 'individual' },
+    assignmentType: { type: String, enum: ['individual', 'group', 'floor'], default: 'individual' },
     assignedTo: [{
         userId: String,
         name: String,
