@@ -94,6 +94,7 @@ const userSchema = new mongoose.Schema({
 
 // Task Schema - Görev yönetimi
 const taskSchema = new mongoose.Schema({
+    taskId: { type: String, unique: true, sparse: true }, // Add taskId field to match existing index
     title: { type: String, required: true },
     description: String,
     assignmentType: { type: String, enum: ['individual', 'group'], default: 'individual' },
@@ -799,7 +800,7 @@ class SivalTeamBot extends EventEmitter {
                     $set: { 
                         breakStart: new Date(),
                         userId: user.chatId,
-                        userName: `${user.firstName} ${user.lastName}`
+                        userName: `${user.firstName} ${user.lastName || ''}`
                     }
                 },
                 { upsert: true, new: true }
@@ -832,7 +833,7 @@ class SivalTeamBot extends EventEmitter {
         });
 
         let statusMessage = `📊 *Güncel Durumunuz*\n\n`;
-        statusMessage += `👤 ${user.firstName} ${user.lastName}\n`;
+        statusMessage += `👤 ${user.firstName} ${user.lastName || ''}\n`;
         statusMessage += `🏢 ${user.department || 'Departman belirtilmemiş'}\n`;
         statusMessage += `💼 ${user.position || 'Pozisyon belirtilmemiş'}\n`;
         statusMessage += `⏰ Vardiya: ${user.shift}\n\n`;
@@ -1072,7 +1073,7 @@ class SivalTeamBot extends EventEmitter {
             await this.notifyAdmins(
                 `✅ *Görev Tamamlandı*\n\n` +
                 `📋 ${task.title}\n` +
-                `👤 ${user.firstName} ${user.lastName}\n` +
+                `👤 ${user.firstName} ${user.lastName || ''}\n` +
                 `⏰ ${new Date().toLocaleString('tr-TR')}`
             );
             
@@ -1131,7 +1132,7 @@ class SivalTeamBot extends EventEmitter {
                         category: state.data.category,
                         quantity: 1, // Default to 1
                         reportedBy: user.chatId,
-                        reportedByName: `${user.firstName} ${user.lastName}`,
+                        reportedByName: `${user.firstName} ${user.lastName || ''}`,
                         reportMethod: 'text'
                     });
                     
@@ -1150,7 +1151,7 @@ class SivalTeamBot extends EventEmitter {
                     await this.notifyAdmins(
                         `📦 *Yeni Eksik Ürün Bildirimi*\n\n` +
                         `${this.getCategoryIcon(state.data.category)} ${text}\n` +
-                        `👤 ${user.firstName} ${user.lastName}`
+                        `👤 ${user.firstName} ${user.lastName || ''}`
                     );
                 }
                 break;
@@ -1183,12 +1184,13 @@ class SivalTeamBot extends EventEmitter {
                     
                     // Create task
                     const task = new Task({
+                        taskId: `task_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`, // Generate unique taskId
                         title: text, // Use text as both title and description
                         description: text,
                         assignmentType: state.data.type,
                         assignedTo: assignedTo,
                         assignedBy: user.chatId,
-                        assignedByName: `${user.firstName} ${user.lastName}`,
+                        assignedByName: `${user.firstName} ${user.lastName || ''}`, // Fix undefined issue
                         totalAssigned: assignedTo.length
                     });
                     
@@ -1202,9 +1204,8 @@ class SivalTeamBot extends EventEmitter {
                         await this.bot.telegram.sendMessage(
                             assignee.userId,
                             `🆕 *Yeni Görev!*\n\n` +
-                            `📋 *${task.title}*\n` +
-                            `📝 ${task.description}\n` +
-                            `👤 Atayan: ${user.firstName} ${user.lastName}`,
+                            `📋 ${task.title}\n\n` +
+                            `👤 Atayan: ${user.firstName} ${user.lastName || ''}`,
                             {
                                 parse_mode: 'Markdown',
                                 ...Markup.inlineKeyboard([
@@ -1227,7 +1228,7 @@ class SivalTeamBot extends EventEmitter {
                         title: 'Genel Duyuru', // Default title
                         message: text, // Use 'message' field as required by schema
                         createdBy: user.chatId,
-                        createdByName: `${user.firstName} ${user.lastName}`,
+                        createdByName: `${user.firstName} ${user.lastName || ''}`,
                         targetRole: 'all'
                     });
                     
@@ -1244,7 +1245,7 @@ class SivalTeamBot extends EventEmitter {
                         try {
                             await this.bot.telegram.sendMessage(
                                 targetUser.chatId,
-                                `📢 *DUYURU*\n\n${text}\n\n👤 ${user.firstName} ${user.lastName}`,
+                                `📢 *DUYURU*\n\n${text}\n\n👤 ${user.firstName} ${user.lastName || ''}`,
                                 { parse_mode: 'Markdown' }
                             );
                             successCount++;
