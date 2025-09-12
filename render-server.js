@@ -504,6 +504,7 @@ class SivalTeamBot extends EventEmitter {
     setupAdminCommands() {
         this.bot.command('broadcast', async (ctx) => await this.broadcastMessage(ctx));
         this.bot.command('stats', async (ctx) => await this.showStats(ctx));
+        this.bot.command('webhook', async (ctx) => await this.checkWebhookStatus(ctx));
     }
 
     // ==================== HANDLER METHODS ====================
@@ -1574,18 +1575,29 @@ class SivalTeamBot extends EventEmitter {
         return spamKeywords.some(keyword => text.includes(keyword));
     }
 
-    async setupWebhook() {
+    async setupWebhook(retryCount = 0) {
         if (process.env.NODE_ENV === 'production') {
             try {
                 await this.bot.telegram.setWebhook(`${WEBHOOK_URL}/bot${BOT_TOKEN}`, {
                     allowed_updates: ['message', 'callback_query'],
                     drop_pending_updates: true
                 });
-                console.log(`🌐 Webhook set to: ${WEBHOOK_URL}/bot${BOT_TOKEN}`);
+                console.log(`🌐 Webhook set successfully: ${WEBHOOK_URL}/bot${BOT_TOKEN}`);
+                this.webhookSetupRetries = 0;
             } catch (error) {
                 console.error('❌ Failed to set webhook:', error.message);
-                console.log('🔄 Retrying webhook setup in 10 seconds...');
-                setTimeout(() => this.setupWebhook(), 10000);
+                
+                const maxRetries = 10;
+                const baseDelay = Math.min(30000, 10000 * Math.pow(1.5, retryCount));
+                
+                if (retryCount < maxRetries) {
+                    console.log(`🔄 Retrying webhook setup in ${baseDelay/1000} seconds... (Attempt ${retryCount + 1}/${maxRetries})`);
+                    setTimeout(() => this.setupWebhook(retryCount + 1), baseDelay);
+                } else {
+                    console.log('⚠️ Webhook setup failed after maximum retries. Bot will work in polling mode.');
+                    console.log('🔄 Will retry webhook setup every 5 minutes...');
+                    setInterval(() => this.setupWebhook(0), 300000);
+                }
             }
         }
     }
@@ -1601,6 +1613,36 @@ class SivalTeamBot extends EventEmitter {
 
     async requestShiftChange(ctx) {
         await ctx.reply('🔄 Vardiya değişimi özelliği geliştirilme aşamasında...');
+    }
+
+    async checkWebhookStatus(ctx) {
+        const user = await this.getUser(ctx.chat.id);
+        if (!user || user.role !== 'admin') {
+            await ctx.reply('❌ Bu komut sadece adminler için.');
+            return;
+        }
+
+        try {
+            const webhookInfo = await this.bot.telegram.getWebhookInfo();
+            const message = `🌐 *Webhook Durumu*\n\n` +
+                `📍 URL: ${webhookInfo.url || 'Tanımlanmamış'}\n` +
+                `✅ Aktif: ${webhookInfo.url ? 'Evet' : 'Hayır'}\n` +
+                `🔢 Bekleyen Updates: ${webhookInfo.pending_update_count}\n` +
+                `📅 Son Hata: ${webhookInfo.last_error_date ? 
+                    new Date(webhookInfo.last_error_date * 1000).toLocaleString('tr-TR') : 
+                    'Hata yok'}\n` +
+                `💬 Hata Mesajı: ${webhookInfo.last_error_message || 'Yok'}`;
+
+            await ctx.reply(message, { parse_mode: 'Markdown' });
+
+            if (!webhookInfo.url) {
+                await ctx.reply('🔄 Webhook kurulumu başlatılıyor...');
+                this.setupWebhook(0);
+            }
+        } catch (error) {
+            console.error('Webhook status check error:', error);
+            await ctx.reply('❌ Webhook durumu kontrol edilemedi: ' + error.message);
+        }
     }
 
     async publishAnnouncement(ctx) {
