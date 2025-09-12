@@ -1885,7 +1885,6 @@ async function connectMongoDB() {
         
         // Configure mongoose buffering separately
         mongoose.set('bufferCommands', false);
-        mongoose.set('bufferMaxEntries', 0);
         console.log('✅ MongoDB connected successfully');
         
         // Only clear on first deploy - check if there are users without any admin
