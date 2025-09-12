@@ -2285,10 +2285,10 @@ async function cleanupDatabase() {
                 status: { $in: ['approved', 'rejected', 'cancelled'] }
             });
             
-            // Delete old announcements (older than 60 days)
+            // Delete old announcements (older than 7 days) - Weekly cleanup
+            const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
             const deletedAnnouncements = await Announcement.deleteMany({
-                createdAt: { $lt: sixtyDaysAgo },
-                isActive: false
+                createdAt: { $lt: sevenDaysAgo }
             });
             
             console.log(`✨ Cleanup completed:`);
