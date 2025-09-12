@@ -21,6 +21,24 @@ app.use(express.json({ limit: '10mb' }));
 
 // Note: Keep-alive disabled to stay within Render free tier limits (750 hours/month)
 
+// Turkey time helper
+const getTurkeyTime = () => {
+    return new Date().toLocaleString('tr-TR', {
+        timeZone: 'Europe/Istanbul',
+        year: 'numeric',
+        month: '2-digit',
+        day: '2-digit',
+        hour: '2-digit',
+        minute: '2-digit',
+        second: '2-digit'
+    });
+};
+
+// Log current time every 30 minutes
+setInterval(() => {
+    console.log(`🕐 Current Turkey time: ${getTurkeyTime()}`);
+}, 30 * 60 * 1000);
+
 // Rate limiting - more permissive
 const rateLimiter = new RateLimiterMemory({
     keyPrefix: 'sivalteam_bot',
@@ -158,7 +176,7 @@ class SivalTeamBot extends EventEmitter {
         this.setupCallbackHandlers();
         this.setupAdminCommands();
         this.setupWebhook();
-        console.log('🤖 SivalTeam Bot initialized');
+        console.log(`🤖 SivalTeam Bot initialized at ${getTurkeyTime()}`);
     }
 
     setupMiddleware() {
@@ -1806,7 +1824,7 @@ async function startServer() {
     await connectMongoDB();
     
     app.listen(PORT, () => {
-        console.log(`🚀 SivalTeam Bot Server running on port ${PORT}`);
+        console.log(`🚀 SivalTeam Bot Server running on port ${PORT} at ${getTurkeyTime()}`);
         console.log(`🌐 Health endpoint: http://localhost:${PORT}/health`);
         console.log(`📡 Environment: ${process.env.NODE_ENV || 'development'}`);
     });
