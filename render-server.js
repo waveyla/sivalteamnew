@@ -91,6 +91,7 @@ const userSchema = new mongoose.Schema({
     isApproved: { type: Boolean, default: false },
     department: String,
     position: String,
+    floor: { type: String, enum: ['-1', 'Zemin', '1', '2'], default: 'Zemin' }, // -1 (Depo), Zemin, 1. Kat, 2. Kat
     shift: { type: String, enum: ['Sabah', 'Öğlen', 'Akşam', 'Gece'], default: 'Sabah' },
     preferredShift: String,
     registeredAt: { type: Date, default: Date.now },
@@ -440,6 +441,9 @@ class SivalTeamBot extends EventEmitter {
                 else if (data.startsWith('task_group')) {
                     await this.handleGroupTaskAssignment(ctx);
                 }
+                else if (data.startsWith('task_floor')) {
+                    await this.handleFloorTaskAssignment(ctx);
+                }
                 // Task completion callbacks (format: task_complete_ID or task_undo_ID)
                 else if (data.startsWith('task_complete_') || data.startsWith('task_undo_')) {
                     await this.handleTaskCallback(ctx, data);
@@ -476,6 +480,12 @@ class SivalTeamBot extends EventEmitter {
                 // Department selection for new users
                 else if (data.startsWith('dept_')) {
                     await this.handleDepartmentSelection(ctx, data);
+                }
+                else if (data.startsWith('floor_')) {
+                    await this.handleFloorSelection(ctx, data);
+                }
+                else if (data.startsWith('assign_floor_')) {
+                    await this.handleFloorAssignment(ctx, data);
                 }
 
                 await ctx.answerCbQuery();
@@ -689,7 +699,8 @@ class SivalTeamBot extends EventEmitter {
                 parse_mode: 'Markdown',
                 ...Markup.inlineKeyboard([
                     [Markup.button.callback('👤 Bireysel Atama', 'task_individual')],
-                    [Markup.button.callback('👥 Toplu Atama', 'task_group')],
+                    [Markup.button.callback('👥 Toplu Atama (Tüm Çalışanlar)', 'task_group')],
+                    [Markup.button.callback('🏢 Kat Bazlı Atama', 'task_floor')],
                     [Markup.button.callback('❌ İptal', 'cancel_task')]
                 ])
             }
@@ -1279,6 +1290,30 @@ class SivalTeamBot extends EventEmitter {
                             name: `${emp.firstName} ${emp.lastName || ''}`,
                             completed: false
                         }));
+                    } else if (state.data.type === 'floor') {
+                        // For floor-based tasks, assign to employees on specific floor(s)
+                        let floorQuery = {};
+                        if (state.data.floor === 'all') {
+                            // All floors - get all employees
+                            floorQuery = { 
+                                isApproved: true, 
+                                role: { $in: ['employee', 'manager'] } 
+                            };
+                        } else {
+                            // Specific floor
+                            floorQuery = { 
+                                isApproved: true, 
+                                role: { $in: ['employee', 'manager'] },
+                                floor: state.data.floor
+                            };
+                        }
+                        
+                        const employees = await User.find(floorQuery);
+                        assignedTo = employees.map(emp => ({
+                            userId: emp.chatId,
+                            name: `${emp.firstName} ${emp.lastName || ''}`,
+                            completed: false
+                        }));
                     }
                     
                     // Create task
@@ -1296,7 +1331,17 @@ class SivalTeamBot extends EventEmitter {
                     await task.save();
                     this.userStates.delete(chatId);
                     
-                    await ctx.reply('✅ Görev başarıyla oluşturuldu!');
+                    // Create success message based on task type
+                    let successMessage = '✅ Görev başarıyla oluşturuldu!';
+                    if (state.data.type === 'floor') {
+                        successMessage += `\n🏢 ${state.data.floorDisplay} çalışanlarına gönderildi (${assignedTo.length} kişi)`;
+                    } else if (state.data.type === 'group') {
+                        successMessage += `\n👥 Tüm çalışanlara gönderildi (${assignedTo.length} kişi)`;
+                    } else if (state.data.type === 'individual') {
+                        successMessage += `\n👤 ${state.data.selectedEmployee.name} kişisine gönderildi`;
+                    }
+                    
+                    await ctx.reply(successMessage);
                     
                     // Send task to assigned users
                     for (const assignee of assignedTo) {
@@ -1661,6 +1706,83 @@ class SivalTeamBot extends EventEmitter {
         });
     }
 
+    async handleFloorTaskAssignment(ctx) {
+        const chatId = ctx.chat.id.toString();
+        
+        console.log(`🏢 Admin starting floor-based task assignment`);
+        
+        // Ask which floor to assign task to
+        try {
+            await ctx.editMessageText(
+                '🏢 *Kat Bazlı Görev Atama*\n\nHangi kata görev atamak istiyorsunuz?',
+                {
+                    parse_mode: 'Markdown',
+                    ...Markup.inlineKeyboard([
+                        [Markup.button.callback('📦 -1 Kat', 'assign_floor_-1')],
+                        [Markup.button.callback('🏪 Zemin Kat', 'assign_floor_zemin')],
+                        [Markup.button.callback('🏢 1. Kat', 'assign_floor_1')],
+                        [Markup.button.callback('🏢 2. Kat', 'assign_floor_2')],
+                        [Markup.button.callback('🏢 Tüm Katlar', 'assign_floor_all')],
+                        [Markup.button.callback('❌ İptal', 'cancel_task')]
+                    ])
+                }
+            );
+        } catch (error) {
+            await ctx.reply(
+                '🏢 *Kat Bazlı Görev Atama*\n\nHangi kata görev atamak istiyorsunuz?',
+                {
+                    parse_mode: 'Markdown',
+                    ...Markup.inlineKeyboard([
+                        [Markup.button.callback('📦 -1 Kat', 'assign_floor_-1')],
+                        [Markup.button.callback('🏪 Zemin Kat', 'assign_floor_zemin')],
+                        [Markup.button.callback('🏢 1. Kat', 'assign_floor_1')],
+                        [Markup.button.callback('🏢 2. Kat', 'assign_floor_2')],
+                        [Markup.button.callback('🏢 Tüm Katlar', 'assign_floor_all')],
+                        [Markup.button.callback('❌ İptal', 'cancel_task')]
+                    ])
+                }
+            );
+        }
+    }
+
+    async handleFloorAssignment(ctx, data) {
+        const chatId = ctx.chat.id.toString();
+        const selectedFloor = data.replace('assign_floor_', '');
+        
+        console.log(`🏢 Floor ${selectedFloor} selected for task assignment`);
+        
+        const floorDisplayNames = {
+            '-1': '-1 Kat',
+            'zemin': 'Zemin Kat',
+            '1': '1. Kat',
+            '2': '2. Kat',
+            'all': 'Tüm Katlar'
+        };
+        
+        try {
+            await ctx.editMessageText(
+                `🏢 *${floorDisplayNames[selectedFloor]} için Görev*\n\nGörev detayını yazın:`,
+                { parse_mode: 'Markdown' }
+            );
+        } catch (error) {
+            await ctx.reply(
+                `🏢 *${floorDisplayNames[selectedFloor]} için Görev*\n\nGörev detayını yazın:`,
+                { parse_mode: 'Markdown' }
+            );
+        }
+        
+        // Set user state for floor-based task creation
+        this.userStates.set(chatId, {
+            action: 'create_task',
+            step: 'content',
+            data: { 
+                type: 'floor',
+                floor: selectedFloor === 'zemin' ? 'Zemin' : selectedFloor,
+                floorDisplay: floorDisplayNames[selectedFloor]
+            }
+        });
+    }
+
     async handleLeaveCallback(ctx, data) {
         await ctx.answerCbQuery('İzin talebi özelliği geliştirilme aşamasında...');
     }
@@ -1762,7 +1884,50 @@ class SivalTeamBot extends EventEmitter {
         
         const selectedDepartment = departmentMap[data];
         
-        // Create new user with selected department
+        // Store department and ask for floor
+        state.data.department = selectedDepartment;
+        state.step = 'floor_selection';
+        this.userStates.set(chatId, state);
+        
+        // Ask for floor selection
+        await ctx.editMessageText(
+            `✅ Departman: ${selectedDepartment}\n\n` +
+            '🏢 Şimdi çalıştığınız katı seçin:',
+            {
+                parse_mode: 'Markdown',
+                ...Markup.inlineKeyboard([
+                    [Markup.button.callback('📦 -1 Kat', 'floor_-1')],
+                    [Markup.button.callback('🏪 Zemin Kat', 'floor_zemin')],
+                    [Markup.button.callback('🏢 1. Kat', 'floor_1')],
+                    [Markup.button.callback('🏢 2. Kat', 'floor_2')]
+                ])
+            }
+        );
+    }
+
+    async handleFloorSelection(ctx, data) {
+        const chatId = ctx.chat.id.toString();
+        const state = this.userStates.get(chatId);
+        
+        if (!state || state.action !== 'register_user' || state.step !== 'floor_selection') return;
+        
+        // Map floor codes to values
+        const floorMap = {
+            'floor_-1': '-1',
+            'floor_zemin': 'Zemin',
+            'floor_1': '1',
+            'floor_2': '2'
+        };
+        
+        const selectedFloor = floorMap[data];
+        const floorDisplayNames = {
+            '-1': '-1 Kat',
+            'Zemin': 'Zemin Kat',
+            '1': '1. Kat',
+            '2': '2. Kat'
+        };
+        
+        // Create new user with department and floor
         const newUser = new User({
             chatId: state.data.chatId,
             username: state.data.username,
@@ -1771,27 +1936,29 @@ class SivalTeamBot extends EventEmitter {
             telegramUsername: state.data.telegramUsername,
             role: 'employee',
             isApproved: false,
-            department: selectedDepartment
+            department: state.data.department,
+            floor: selectedFloor
         });
         
         await newUser.save();
         this.userStates.delete(chatId);
         
-        
         await ctx.editMessageText(
             `✅ *Kayıt Tamamlandı!*\n\n` +
             `👤 ${state.data.firstName} ${state.data.lastName || ''}\n` +
-            `🏢 Departman: ${selectedDepartment}\n\n` +
+            `🏢 Departman: ${state.data.department}\n` +
+            `🏢 Kat: ${floorDisplayNames[selectedFloor]}\n\n` +
             '⏳ Admin onayı bekleniyor...',
             { parse_mode: 'Markdown' }
         );
         
-        // Notify admins with department info
+        // Notify admins with department and floor info
         await this.notifyAdmins(
             `🆕 *Yeni kullanıcı onay bekliyor:*\n\n` +
             `👤 ${state.data.firstName} ${state.data.lastName || ''}\n` +
             `🆔 @${state.data.username || 'username yok'}\n` +
-            `🏢 Departman: ${selectedDepartment}\n` +
+            `🏢 Departman: ${state.data.department}\n` +
+            `🏢 Kat: ${floorDisplayNames[selectedFloor]}\n` +
             `💬 Chat ID: ${chatId}`,
             this.getApprovalKeyboard(chatId)
         );
