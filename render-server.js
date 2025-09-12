@@ -149,6 +149,8 @@ const announcementSchema = new mongoose.Schema({
     targetRole: { type: String, enum: ['all', 'admin', 'manager', 'employee'], default: 'all' },
     targetDepartments: [String],
     priority: { type: String, enum: ['info', 'warning', 'urgent'], default: 'info' },
+    mediaType: { type: String, enum: ['photo', 'voice', 'document'], default: null },
+    mediaFileId: { type: String, default: null },
     createdAt: { type: Date, default: Date.now },
     expiresAt: Date,
     isActive: { type: Boolean, default: true },
@@ -376,16 +378,23 @@ class SivalTeamBot extends EventEmitter {
         
         // Handle voice messages for missing products
         this.bot.on('voice', async (ctx) => await this.handleVoiceMessage(ctx));
+        
+        // Handle document messages for announcements
+        this.bot.on('document', async (ctx) => await this.handleDocumentMessage(ctx));
 
         // Text message handler for states
         this.bot.on('text', async (ctx) => {
             const chatId = ctx.chat.id.toString();
             const state = this.userStates.get(chatId);
+            const text = ctx.message.text;
             
-            console.log(`📝 Text message from ${chatId}: "${ctx.message.text}"`);
+            console.log(`📝 Text message from ${chatId}: "${text}"`);
             console.log(`🔍 Current state:`, state);
             
-            if (state) {
+            // Handle /publish command for announcements
+            if (text === '/publish' && state && state.action === 'create_announcement') {
+                await this.processAnnouncement(ctx, null, state.data);
+            } else if (state) {
                 await this.handleStateInput(ctx, state);
             }
         });
@@ -1301,46 +1310,11 @@ class SivalTeamBot extends EventEmitter {
                 break;
                 
             case 'create_announcement':
-                console.log(`📢 Processing announcement creation for ${user.firstName}`);
-                console.log(`📝 Step: ${state.step}, Content: "${text}"`);
+                console.log(`📢 Processing announcement text for ${user.firstName}`);
+                console.log(`📝 Content: "${text}"`);
                 
-                if (state.step === 'content') {
-                    console.log(`💾 Creating announcement with content: "${text}"`);
-                    
-                    const announcement = new Announcement({
-                        announcementId: `announcement_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`, // Generate unique announcementId
-                        title: 'Genel Duyuru', // Default title
-                        message: text, // Use 'message' field as required by schema
-                        createdBy: user.chatId,
-                        createdByName: `${user.firstName} ${user.lastName || ''}`,
-                        targetRole: 'all'
-                    });
-                    
-                    await announcement.save();
-                    this.userStates.delete(chatId);
-                    
-                    // Send announcement to all users
-                    const users = await User.find({ isApproved: true, isActive: true });
-                    
-                    let successCount = 0;
-                    let failCount = 0;
-                    
-                    for (const targetUser of users) {
-                        try {
-                            await this.bot.telegram.sendMessage(
-                                targetUser.chatId,
-                                `📢 *DUYURU*\n\n${text}\n\n👤 ${user.firstName} ${user.lastName || ''}`,
-                                { parse_mode: 'Markdown' }
-                            );
-                            successCount++;
-                        } catch (error) {
-                            console.error(`Duyuru gönderilemedi: ${targetUser.chatId}`, error.message);
-                            failCount++;
-                        }
-                    }
-                    
-                    await ctx.reply(`✅ Duyuru yayınlandı!\n\n📊 ${successCount} başarılı, ${failCount} başarısız`);
-                }
+                // Process announcement with text and any media that was added
+                await this.processAnnouncement(ctx, text, state.data)
                 break;
 
             case 'tech_report':
@@ -1577,11 +1551,20 @@ class SivalTeamBot extends EventEmitter {
         
         console.log(`📢 Admin ${user.firstName} starting announcement creation`);
         
-        await ctx.reply('📢 *Duyuru Yayınla*\n\nDuyuru metnini yazın:', { parse_mode: 'Markdown' });
+        await ctx.reply(
+            '📢 *Duyuru Yayınla*\n\nDuyuru metnini yazın veya medya (fotoğraf, belge, ses) gönderin:',
+            { parse_mode: 'Markdown' }
+        );
         
         this.userStates.set(chatId, {
             action: 'create_announcement',
-            step: 'content'
+            step: 'content',
+            data: {
+                text: null,
+                mediaType: null,
+                mediaFileId: null,
+                caption: null
+            }
         });
         
         console.log(`🎯 Announcement state set for ${chatId}`);
@@ -1812,7 +1795,27 @@ class SivalTeamBot extends EventEmitter {
         const state = this.userStates.get(chatId);
         const user = await this.getUser(chatId);
         
-        if (state && state.action === 'add_product_media') {
+        if (state && state.action === 'create_announcement') {
+            const photo = ctx.message.photo[ctx.message.photo.length - 1];
+            const caption = ctx.message.caption || '';
+            
+            console.log(`📸 Admin ${user.firstName} added photo to announcement`);
+            
+            // Update announcement state with photo info
+            state.data.mediaType = 'photo';
+            state.data.mediaFileId = photo.file_id;
+            state.data.caption = caption;
+            
+            this.userStates.set(chatId, state);
+            
+            await ctx.reply('📸 Fotoğraf eklendi! Şimdi duyuru metnini yazın (veya sadece fotoğraf ile duyuru yapmak için /publish yazın):');
+            
+            // If there's a caption, treat it as the announcement text
+            if (caption) {
+                await this.processAnnouncement(ctx, caption, state.data);
+            }
+            
+        } else if (state && state.action === 'add_product_media') {
             const photo = ctx.message.photo[ctx.message.photo.length - 1];
             
             // Get product info
@@ -1854,7 +1857,20 @@ class SivalTeamBot extends EventEmitter {
         const state = this.userStates.get(chatId);
         const user = await this.getUser(chatId);
         
-        if (state && state.action === 'add_product_media') {
+        if (state && state.action === 'create_announcement') {
+            const voice = ctx.message.voice;
+            
+            console.log(`🎙️ Admin ${user.firstName} added voice to announcement`);
+            
+            // Update announcement state with voice info
+            state.data.mediaType = 'voice';
+            state.data.mediaFileId = voice.file_id;
+            
+            this.userStates.set(chatId, state);
+            
+            await ctx.reply('🎙️ Ses kaydı eklendi! Şimdi duyuru metnini yazın (veya sadece ses ile duyuru yapmak için /publish yazın):');
+            
+        } else if (state && state.action === 'add_product_media') {
             // Get product info
             const product = await MissingProduct.findById(state.data.productId);
             
@@ -1881,6 +1897,119 @@ class SivalTeamBot extends EventEmitter {
             // Admin/manager can send voice anywhere - just acknowledge
             await ctx.reply('🎤 Ses kaydı alındı!');
         }
+    }
+
+    async handleDocumentMessage(ctx) {
+        const chatId = ctx.chat.id.toString();
+        const state = this.userStates.get(chatId);
+        const user = await this.getUser(chatId);
+        
+        if (state && state.action === 'create_announcement') {
+            const document = ctx.message.document;
+            const caption = ctx.message.caption || '';
+            
+            console.log(`📄 Admin ${user.firstName} added document to announcement`);
+            
+            // Update announcement state with document info
+            state.data.mediaType = 'document';
+            state.data.mediaFileId = document.file_id;
+            state.data.caption = caption;
+            
+            this.userStates.set(chatId, state);
+            
+            await ctx.reply('📄 Belge eklendi! Şimdi duyuru metnini yazın (veya sadece belge ile duyuru yapmak için /publish yazın):');
+            
+            // If there's a caption, treat it as the announcement text
+            if (caption) {
+                await this.processAnnouncement(ctx, caption, state.data);
+            }
+            
+        } else if (user && (user.role === 'admin' || user.role === 'manager')) {
+            // Admin/manager can send document anywhere - just acknowledge
+            await ctx.reply('📄 Belge alındı!');
+        }
+    }
+
+    async processAnnouncement(ctx, text, mediaData) {
+        const chatId = ctx.chat.id.toString();
+        const user = await this.getUser(chatId);
+        
+        console.log(`📢 Processing announcement for ${user.firstName}`);
+        console.log(`📝 Text: ${text}`);
+        console.log(`🎯 Media:`, mediaData);
+        
+        // Use text from parameter or from caption
+        const announcementText = text || mediaData.caption || 'Duyuru';
+        
+        // Create announcement record
+        const announcement = new Announcement({
+            announcementId: `announcement_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+            title: 'Genel Duyuru',
+            message: announcementText,
+            createdBy: user.chatId,
+            createdByName: `${user.firstName} ${user.lastName || ''}`,
+            targetRole: 'all',
+            mediaType: mediaData.mediaType,
+            mediaFileId: mediaData.mediaFileId
+        });
+        
+        await announcement.save();
+        this.userStates.delete(chatId);
+        
+        // Send announcement to all users
+        const users = await User.find({ isApproved: true, isActive: true });
+        
+        let successCount = 0;
+        let failCount = 0;
+        
+        for (const targetUser of users) {
+            try {
+                const messageContent = `📢 *DUYURU*\n\n${announcementText}\n\n👤 ${user.firstName} ${user.lastName || ''}`;
+                
+                if (mediaData.mediaType === 'photo') {
+                    await this.bot.telegram.sendPhoto(
+                        targetUser.chatId,
+                        mediaData.mediaFileId,
+                        {
+                            caption: messageContent,
+                            parse_mode: 'Markdown'
+                        }
+                    );
+                } else if (mediaData.mediaType === 'voice') {
+                    await this.bot.telegram.sendVoice(
+                        targetUser.chatId,
+                        mediaData.mediaFileId,
+                        {
+                            caption: messageContent,
+                            parse_mode: 'Markdown'
+                        }
+                    );
+                } else if (mediaData.mediaType === 'document') {
+                    await this.bot.telegram.sendDocument(
+                        targetUser.chatId,
+                        mediaData.mediaFileId,
+                        {
+                            caption: messageContent,
+                            parse_mode: 'Markdown'
+                        }
+                    );
+                } else {
+                    // Text-only announcement
+                    await this.bot.telegram.sendMessage(
+                        targetUser.chatId,
+                        messageContent,
+                        { parse_mode: 'Markdown' }
+                    );
+                }
+                
+                successCount++;
+            } catch (error) {
+                console.error(`Failed to send announcement to ${targetUser.chatId}:`, error.message);
+                failCount++;
+            }
+        }
+        
+        await ctx.reply(`✅ Duyuru yayınlandı!\n\n📊 ${successCount} başarılı, ${failCount} başarısız`);
     }
 
     // Admin commands
