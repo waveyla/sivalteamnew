@@ -278,9 +278,7 @@ class SivalTeamBot extends EventEmitter {
         this.bot.hears('📋 Görevlerim', async (ctx) => await this.showMyTasks(ctx));
         this.bot.hears('📦 Eksik Ürün Bildir', async (ctx) => await this.reportMissingProduct(ctx));
         this.bot.hears('📢 Duyurular', async (ctx) => await this.showAnnouncements(ctx));
-        this.bot.hears('📅 İzin Talebi', async (ctx) => await this.requestLeave(ctx));
         this.bot.hears('🔄 Vardiya Değişimi', async (ctx) => await this.requestShiftChange(ctx));
-        this.bot.hears('☕ Mola', async (ctx) => await this.handleBreak(ctx));
         this.bot.hears('📊 Durum', async (ctx) => await this.showStatus(ctx));
         this.bot.hears('❓ Yardım', async (ctx) => await this.showHelp(ctx));
         
@@ -289,7 +287,6 @@ class SivalTeamBot extends EventEmitter {
         this.bot.hears('📋 Aktif Görevler', async (ctx) => await this.showActiveTasks(ctx));
         this.bot.hears('📦 Eksik Ürünler Listesi', async (ctx) => await this.showMissingProductsList(ctx));
         this.bot.hears('👥 Kullanıcılar', async (ctx) => await this.showUsers(ctx));
-        this.bot.hears('📈 Raporlar', async (ctx) => await this.showReports(ctx));
         this.bot.hears('📢 Duyuru Yayınla', async (ctx) => await this.publishAnnouncement(ctx));
         
         // Handle photo messages for missing products
@@ -361,6 +358,10 @@ class SivalTeamBot extends EventEmitter {
                 // Cancel callbacks
                 else if (data.startsWith('cancel_')) {
                     await this.handleCancelCallback(ctx, data);
+                }
+                // Employee selection for tasks
+                else if (data.startsWith('select_employee_')) {
+                    await this.handleEmployeeSelection(ctx, data);
                 }
 
                 await ctx.answerCbQuery();
@@ -1035,15 +1036,36 @@ class SivalTeamBot extends EventEmitter {
                 } else if (state.step === 'description') {
                     state.data.description = text;
                     
+                    // Prepare assignedTo based on task type
+                    let assignedTo = [];
+                    if (state.data.type === 'individual' && state.data.selectedEmployee) {
+                        assignedTo = [{
+                            userId: state.data.selectedEmployee.chatId,
+                            name: state.data.selectedEmployee.name,
+                            completed: false
+                        }];
+                    } else if (state.data.type === 'group') {
+                        // For group tasks, assign to all employees
+                        const employees = await User.find({ 
+                            isApproved: true, 
+                            role: { $in: ['employee', 'manager'] } 
+                        });
+                        assignedTo = employees.map(emp => ({
+                            userId: emp.chatId,
+                            name: `${emp.firstName} ${emp.lastName || ''}`,
+                            completed: false
+                        }));
+                    }
+                    
                     // Create task
                     const task = new Task({
                         title: state.data.title,
                         description: state.data.description,
-                        assignmentType: state.data.assignmentType,
-                        assignedTo: state.data.assignedTo,
+                        assignmentType: state.data.type,
+                        assignedTo: assignedTo,
                         assignedBy: user.chatId,
                         assignedByName: `${user.firstName} ${user.lastName}`,
-                        totalAssigned: state.data.assignedTo.length
+                        totalAssigned: assignedTo.length
                     });
                     
                     await task.save();
@@ -1052,7 +1074,7 @@ class SivalTeamBot extends EventEmitter {
                     await ctx.reply('✅ Görev başarıyla oluşturuldu!');
                     
                     // Send task to assigned users
-                    for (const assignee of state.data.assignedTo) {
+                    for (const assignee of assignedTo) {
                         await this.bot.telegram.sendMessage(
                             assignee.userId,
                             `🆕 *Yeni Görev!*\n\n` +
@@ -1066,6 +1088,36 @@ class SivalTeamBot extends EventEmitter {
                                 ])
                             }
                         ).catch(() => {});
+                    }
+                }
+                break;
+                
+            case 'create_announcement':
+                if (state.step === 'content') {
+                    const announcement = new Announcement({
+                        content: text,
+                        createdBy: user.chatId,
+                        createdByName: `${user.firstName} ${user.lastName}`,
+                        targetRole: 'all'
+                    });
+                    
+                    await announcement.save();
+                    this.userStates.delete(chatId);
+                    
+                    await ctx.reply('✅ Duyuru yayınlandı!');
+                    
+                    // Send announcement to all users
+                    const users = await User.find({ isApproved: true, isActive: true });
+                    for (const targetUser of users) {
+                        try {
+                            await this.bot.telegram.sendMessage(
+                                targetUser.chatId,
+                                `📢 *DUYURU*\n\n${text}\n\n👤 ${user.firstName} ${user.lastName}`,
+                                { parse_mode: 'Markdown' }
+                            );
+                        } catch (error) {
+                            console.error(`Duyuru gönderilemedi: ${targetUser.chatId}`, error.message);
+                        }
                     }
                 }
                 break;
@@ -1097,9 +1149,8 @@ class SivalTeamBot extends EventEmitter {
             const adminButtons = [
                 ['➕ Görev Oluştur', '📋 Aktif Görevler'],
                 ['📦 Eksik Ürünler Listesi', '👥 Kullanıcılar'],
-                ['📢 Duyuru Yayınla', '📈 Raporlar'],
-                ['📅 İzin Talebi', '🔄 Vardiya Değişimi'],
-                ['📦 Eksik Ürün Bildir', '📊 Durum'],
+                ['📢 Duyuru Yayınla', '📦 Eksik Ürün Bildir'],
+                ['🔄 Vardiya Değişimi', '📊 Durum'],
                 ['❓ Yardım']
             ];
             return Markup.keyboard(adminButtons).resize();
@@ -1107,9 +1158,8 @@ class SivalTeamBot extends EventEmitter {
             // Employee panel
             const employeeButtons = [
                 ['📋 Görevlerim', '📦 Eksik Ürün Bildir'],
-                ['📢 Duyurular', '📊 Durum'],
-                ['📅 İzin Talebi', '🔄 Vardiya Değişimi'],
-                ['❓ Yardım']
+                ['📢 Duyurular', '🔄 Vardiya Değişimi'],
+                ['📊 Durum', '❓ Yardım']
             ];
             return Markup.keyboard(employeeButtons).resize();
         }
@@ -1220,15 +1270,76 @@ class SivalTeamBot extends EventEmitter {
     }
 
     async publishAnnouncement(ctx) {
-        await ctx.reply('📢 Duyuru yayınlama özelliği geliştirilme aşamasında...');
+        const user = await this.getUser(ctx.chat.id);
+        if (!user || user.role !== 'admin') {
+            await ctx.reply('❌ Bu özellik sadece yöneticiler içindir.');
+            return;
+        }
+        
+        const chatId = ctx.chat.id.toString();
+        
+        await ctx.reply('📢 *Duyuru Yayınla*\n\nDuyuru metnini yazın:', { parse_mode: 'Markdown' });
+        
+        this.userStates.set(chatId, {
+            action: 'create_announcement',
+            step: 'content'
+        });
     }
 
     async handleIndividualTaskAssignment(ctx) {
-        await ctx.reply('👤 Bireysel görev atama özelliği geliştirilme aşamasında...');
+        const chatId = ctx.chat.id.toString();
+        
+        // Get all approved employees
+        const employees = await User.find({ 
+            isApproved: true, 
+            role: { $in: ['employee', 'manager'] } 
+        }).sort({ firstName: 1 });
+        
+        if (employees.length === 0) {
+            await ctx.reply('❌ Görev atanabilecek onaylanmış çalışan bulunmuyor.');
+            return;
+        }
+        
+        // Create employee selection buttons
+        const keyboard = employees.map(emp => [
+            Markup.button.callback(
+                `👤 ${emp.firstName} ${emp.lastName || ''}`, 
+                `select_employee_${emp.chatId}`
+            )
+        ]);
+        
+        keyboard.push([Markup.button.callback('❌ İptal', 'cancel_task')]);
+        
+        await ctx.editMessageText(
+            '👤 *Bireysel Görev Atama*\n\nHangi çalışana görev atanacak?',
+            {
+                parse_mode: 'Markdown',
+                ...Markup.inlineKeyboard(keyboard)
+            }
+        );
+        
+        // Set user state for task creation
+        this.userStates.set(chatId, {
+            action: 'create_task',
+            step: 'employee_selected',
+            data: { type: 'individual' }
+        });
     }
 
     async handleGroupTaskAssignment(ctx) {
-        await ctx.reply('👥 Toplu görev atama özelliği geliştirilme aşamasında...');
+        const chatId = ctx.chat.id.toString();
+        
+        await ctx.editMessageText(
+            '👥 *Toplu Görev Atama*\n\nGörev bilgilerini girin:\n\n📝 Görev başlığını yazın:',
+            { parse_mode: 'Markdown' }
+        );
+        
+        // Set user state for group task creation
+        this.userStates.set(chatId, {
+            action: 'create_task',
+            step: 'title',
+            data: { type: 'group' }
+        });
     }
 
     async handleLeaveCallback(ctx, data) {
@@ -1244,6 +1355,35 @@ class SivalTeamBot extends EventEmitter {
         this.requests.delete(requestId);
         this.userStates.delete(ctx.chat.id.toString());
         await ctx.editMessageText('❌ İşlem iptal edildi.');
+    }
+
+    async handleEmployeeSelection(ctx, data) {
+        const chatId = ctx.chat.id.toString();
+        const employeeChatId = data.replace('select_employee_', '');
+        const state = this.userStates.get(chatId);
+        
+        if (!state || state.action !== 'create_task') return;
+        
+        // Get employee info
+        const employee = await User.findOne({ chatId: employeeChatId });
+        if (!employee) {
+            await ctx.answerCbQuery('❌ Çalışan bulunamadı!');
+            return;
+        }
+        
+        // Update state with selected employee
+        state.data.selectedEmployee = {
+            chatId: employeeChatId,
+            name: `${employee.firstName} ${employee.lastName || ''}`
+        };
+        state.step = 'title';
+        this.userStates.set(chatId, state);
+        
+        await ctx.editMessageText(
+            `👤 *Seçilen Çalışan:* ${employee.firstName} ${employee.lastName || ''}\n\n` +
+            `📝 Görev başlığını yazın:`,
+            { parse_mode: 'Markdown' }
+        );
     }
 
     async handlePhotoMessage(ctx) {
