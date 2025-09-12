@@ -1688,13 +1688,25 @@ async function startServer() {
 // Graceful shutdown
 process.once('SIGINT', () => {
     console.log('🛑 Received SIGINT, shutting down gracefully...');
-    sivalTeamBot.bot.stop('SIGINT');
+    try {
+        if (sivalTeamBot && sivalTeamBot.bot) {
+            sivalTeamBot.bot.stop('SIGINT');
+        }
+    } catch (error) {
+        console.log('Bot already stopped or not running');
+    }
     process.exit(0);
 });
 
 process.once('SIGTERM', () => {
     console.log('🛑 Received SIGTERM, shutting down gracefully...');
-    sivalTeamBot.bot.stop('SIGTERM');
+    try {
+        if (sivalTeamBot && sivalTeamBot.bot) {
+            sivalTeamBot.bot.stop('SIGTERM');
+        }
+    } catch (error) {
+        console.log('Bot already stopped or not running');
+    }
     process.exit(0);
 });
 
