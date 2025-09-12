@@ -200,6 +200,10 @@ class SivalTeamBot extends EventEmitter {
             const user = await User.findOne({ chatId });
 
             if (!user) {
+                // Check if this is the first user
+                const userCount = await User.countDocuments();
+                const isFirstUser = userCount === 0;
+                
                 // Yeni kullanıcı kaydı
                 const newUser = new User({
                     chatId,
@@ -207,27 +211,41 @@ class SivalTeamBot extends EventEmitter {
                     firstName: ctx.from.first_name,
                     lastName: ctx.from.last_name,
                     telegramUsername: ctx.from.username,
-                    isApproved: false
+                    role: isFirstUser ? 'admin' : 'employee',
+                    isApproved: isFirstUser ? true : false
                 });
                 await newUser.save();
 
-                await ctx.reply(
-                    '👋 *SivalTeam Bot\'a Hoş Geldiniz!*\n\n' +
-                    `Merhaba ${ctx.from.first_name}!\n` +
-                    `Chat ID'niz: \`${chatId}\`\n\n` +
-                    '📝 Sisteme tam erişim için admin onayı bekleniyor.\n' +
-                    '⏳ Yöneticiniz sizi onayladığında bildirim alacaksınız.',
-                    { parse_mode: 'Markdown' }
-                );
+                if (isFirstUser) {
+                    await ctx.reply(
+                        '🎉 *SivalTeam Bot\'a Hoş Geldiniz!*\n\n' +
+                        `Merhaba ${ctx.from.first_name}!\n` +
+                        `Tebrikler! Bot'un ilk kullanıcısı olarak otomatik admin yetkisi aldınız.\n\n` +
+                        '👨‍💼 Artık tüm admin özelliklerini kullanabilirsiniz.',
+                        { 
+                            parse_mode: 'Markdown',
+                            ...this.getMainKeyboard('admin')
+                        }
+                    );
+                } else {
+                    await ctx.reply(
+                        '👋 *SivalTeam Bot\'a Hoş Geldiniz!*\n\n' +
+                        `Merhaba ${ctx.from.first_name}!\n` +
+                        `Chat ID'niz: \`${chatId}\`\n\n` +
+                        '📝 Sisteme tam erişim için admin onayı bekleniyor.\n' +
+                        '⏳ Yöneticiniz sizi onayladığında bildirim alacaksınız.',
+                        { parse_mode: 'Markdown' }
+                    );
 
-                // Admin bilgilendirmesi - User approval needed
-                await this.notifyAdmins(
-                    `🆕 *Yeni kullanıcı onay bekliyor:*\n\n` +
-                    `👤 ${ctx.from.first_name} ${ctx.from.last_name || ''}\n` +
-                    `🆔 @${ctx.from.username || 'username yok'}\n` +
-                    `💬 Chat ID: ${chatId}`,
-                    this.getApprovalKeyboard(chatId)
-                );
+                    // Admin bilgilendirmesi - User approval needed
+                    await this.notifyAdmins(
+                        `🆕 *Yeni kullanıcı onay bekliyor:*\n\n` +
+                        `👤 ${ctx.from.first_name} ${ctx.from.last_name || ''}\n` +
+                        `🆔 @${ctx.from.username || 'username yok'}\n` +
+                        `💬 Chat ID: ${chatId}`,
+                        this.getApprovalKeyboard(chatId)
+                    );
+                }
                 return;
             }
 
