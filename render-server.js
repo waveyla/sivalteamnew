@@ -200,12 +200,11 @@ class SivalTeamBot extends EventEmitter {
             const user = await User.findOne({ chatId });
 
             if (!user) {
-                // Check if this is the first user (no users exist) and no admin exists
-                const userCount = await User.countDocuments();
+                // Check if there is any admin in the system
                 const adminCount = await User.countDocuments({ role: 'admin' });
-                const isFirstUser = userCount === 0 && adminCount === 0;
+                const isFirstAdmin = adminCount === 0;
                 
-                console.log(`🔍 User check: userCount=${userCount}, adminCount=${adminCount}, isFirstUser=${isFirstUser}`);
+                console.log(`🔍 Admin check: adminCount=${adminCount}, isFirstAdmin=${isFirstAdmin}`);
                 
                 // Yeni kullanıcı kaydı
                 const newUser = new User({
@@ -214,18 +213,18 @@ class SivalTeamBot extends EventEmitter {
                     firstName: ctx.from.first_name,
                     lastName: ctx.from.last_name,
                     telegramUsername: ctx.from.username,
-                    role: isFirstUser ? 'admin' : 'employee',
-                    isApproved: isFirstUser ? true : false
+                    role: isFirstAdmin ? 'admin' : 'employee',
+                    isApproved: isFirstAdmin ? true : false
                 });
                 await newUser.save();
                 
-                if (isFirstUser) {
+                if (isFirstAdmin) {
                     console.log(`👑 First admin registered: ${ctx.from.first_name} (${chatId})`);
                 } else {
                     console.log(`👤 New user registered: ${ctx.from.first_name} (${chatId})`);
                 }
 
-                if (isFirstUser) {
+                if (isFirstAdmin) {
                     await ctx.reply(
                         '🎉 *SivalTeam Bot\'a Hoş Geldiniz!*\n\n' +
                         `Merhaba ${ctx.from.first_name}!\n` +
@@ -375,26 +374,6 @@ class SivalTeamBot extends EventEmitter {
     setupAdminCommands() {
         this.bot.command('broadcast', async (ctx) => await this.broadcastMessage(ctx));
         this.bot.command('stats', async (ctx) => await this.showStats(ctx));
-        
-        // Emergency admin assignment command
-        this.bot.command('makeadmin', async (ctx) => {
-            const adminCount = await User.countDocuments({ role: 'admin' });
-            if (adminCount === 0) {
-                const chatId = ctx.chat.id.toString();
-                await User.findOneAndUpdate(
-                    { chatId },
-                    { role: 'admin', isApproved: true },
-                    { upsert: true, new: true }
-                );
-                await ctx.reply('👑 *Yönetici yetkisi verildi!*\n\nArtık tüm admin özelliklerini kullanabilirsiniz.', {
-                    parse_mode: 'Markdown',
-                    ...this.getMainKeyboard('admin')
-                });
-                console.log(`🚨 Emergency admin assigned: ${ctx.from.first_name} (${chatId})`);
-            } else {
-                await ctx.reply('❌ Sistemde zaten admin bulunmakta.');
-            }
-        });
     }
 
     // ==================== HANDLER METHODS ====================
