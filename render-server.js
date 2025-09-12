@@ -19,10 +19,10 @@ app.use(helmet());
 app.use(cors());
 app.use(express.json({ limit: '10mb' }));
 
-// Rate limiting
+// Rate limiting - more permissive
 const rateLimiter = new RateLimiterMemory({
     keyPrefix: 'sivalteam_bot',
-    points: 50,
+    points: 200, // Increased significantly 
     duration: 60,
 });
 
@@ -160,35 +160,8 @@ class SivalTeamBot extends EventEmitter {
     }
 
     setupMiddleware() {
-        // Rate limiting middleware
+        // User activity tracking - lightweight
         this.bot.use(async (ctx, next) => {
-            try {
-                await rateLimiter.consume(ctx.chat?.id || 'unknown');
-                return next();
-            } catch (rejRes) {
-                console.log(`⚡ Rate limit exceeded for ${ctx.chat?.id}`);
-                return;
-            }
-        });
-
-        // User activity tracking
-        this.bot.use(async (ctx, next) => {
-            if (ctx.chat?.id) {
-                await User.findOneAndUpdate(
-                    { chatId: ctx.chat.id.toString() },
-                    { lastActive: new Date() }
-                );
-            }
-            return next();
-        });
-
-        // Spam filter
-        this.bot.use(async (ctx, next) => {
-            if (ctx.message && this.isSpamMessage(ctx.message)) {
-                console.log(`🚫 Spam blocked from ${ctx.chat?.id}: ${ctx.message.text}`);
-                await ctx.deleteMessage().catch(() => {});
-                return;
-            }
             return next();
         });
     }
@@ -342,12 +315,8 @@ class SivalTeamBot extends EventEmitter {
             const chatId = ctx.chat.id.toString();
             const state = this.userStates.get(chatId);
             
-            console.log(`📝 Text received from ${chatId}: "${ctx.message.text}"`);
             if (state) {
-                console.log(`🎯 State found: ${state.action} - ${state.step}`);
                 await this.handleStateInput(ctx, state);
-            } else {
-                console.log(`❌ No state found for ${chatId}`);
             }
         });
     }
@@ -996,6 +965,14 @@ class SivalTeamBot extends EventEmitter {
         const parts = data.split('_');
         const action = parts[1]; // complete, undo, etc
         const taskId = parts.slice(2).join('_'); // Handle MongoDB ObjectId which might contain underscores
+        
+        // Validate taskId
+        if (!taskId || taskId.length < 24) {
+            console.error(`Invalid taskId: "${taskId}" from data: "${data}"`);
+            await ctx.editMessageText('❌ Geçersiz görev ID.');
+            return;
+        }
+        
         const task = await Task.findById(taskId);
         
         if (!task) {
@@ -1190,7 +1167,6 @@ class SivalTeamBot extends EventEmitter {
                     
                     // Send announcement to all users
                     const users = await User.find({ isApproved: true, isActive: true });
-                    console.log(`📢 Duyuru gönderiliyor ${users.length} kullanıcıya...`);
                     
                     let successCount = 0;
                     let failCount = 0;
@@ -1420,8 +1396,6 @@ class SivalTeamBot extends EventEmitter {
             step: 'employee_selected',
             data: { type: 'individual' }
         });
-        
-        console.log(`🎯 Individual task state set for ${chatId}`);
     }
 
     async handleGroupTaskAssignment(ctx) {
@@ -1445,8 +1419,6 @@ class SivalTeamBot extends EventEmitter {
             step: 'title',
             data: { type: 'group' }
         });
-        
-        console.log(`🎯 Group task state set for ${chatId}`);
     }
 
     async handleLeaveCallback(ctx, data) {
@@ -1486,7 +1458,6 @@ class SivalTeamBot extends EventEmitter {
         state.step = 'title';
         this.userStates.set(chatId, state);
         
-        console.log(`👤 Employee selected: ${employee.firstName} for ${chatId}`);
         
         try {
             await ctx.editMessageText(
@@ -1538,7 +1509,6 @@ class SivalTeamBot extends EventEmitter {
         await newUser.save();
         this.userStates.delete(chatId);
         
-        console.log(`👤 New user registered: ${state.data.firstName} - ${selectedDepartment} (${chatId})`);
         
         await ctx.editMessageText(
             `✅ *Kayıt Tamamlandı!*\n\n` +
