@@ -35,19 +35,26 @@ const getTurkeyTime = () => {
 // Keep-alive mechanism: Active EXCEPT 2AM-8AM (sleep time)
 const keepAlive = () => {
     setInterval(async () => {
-        const now = new Date();
-        const turkeyTime = new Date(now.getTime() + (3 * 60 * 60 * 1000)); // UTC+3 Turkey time
-        const hour = turkeyTime.getHours();
+        // Get correct Turkey time using Intl API
+        const turkeyTimeStr = new Date().toLocaleString('tr-TR', {
+            timeZone: 'Europe/Istanbul',
+            hour: '2-digit',
+            minute: '2-digit',
+            hour12: false
+        });
+        
+        const [hourStr, minuteStr] = turkeyTimeStr.split(':');
+        const hour = parseInt(hourStr);
         
         // Sleep between 2AM and 8AM Turkey time, keep alive other times
         if (hour >= 2 && hour < 8) {
-            console.log(`😴 Sleep time (${hour}:${turkeyTime.getMinutes().toString().padStart(2, '0')}): Keep-alive disabled`);
+            console.log(`😴 Sleep time (${turkeyTimeStr} Turkey): Keep-alive disabled`);
         } else {
             try {
                 const response = await fetch(`${WEBHOOK_URL}/health`);
-                console.log(`🟢 Keep-alive ping (${hour}:${turkeyTime.getMinutes().toString().padStart(2, '0')}): ${response.status}`);
+                console.log(`🟢 Keep-alive ping (${turkeyTimeStr} Turkey): ${response.status}`);
             } catch (error) {
-                console.log(`❌ Keep-alive ping failed (${hour}:${turkeyTime.getMinutes().toString().padStart(2, '0')}):`, error.message);
+                console.log(`❌ Keep-alive ping failed (${turkeyTimeStr} Turkey):`, error.message);
             }
         }
     }, 10 * 60 * 1000); // Check every 10 minutes
