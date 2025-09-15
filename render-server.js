@@ -120,7 +120,9 @@ const userSchema = new mongoose.Schema({
     lastActive: { type: Date, default: Date.now },
     telegramUsername: String,
     phone: String,
-    email: String
+    email: String,
+    spamAttempts: { type: Number, default: 0 },
+    isBlocked: { type: Boolean, default: false }
 });
 
 // Task Schema - Görev yönetimi
@@ -252,6 +254,59 @@ class SivalTeamBot extends EventEmitter {
                     console.error('Failed to send error message:', replyError);
                 }
             }
+        });
+        
+        // Spam detection middleware
+        this.bot.use(async (ctx, next) => {
+            if (ctx.message && this.isSpamMessage(ctx.message)) {
+                const chatId = ctx.chat.id.toString();
+                console.log(`🚫 Spam detected from ${chatId}: ${ctx.message.text}`);
+                
+                try {
+                    // Delete spam message
+                    await ctx.deleteMessage().catch(() => {});
+                    
+                    // Send warning to user
+                    await ctx.reply(
+                        '⛔ Spam mesaj tespit edildi!\n\n' +
+                        'Kumar, bahis, uygunsuz içerik veya reklam içeren mesajlar yasaktır.\n' +
+                        'Tekrar edilmesi durumunda engelleneceksiniz.',
+                        { reply_to_message_id: null }
+                    );
+                    
+                    // Log spam attempt
+                    const user = await User.findOne({ chatId });
+                    if (user) {
+                        user.spamAttempts = (user.spamAttempts || 0) + 1;
+                        
+                        // Block user after 3 spam attempts
+                        if (user.spamAttempts >= 3) {
+                            user.isBlocked = true;
+                            await user.save();
+                            await ctx.reply('🚫 Çok fazla spam mesaj gönderdiğiniz için engellendiniz.');
+                            console.log(`🔒 User ${chatId} blocked for spam`);
+                        } else {
+                            await user.save();
+                        }
+                    }
+                } catch (error) {
+                    console.error('Error handling spam:', error);
+                }
+                
+                return; // Don't process spam messages further
+            }
+            
+            // Check if user is blocked
+            if (ctx.chat) {
+                const chatId = ctx.chat.id.toString();
+                const user = await User.findOne({ chatId, isBlocked: true });
+                if (user) {
+                    await ctx.reply('🚫 Hesabınız engellenmiştir. Yönetici ile iletişime geçin.');
+                    return;
+                }
+            }
+            
+            return next();
         });
         
         // Performance monitoring
@@ -1587,13 +1642,51 @@ class SivalTeamBot extends EventEmitter {
         if (!msg.text) return false;
         
         const spamKeywords = [
-            'casino', 'bet', 'gambling', 'crypto', 'investment',
-            'earn money', 'click here', 'limited time', 'free money',
-            'bit.ly', 'tinyurl', 'porn', 'xxx', 'sex'
+            // Kumar ve bahis
+            'casino', 'bet', 'gambling', 'kumar', 'bahis', 'rulet', 'poker',
+            'slot', 'jackpot', 'şans oyunu', 'iddaa', 'bahis sitesi',
+            
+            // Kripto ve dolandırıcılık
+            'crypto', 'bitcoin', 'investment', 'yatırım fırsatı', 'forex',
+            'earn money', 'para kazan', 'hızlı para', 'kolay para',
+            'click here', 'tıkla', 'limited time', 'sınırlı süre',
+            'free money', 'bedava para', 'ücretsiz',
+            
+            // Kısaltılmış linkler (spam için yaygın)
+            'bit.ly', 'tinyurl', 'short.link', 'goo.gl', 't.me',
+            
+            // Uygunsuz içerik
+            'porn', 'xxx', 'sex', 'adult', '18+', 'onlyfans',
+            
+            // Reklam ve promosyon
+            'reklam', 'tanıtım', 'promosyon', 'indirim', 'kampanya',
+            '%50 indirim', 'fırsat', 'telegram grubu', 'whatsapp grubu'
         ];
         
         const text = msg.text.toLowerCase();
-        return spamKeywords.some(keyword => text.includes(keyword));
+        
+        // Check for multiple suspicious patterns
+        let suspiciousCount = 0;
+        
+        // Check for keywords
+        const hasSpamKeyword = spamKeywords.some(keyword => text.includes(keyword));
+        if (hasSpamKeyword) suspiciousCount++;
+        
+        // Check for excessive emojis (common in spam)
+        const emojiCount = (text.match(/[\u{1F300}-\u{1F9FF}]/gu) || []).length;
+        if (emojiCount > 5) suspiciousCount++;
+        
+        // Check for excessive capital letters
+        const capitalRatio = (text.match(/[A-Z]/g) || []).length / text.length;
+        if (capitalRatio > 0.5 && text.length > 10) suspiciousCount++;
+        
+        // Check for suspicious URLs
+        const urlPattern = /https?:\/\/[^\s]+/gi;
+        const urls = text.match(urlPattern) || [];
+        if (urls.length > 2) suspiciousCount++;
+        
+        // Return true if multiple suspicious patterns detected
+        return hasSpamKeyword || suspiciousCount >= 2;
     }
 
     async setupWebhook(retryCount = 0) {
