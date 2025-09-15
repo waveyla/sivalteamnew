@@ -9,10 +9,31 @@ const schedule = require('node-schedule');
 require('dotenv').config();
 
 // Environment variables
-const BOT_TOKEN = process.env.BOT_TOKEN || '8229159175:AAGRFoLpK9ma5ekPiaaCdI8EKJeca14XoOg';
-const MONGODB_URI = process.env.MONGODB_URI || 'mongodb+srv://serkser2_db_user:4K9JpoVC9U90UtmI@cluster0.pixopf1.mongodb.net/sivalteam?retryWrites=true&w=majority';
-const WEBHOOK_URL = process.env.WEBHOOK_URL || 'https://sivalteam-bot.onrender.com';
+const BOT_TOKEN = process.env.BOT_TOKEN;
+const MONGODB_URI = process.env.MONGODB_URI;
+const WEBHOOK_URL = process.env.WEBHOOK_URL;
 const PORT = process.env.PORT || 10000;
+
+// Rate limiting configuration from environment
+const RATE_LIMIT_POINTS = parseInt(process.env.RATE_LIMIT_POINTS) || 10;
+const RATE_LIMIT_DURATION = parseInt(process.env.RATE_LIMIT_DURATION) || 60;
+const RATE_LIMIT_BLOCK_DURATION = parseInt(process.env.RATE_LIMIT_BLOCK_DURATION) || 600;
+
+// Validate required environment variables
+if (!BOT_TOKEN) {
+    console.error('ERROR: BOT_TOKEN is required in environment variables');
+    process.exit(1);
+}
+
+if (!MONGODB_URI) {
+    console.error('ERROR: MONGODB_URI is required in environment variables');
+    process.exit(1);
+}
+
+if (!WEBHOOK_URL) {
+    console.error('ERROR: WEBHOOK_URL is required in environment variables');
+    process.exit(1);
+}
 
 // ==================== EXPRESS SETUP ====================
 const app = express();
@@ -72,12 +93,12 @@ if (process.env.NODE_ENV === 'production') {
     console.log('🔄 Keep-alive started: Active 8AM-2AM, Sleep 2AM-8AM Turkey time');
 }
 
-// Rate limiting - very permissive to prevent performance issues
+// Rate limiting - configurable via environment variables
 const rateLimiter = new RateLimiterMemory({
     keyPrefix: 'sivalteam_bot',
-    points: 1000, // Very high limit
-    duration: 60,
-    blockDuration: 10, // Short block time
+    points: RATE_LIMIT_POINTS, // Number of requests allowed
+    duration: RATE_LIMIT_DURATION, // Per duration in seconds
+    blockDuration: RATE_LIMIT_BLOCK_DURATION, // Block duration in seconds for excessive requests
 });
 
 // ==================== MONGODB SCHEMAS ====================
